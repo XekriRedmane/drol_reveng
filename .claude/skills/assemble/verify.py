@@ -23,6 +23,8 @@ import sys
 TARGETS: dict[str, tuple[str, str, int]] = {
     'boot1':  ('output/boot1.bin',  'reference/boot1.bin',  0x0800),
     'loader': ('output/loader.bin', 'reference/loader.bin', 0x5000),
+    'rwts':   ('output/rwts.bin',   'reference/rwts.bin',   0xBE00),
+    'drol':   ('output/drol.bin',   'reference/drol.bin',   0x0100),
 }
 
 

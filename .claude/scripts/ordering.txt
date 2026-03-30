@@ -1,0 +1,410 @@
+#! Ordering specification for main.nw reorder
+#! Lines starting with # are comments
+#! ## Chapter Title -> \chapter{}
+#! ### Section Title -> \section{}
+#! #### Subsection Title -> \subsection{}
+#! chunk_name -> places the segment with that key
+#! > literal -> inserts literal line
+
+## Initialization
+
+# game_init is the master init routine — calls everything else.
+# Present it first so the reader sees the high-level flow,
+# then drill into each subroutine it calls.
+
+game init
+relocate hires staging
+init hrcg
+init stub
+init game state
+init game display
+draw border char
+draw border labels
+draw border icons
+init world
+init stub2
+init disk iob
+select input mode
+init mob count
+
+## Apple II Hi-Res Graphics
+
+# The pixel/color tutorial prose is attached to font data.
+# It naturally introduces the font format.
+
+font data
+std font data
+
+## The HRCG Text Engine
+
+# The third-party hi-res character generator library.
+# Present the init entry, then the data structures,
+# then input, output, dispatch, and all ctrl handlers,
+# then rendering, scrolling, and address calculation.
+
+hrcg init
+hrcg version string
+hrcg params
+hrcg getkey
+hrcg cout
+hrcg dispatch table
+hrcg ctrl a
+hrcg ctrl b
+hrcg ctrl c
+hrcg ctrl d
+hrcg ctrl efhi
+hrcg ctrl klm
+hrcg ctrl nopq
+hrcg ctrl rst
+hrcg ctrl vw
+hrcg ctrl yz
+hrcg draw char
+hrcg advance cursor
+hrcg scroll up
+hrcg home clr
+hrcg calc addr
+
+## Text and Display Primitives
+
+# The game's own text routines built on top of HRCG.
+
+print string
+print string#1
+print from ptr
+print ctrl ab
+print ctrl n
+control routines
+text window routines
+set text window upper left
+set text window bottom
+set cursor compressed
+print bottom centered
+print centered plus col
+num to decimal
+display message
+reset text window
+
+## Sound
+
+tone
+high tone
+play tone
+play noise
+song table
+
+## Utility Routines
+
+### Random number generation
+
+step prng
+random in range
+
+### Coordinate conversion
+
+pos to colrow
+colrow to pos
+compute scene ptr
+
+### Timing and animation
+
+delay with animation
+tick anim counter
+anim tick and wait
+timed wait
+call rom wait
+dispatch on mode
+
+### Field utilities
+
+clamp char field
+save zp pointers
+restore zp pointers
+
+## Game Data
+
+### Character and location records
+
+get char record
+Location data
+Location names
+Location events
+Message data
+mob data
+status border data
+status bar strings
+print font char data
+script pointer table
+
+## Map and Scene
+
+scene setup
+scene loop
+load scene data
+load map tiles
+setup scene display
+enter location
+check at boundary
+fill map
+clear map
+draw map col
+draw map entities
+draw map icon b
+setup disk read
+
+## Entities
+
+### Entity classification
+
+classify entity type
+appearance to fontchar
+get entity fontchar
+
+### Entity rendering
+
+render font char
+font pos
+plot char
+find entity at pos
+draw char at pos
+draw blink alt
+draw blink char
+set blink target
+
+### Entity management
+
+reorder char
+adjust char byte8
+advance group link
+print entity name
+print mob name
+print member name
+load char name ptr
+setup char sprite
+load char to fa
+reorder current char
+
+## Game Display
+
+display status bar
+setup text pos
+text renderer
+
+## The Main Loop
+
+# main_entry is the top-level game loop.
+# It iterates characters, dispatches scene events,
+# and runs mob group AI.
+
+main entry
+process mob groups
+show idle status
+start mob turn
+check mob needs turn
+
+## The Game Turn
+
+# game_turn_loop handles one character's complete turn.
+
+game turn loop
+turn dispatch
+commit move
+end turn
+set char state
+set state fight
+check and restrict
+clear restricted
+set restricted
+
+## Input System
+
+input loop
+setup input
+draw input options
+calc record ptr
+setup cursor ext
+setup cursor
+set cursor pos
+validate input
+read input char
+call input init
+clear input buffer
+render input buffer
+copy record data
+game input table
+teardown input
+get input table ptr
+configure input
+start game input
+check combat eligibility
+
+## Combat
+
+# Strike probability manual excerpts are attached to game_turn_loop,
+# but the combat-specific routines start here.
+
+### Encounter detection
+
+check encounter
+find mob at same pos
+check hostile
+get hostility
+check adjacent threats
+sum hostile at pos
+check threats here
+
+### Combat resolution
+
+calc combat strength
+enter combat state
+start combat
+resolve attack
+player attack
+mob attack
+apply damage
+apply damage to current
+handle encounter
+handle mob encounter
+handle event slot
+show locked msg
+set target restricted
+orphaned encounter handler
+
+### Target selection
+
+select combat target
+get entity threat
+load target ptr
+process entity script
+copy f4 to f6 and set
+add willingness
+pick random member
+
+### Combat utilities
+
+map value to string
+auto heal
+increment hp
+modify char stats
+modify current stats
+Hit chance
+
+## NPC AI
+
+ai choose target
+npc move ai
+evaluate direction
+inc mob counters
+find nearest event
+manhattan distance
+
+### Shops
+
+display shop
+advance shop ptr
+add price component
+
+## Events and Scripting
+
+### Between-round random events
+
+random events
+event pick mob
+event pick char
+event faction scene
+event spawn mob
+pick random mob
+pick random char
+
+### Character event processing
+
+process char events
+find mob by faction
+
+### Scene event dispatch
+
+check scene events
+check location match
+scan for hostile
+process scene groups
+scan and reorder
+
+### Turn events
+
+trigger scene event
+pickup treasure
+inc field5 counter
+clear status slots
+clear and display
+update event list
+check can leave
+
+### Script engine
+
+script engine
+script engine#1
+script engine#2
+script engine#3
+script engine#4
+script engine#5
+script advance
+script action indirect
+script helpers
+
+## The Attract Screen
+
+attract screen
+attract loop
+
+## Resident Routines
+
+# The $0500-$07FF region copied from EALDR at boot.
+
+stub entry
+resident data and bytecodes
+context swap
+context swap padding
+resident dispatch
+resident dispatch table
+resident decode dispatch
+decode encrypted addr
+pull two ret addrs
+decode dispatch relay
+resident page tail
+
+## Disk I/O
+
+# The disk VM interpreter and copy-protection verifier.
+
+dos33 rwts
+disk read field
+verify data field
+disk vm loop
+disk vm bytecode
+search addr field
+read and verify
+disk vm sub park stepper
+delay loop
+disk vm sub exit err
+disk vm exit ok
+disk vm exit err
+disk vm misc b49c
+disk vm swap
+disk vm data b4de
+disk vm dispatch
+disk vm pull ip
+disk vm read addr
+disk vm op goto
+disk vm op call1
+disk vm op call0
+disk vm op bnz
+disk vm op lda imm
+disk vm op lda abs
+disk vm op lda idx
+disk vm op call
+disk vm op ret
+disk vm op sta abs
+disk vm op sub imm
+disk vm op inc load
+disk vm trampoline
+disk vm error accum
+disk vm saved state

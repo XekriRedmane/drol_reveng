@@ -1,0 +1,8 @@
+__pycache__/
+*.lock*
+output/
+
+# Ghidra project transient files
+AliBaba.rep/**/tmp*.ps
+AliBaba.rep/**/~journal.bak
+AliBaba.rep/**/~index.bak

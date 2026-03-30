@@ -1,0 +1,11 @@
+services:
+  re:
+    build: .
+    image: drol-re
+    volumes:
+      - .:/project/drol_re
+    environment:
+      - ANTHROPIC_API_KEY
+      - GHIDRA_SERVER_URL=http://host.docker.internal:8089
+    stdin_open: true
+    tty: true

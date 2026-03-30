@@ -1,0 +1,7 @@
+output/
+AliBaba.rep/
+*.dsk
+*.bin
+*.pdf
+.git/
+node_modules/

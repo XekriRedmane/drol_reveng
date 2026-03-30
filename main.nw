@@ -1,0 +1,490 @@
+\documentclass[10pt]{report}
+\setlength{\parskip}{1em plus 0.1em minus 0.2em}
+\usepackage {amsmath}
+\usepackage {noweb}
+\usepackage {graphicx}
+\usepackage {ltablex}
+\usepackage {caption, booktabs}
+% For more space between table rows.
+\newcommand{\ra}[1]{\renewcommand{\arraystretch}{#1}}
+
+% To prevent floatables like tables from leaving their sections.
+\usepackage[section]{placeins}
+
+% To make \thead in tables bold.
+\usepackage{makecell}
+\renewcommand\theadfont{\bfseries}
+
+\usepackage[table,dvipsnames]{xcolor}
+
+\usepackage[colorlinks=true, urlcolor=blue, linkcolor=red]{hyperref}
+
+\usepackage {booktabs}
+
+\usepackage {tikz}
+\usetikzlibrary {positioning, shapes.geometric, shapes.multipart, svg.path, arrows.meta, quotes, calc, decorations.pathreplacing}
+
+\noweboptions {smallcode,longchunks}
+
+% Generate assembly file and tex file with:
+% python -m weave
+%
+% Generate pdf file with:
+% pdflatex --output-directory=output output/main.tex (run twice for two passes)
+%
+% Compile assembly file with:
+% cd output; dasm main.asm -Lmain.lst -omain.bin -f3 -v4
+
+\title{%
+  Drol \\
+  \large Reverse engineered from the Apple II version}
+\author{Xekri Redmane}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+\pagestyle{noweb}
+
+@ \chapter{Drol}
+
+\section{Introduction}
+
+\textbf{Drol} (\href{https://en.wikipedia.org/wiki/Drol}{Wikipedia link}) is an
+action game written by Ai Imai and released in 1983 for the Apple II. It was
+published by \href{https://en.wikipedia.org/wiki/Br%C3%B8derbund}{Broderbund Software}.
+
+The player controls a robot walking or flying through a four story maze, attempting
+to rescue people and animals while avoiding traps and enemies such as alien creatures,
+snakes, eagles, magnets, arrows and axes.
+
+The purpose of this document is to reverse engineer the game. The disk image used is
+from the Internet Archive:
+\begin{itemize}
+  \item \href{https://archive.org/details/a2_asimov_drol}{Drol (a2\_asimov)}
+\end{itemize}
+
+\section{About this document}
+
+The source for this document, [[main.nw]], is a literate programming document. This means the explanatory text is
+interspersed with source code. The assembly code and \LaTeX{} file can be extracted from the document and compiled.
+
+The goal is to provide all the source code necessary to reproduce a binary
+identical to the images extracted from the disk.
+
+The code was reverse-engineered using Ghidra.
+
+The assembly code can then be assembled with [[dasm]] using this command line:
+
+\begin{verbatim}
+    dasm main.asm -omain.bin -f3 -v4
+\end{verbatim}
+
+This document doesn't explain every last detail. It's assumed that the reader can
+find enough details on the 6502 processor and the Apple II series of computers
+to fill in the gaps.
+
+Useful resources:
+
+\begin{itemize}
+\item \href{https://archive.org/details/6502alp}{6502 Assembly Language Programming}, by Lance A. Leventhal, 1979.
+\item \href{https://archive.org/details/aiimp}{Apple II Monitors Peeled}, Apple, 1981.
+\item \href{https://archive.org/details/beneath-apple-dos}{Beneath Apple DOS}, by Don Worth and Pieter Lechner, 1982.
+\item \href{https://archive.org/details/understanding_the_apple_ii}{Understanding the Apple II}, by Jim Sather, 1983.
+\item \href{https://archive.org/details/Beagle_Bros-Poster_1}{Beagle Bros Apple Colors and ASCII Values}, Beagle Bros Micro Software Inc, 1984.
+\item \href{https://archive.org/details/Apple_IIe_Technical_Reference_Manual/mode/1up}{Apple IIe Technical Reference Manual}, Apple, 1985.
+\item \href{https://6502disassembly.com/a2-rom/}{Apple II ROM disassemblies}, collected by Andy McFadden, 2019.
+\item \href{https://www.kreativekorp.com/miscpages/a2info/iomemory.shtml}{I/O Memory}, by Jon Relay.
+\item \href{https://www.masswerk.at/6502/6502_instruction_set.html}{6502 Instruction Set}, by Norbert Landsteiner.
+\end{itemize}
+
+@ \chapter{Boot sequence}
+
+Drol uses a custom Broderbund boot chain, not DOS 3.3. The disk is not
+DOS-formatted and has no catalog. The entire boot sequence is:
+
+\begin{enumerate}
+\item The Disk II controller PROM (P5A) reads Track 0, Sector 0 to [[\$0800]]
+   and jumps to [[\$0801]]. This is the standard Apple II boot process (``boot0'').
+\item Boot1 at [[\$0801]] loads 10 more sectors from Track 0 to [[\$5000--\$59FF]]
+   using the PROM's re-entry point at [[\$Cn5C]].
+\item Boot1 copies the Apple II ROM to language card RAM, relocates the
+   loader and RWTS code, and jumps to the loader.
+\item The loader reads the game data from subsequent tracks into memory
+   and launches the game.
+\end{enumerate}
+
+\section{Disk layout}
+
+The P5A PROM reads sectors in the order they physically appear on the disk
+as it rotates. Due to the 16-sector format's physical interleave, the
+sectors pass under the head in this order:
+
+\begin{center}
+\begin{tabular}{cccccccccccccccc}
+0 & 7 & E & 6 & D & 5 & C & 4 & B & 3 & A & 2 & 9 & 1 & 8 & F \\
+\end{tabular}
+\end{center}
+
+The [[\texttt{.dsk}]] file format stores sectors by sector number (0--F).
+To find the file offset of the Nth sector read by the PROM:
+
+\begin{verbatim}
+    POSITION_ORDER = [0, 7, E, 6, D, 5, C, 4, B, 3, A, 2, 9, 1, 8, F]
+    sector_number  = POSITION_ORDER[N]
+    file_offset    = track * 4096 + sector_number * 256
+\end{verbatim}
+
+\section{Track 0 memory map}
+
+Boot0 reads Sector 0 to [[\$0800]] (boot1 code). Boot1 then reads the next
+10 sectors to [[\$5000--\$59FF]]:
+
+\begin{center}
+\ra{1.3}
+\begin{tabular}{cccl}
+\toprule
+\thead{Position} & \thead{Sector} & \thead{Memory} & \thead{Contents} \\
+\midrule
+0 & 0 & \$0800 & Boot1 \\
+1 & 7 & \$5000 & RWTS: sector read entry, address field reader, data field reader \\
+2 & E & \$5100 & Loader subroutines: drive select, delay, seek, read track, init \\
+3 & 6 & \$5200 & Seek routine continued, nibble constants \\
+4 & D & \$5300 & Read buffer (zeros at boot, filled during sector reads) \\
+5 & 5 & \$5400 & Page destination table (maps sectors to memory pages) \\
+6 & C & \$5500 & Main loader dispatch \\
+7 & 4 & \$5600 & Unused (all zeros) \\
+8 & B & \$5700 & Zero page save area (initialized with boot-time ZP snapshot) \\
+9 & 3 & \$5800 & RWTS high-level code (relocated to \$BE00) \\
+10 & A & \$5900 & Reset handlers and screen address table (relocated to \$BF00) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+After loading, boot1 performs these relocations:
+
+\begin{itemize}
+\item \$D000--\$FFFF: Apple II ROM copied to language card RAM.
+\item \$D000--\$D7FF: Copy of \$5000--\$57FF (loader/RWTS under language card).
+\item \$BE00--\$BEFF: Copy of \$5800--\$58FF (RWTS high-level code).
+\item \$BF00--\$BFFF: Copy of \$5900--\$59FF (reset handlers, screen address table).
+\end{itemize}
+
+The loader code thus lives in two places: at \$5000--\$57FF in main RAM (where
+it executes during loading), and at \$D000--\$D7FF under the language card (a
+backup copy).
+
+\section{Boot1}
+
+Boot1 occupies Track 0, Sector 0 (\$0800--\$08BF). The first byte (\$0800)
+is the sector count for boot0; the PROM reads this value and loads that many
+sectors. Here it is \$01, meaning boot0 loads only Sector 0 itself. After
+loading, boot0 sets [[\$27]] = \$09 (the next destination page) and jumps to
+[[\$0801]].
+
+@ Boot1 is the first code executed after the PROM's boot0. It operates in
+three phases, re-entered at [[\$0801]] by the PROM after each sector read:
+
+\textbf{Phase 1} --- When [[\$27]] = \$09 (immediately, since boot0 just set it):
+switch to hi-res graphics mode, derive the slot number, patch the JMP
+instruction for PROM re-entry, set reset vectors, and redirect
+loading to [[\$5000]] by setting [[\$27]] = \$50.
+
+\textbf{Phase 2} --- While [[\$27]] $<$ \$5A: jump to [[\$Cn5C]] to read the next
+sector. The PROM stores it at page [[\$27]], increments [[\$27]], and re-enters
+[[\$0801]]. This loads 10 sectors to [[\$5000--\$59FF]].
+
+\textbf{Phase 3} --- When [[\$27]] $\ge$ \$5A: all sectors loaded. Copy ROM to
+language card, relocate loader and RWTS, display splash text, and jump
+to the loader entry at [[\$51C0]].
+
+<<boot1.asm>>=
+        PROCESSOR 6502
+
+; Zero page locations used by boot1 and the PROM.
+DEST_PAGE       = $27           ; PROM: destination page for next sector read
+SLOT_X16        = $2B           ; Slot number * 16 (e.g. $60 for slot 6)
+
+; Soft switches for graphics mode.
+SW_HIRES        = $C057         ; Hi-res mode
+SW_PAGE1        = $C054         ; Display page 1
+SW_FULLSCR      = $C052         ; Full screen (no text window)
+SW_GRAPHICS     = $C050         ; Graphics mode (vs text)
+
+; Language card soft switches.
+LC_BANK1_RWROM  = $C081         ; LC bank 1: write RAM, read ROM
+LC_BANK1_ROROM  = $C080         ; LC bank 1: read-only ROM (write-protect RAM)
+
+; Reset and NMI vectors.
+SOFTEV          = $03F2         ; Soft entry vector (reset handler)
+SOFTEV_CHK      = $03F4         ; Checksum for SOFTEV ($03F3 EOR #$A5)
+NMIVEC_LO       = $FFFC         ; NMI vector low byte (in language card)
+NMIVEC_HI       = $FFFD         ; NMI vector high byte
+
+; Monitor ROM routines.
+MON_HOME        = $FC58         ; Clear screen
+
+; Loader variables in $BF00 page.
+LDR_TRACK       = $BF48         ; Current track number
+LDR_SLOT        = $BF49         ; Slot number * 16
+LDR_PHASE       = $BF4A         ; Boot phase counter ($FF = first boot)
+
+; =========================================================================
+;  BOOT1 --- Track 0, Sector 0
+; =========================================================================
+
+        ORG $0800
+
+BOOT1_SECTORS:
+        .BYTE $01               ; Sector count for boot0 (just this sector)
+
+; --- Entry point: PROM jumps here after each sector read ---
+
+BOOT1_ENTRY:                    ; $0801
+        LDA DEST_PAGE           ; Current destination page
+        CMP #$09                ; First entry? (boot0 sets $27=$09)
+        BNE .check_done         ; No, check if loading is complete
+
+; --- Phase 1: first entry after boot0 ---
+
+        BIT SW_HIRES            ; Switch to hi-res graphics mode
+        BIT SW_PAGE1            ; Display page 1
+        BIT SW_FULLSCR          ; Full screen (no text window)
+        BIT SW_GRAPHICS         ; Graphics (not text)
+
+        TXA                     ; X = slot * 16 (from PROM)
+        LSR                     ; Shift right 4 times
+        LSR                     ;   to get slot number
+        LSR                     ;
+        LSR                     ;
+        ORA #$C0                ; Form $Cn (slot ROM page)
+        STA .jmp_reentry+2      ; Patch JMP target high byte
+        STA SOFTEV+1            ; Reset vector high byte = $Cn
+        EOR #$A5                ; Compute checksum
+        STA SOFTEV_CHK          ; Store reset vector checksum
+        LDA #$00
+        STA SOFTEV              ; Reset vector low byte = $00
+        LDA #$5C
+        STA .jmp_reentry+1      ; JMP low byte = $5C (PROM re-entry)
+        LDA #$50
+        STA DEST_PAGE           ; Redirect loading to $5000
+
+; --- Phase 2: continue loading, or Phase 3: done ---
+
+.check_done:                    ; $0833
+        LDA DEST_PAGE
+        CMP #$5A                ; Loaded all 10 sectors? ($5000-$59FF)
+        BCS .loading_done       ; Yes, proceed to phase 3
+.jmp_reentry:
+        JMP $C65C               ; No, read next sector (patched to $Cn5C)
+
+; --- Phase 3: all sectors loaded ---
+
+.loading_done:                  ; $083C
+
+; Copy the entire Apple II ROM ($D000-$FFFF) to language card RAM.
+; Reading $C081 twice selects LC bank 1 for writing with ROM readable.
+; The LDA/STA through the same pointer reads from ROM, writes to RAM.
+
+        LDA LC_BANK1_RWROM      ; LC bank 1: write RAM, read ROM
+        LDA LC_BANK1_RWROM      ; (must read twice to enable writes)
+
+        LDX #$30                ; $30 pages = $D000-$FFFF (48 pages)
+        LDY #$00
+        STY $00                 ; Pointer low = $00
+        LDA #$D0
+        STA $01                 ; Pointer high = $D0
+.copy_rom:
+        LDA ($00),Y             ; Read from ROM
+        STA ($00),Y             ; Write to LC RAM
+        INY
+        BNE .copy_rom
+        INC $01                 ; Next page
+        DEX
+        BNE .copy_rom
+
+; Set NMI vector in language card to point to $BF00 (reset handler).
+
+        LDA #$BF
+        STA NMIVEC_HI           ; NMI vector high = $BF
+        STA SOFTEV+1            ; Reset vector high = $BF
+        EOR #$A5
+        STA SOFTEV_CHK          ; Reset checksum
+        LDA #$00
+        STA NMIVEC_LO           ; NMI vector low = $00
+        STA SOFTEV              ; Reset vector low = $00
+
+; Copy $5800-$59FF to $BE00-$BFFF (RWTS and reset handlers).
+
+        LDX #$00
+.copy_rwts:
+        LDA $5800,X
+        STA $BE00,X
+        LDA $5900,X
+        STA $BF00,X
+        INX
+        BNE .copy_rwts
+
+; Store slot number and initialize loader state.
+
+        LDX SLOT_X16            ; Slot * 16 from PROM
+        STX LDR_SLOT            ; Save for loader
+        LDA #$FF
+        STA LDR_PHASE           ; Phase = $FF (first boot, not yet started)
+        LDA #$00
+        STA LDR_TRACK           ; Current track = 0
+
+; Copy $5000-$57FF to $D000-$D7FF (loader backup under language card).
+; This is a self-modifying loop: the source and destination addresses
+; are incremented in-place.
+
+        LDX #$00
+.copy_loader:
+        LDA $5000,X             ; Source: $5000 (patched)
+        STA $D000,X             ; Dest: $D000 (patched)
+        INX
+        BNE .copy_loader
+        INC .copy_loader+2      ; Increment source page
+        INC .copy_loader+5      ; Increment dest page
+        LDA .copy_loader+2      ; Check source page
+        CMP #$58                ; Done when source reaches $5800
+        BNE .copy_loader
+
+; Switch back to ROM (write-protect language card).
+
+        LDA LC_BANK1_ROROM
+
+; Clear the text screen.
+
+        JSR MON_HOME
+
+; XOR-decode 40 bytes from $08D0 to the text screen at $0400.
+; In this disk image the source bytes are all zero, so $0400 gets
+; filled with $AB (the XOR key), which displays as "+" characters.
+; On the original disk this may have been a Broderbund copyright line.
+
+        LDX #$00
+.decode_text:
+        LDA SPLASH_TEXT,X
+        EOR #$AB
+        STA $0400,X             ; First line of text screen
+        INX
+        CPX #$28                ; 40 columns
+        BNE .decode_text
+
+; Enter the loader.
+
+        JMP $51C0               ; Loader init entry point
+
+; Pad to fill the rest of the sector with zeros.
+; $08D0-$08F7: splash text (XOR-encoded, all zeros in this image).
+
+        DS $D0-(*-$0800),0
+
+SPLASH_TEXT:
+        DS $28,0                ; 40 bytes of encoded text (all $00)
+
+        DS $0900-*,0            ; Pad to end of sector
+
+@
+
+\section{Loader}
+
+After boot1 jumps to [[\$51C0]], the loader takes over. The loader manages
+reading game data from subsequent tracks into memory.
+
+\subsection{Loader entry and dispatch}
+
+The loader has two entry points:
+
+\begin{itemize}
+\item \$5000: Called from the RWTS after a track read. Saves zero page to
+  [[\$5700]], then falls through to [[\$51C0]].
+\item \$51C0: Called from boot1. Restores the slot and track numbers from
+  [[\$BF49]]/[[\$BF48]] to zero page, then jumps to the main dispatch
+  at [[\$5500]].
+\end{itemize}
+
+The main dispatch at [[\$5500]] checks the boot phase counter at [[\$BF4A]]:
+
+\begin{itemize}
+\item If negative (\$FF, first boot): jump to the first-boot path at [[\$5524]],
+  which reads tracks 1--4 into memory (game code and data), copies initial
+  data to the stack page and [[\$0300]], then reads track 5, calls the game
+  init at [[\$4000]], and performs joystick detection.
+\item If non-negative (0--3): load one of four game data sets from tracks 5,
+  10 (\$0A), 15 (\$0F), or 20 (\$14), cycling through phases 0--3.
+\end{itemize}
+
+\subsection{Page destination table}
+
+The page destination table at [[\$5400]] maps sector positions within a track
+group to destination pages in memory. The first 16 entries (offset \$00) are
+used for the first sector of the first track in the group, continuing through
+subsequent tracks until a \$00 terminator.
+
+Track 1--4 page table (offset \$00):
+\begin{verbatim}
+    $5C $5D $04 $05 $06 $07 $08 $09 $0A $0B $0C $0D $0E $0F $10 $11
+    $12 $19 $1A $1B $1C $1D $1E $1F $40 $41 $42 $43 $44 $45 $46 $47
+    $60 $61 $62 $63 $64 $65 $66 $73 $74 $7B $7C $7D $7E $7F $80 $81
+    $82 $83 $84 $85 $86 $87 $88 $89 $8A $8B $5E $5F $00
+\end{verbatim}
+
+Track 5+ page table (offset \$40):
+\begin{verbatim}
+    $02 $13 $14 $15 $16 $17 $18 $67 $68 $69 $6A $6B $6C $6D $6E $6F
+    $70 $71 $72 $75 $76 $77 $78 $79 $7A $8C $8D $8E $8F $90 $91 $92
+    ...
+\end{verbatim}
+
+\subsection{Key loader variables}
+
+\begin{center}
+\ra{1.3}
+\begin{tabular}{ll}
+\toprule
+\thead{Address} & \thead{Description} \\
+\midrule
+\$0D & Current track (zero page, used by seek) \\
+\$0F & Target track for read \\
+\$10 & Page table index \\
+\$2B & Slot * 16 (zero page) \\
+\$BF48 & Current track (persistent, survives ZP save/restore) \\
+\$BF49 & Slot * 16 (persistent) \\
+\$BF4A & Boot phase counter (\$FF = first boot, then 0--3) \\
+\$BFC0 & Screen address table (used by RWTS for sector destinations) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+@ \section{RWTS}
+
+The Read/Write Track/Sector routines handle low-level disk I/O. They live
+at two addresses:
+
+\begin{itemize}
+\item \$5000--\$50C7: Sector reading code (address field parsing, data field
+  decoding via 6-and-2 nibblization). This is the same code that lives
+  under the language card at \$D000.
+\item \$BE00--\$BEFF: High-level RWTS entry points (motor control, multi-sector
+  reads, screen clearing).
+\item \$BF00--\$BF5F: Reset handlers with multiple entry points for different
+  error conditions (displays `R', `P', `L', or `!' on screen).
+\item \$BF50--\$BFBF: Screen buffer management (reads sectors into hi-res
+  page memory).
+\item \$BFC0--\$BFFF: Hi-res screen address lookup table.
+\end{itemize}
+
+The RWTS uses standard Apple II 16-sector nibble encoding with the
+D5~AA~96 (address field) and D5~AA~AD (data field) prologues.
+
+@ \chapter{Game code}
+
+This chapter will contain the reverse-engineered game code as the project
+progresses. The game entry point is [[\$4000]], called by the loader after
+the initial data load.
+
+\end{document}

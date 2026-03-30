@@ -21,7 +21,8 @@ from __future__ import annotations
 import sys
 
 TARGETS: dict[str, tuple[str, str, int]] = {
-    'boot1': ('output/boot1.bin', 'reference/boot1.bin', 0x0800),
+    'boot1':  ('output/boot1.bin',  'reference/boot1.bin',  0x0800),
+    'loader': ('output/loader.bin', 'reference/loader.bin', 0x5000),
 }
 
 

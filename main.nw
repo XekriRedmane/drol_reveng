@@ -392,94 +392,838 @@ SPLASH_TEXT:
 
 \section{Loader}
 
-After boot1 jumps to [[\$51C0]], the loader takes over. The loader manages
-reading game data from subsequent tracks into memory.
-
-\subsection{Loader entry and dispatch}
+After boot1 jumps to [[\$51C0]], the loader takes over. The loader occupies
+[[\$5000--\$59FF]] (loaded from Track 0 by boot1) and manages reading game
+data from subsequent tracks into memory.
 
 The loader has two entry points:
-
 \begin{itemize}
-\item \$5000: Called from the RWTS after a track read. Saves zero page to
-  [[\$5700]], then falls through to [[\$51C0]].
-\item \$51C0: Called from boot1. Restores the slot and track numbers from
+\item \$5000: Re-entry from game code. Saves zero page to [[\$5700]],
+  then falls through to [[\$51C0]].
+\item \$51C0: Entry from boot1. Restores the slot and track numbers from
   [[\$BF49]]/[[\$BF48]] to zero page, then jumps to the main dispatch
   at [[\$5500]].
 \end{itemize}
 
-The main dispatch at [[\$5500]] checks the boot phase counter at [[\$BF4A]]:
+The RWTS (Read/Write Track/Sector) uses standard Apple II 16-sector nibble
+encoding with D5~AA~96 (address field) and D5~AA~AD (data field) prologues.
+The 6-and-2 nibble translate table lives at [[\$52D6--\$53D5]], spanning the
+RWTS work buffers at [[\$5200]] and [[\$5300]].
 
-\begin{itemize}
-\item If negative (\$FF, first boot): jump to the first-boot path at [[\$5524]],
-  which reads tracks 1--4 into memory (game code and data), copies initial
-  data to the stack page and [[\$0300]], then reads track 5, calls the game
-  init at [[\$4000]], and performs joystick detection.
-\item If non-negative (0--3): load one of four game data sets from tracks 5,
-  10 (\$0A), 15 (\$0F), or 20 (\$14), cycling through phases 0--3.
-\end{itemize}
+The \$5800--\$59FF region is relocated by boot1 to \$BE00--\$BFFF and contains
+the high-level RWTS entry, reset handlers, screen buffer routines, and the
+hi-res address lookup table.
 
-\subsection{Page destination table}
+<<loader.asm>>=
+        PROCESSOR 6502
 
-The page destination table at [[\$5400]] maps sector positions within a track
-group to destination pages in memory. The first 16 entries (offset \$00) are
-used for the first sector of the first track in the group, continuing through
-subsequent tracks until a \$00 terminator.
+; =========================================================================
+;  Zero page locations
+; =========================================================================
 
-Track 1--4 page table (offset \$00):
-\begin{verbatim}
-    $5C $5D $04 $05 $06 $07 $08 $09 $0A $0B $0C $0D $0E $0F $10 $11
-    $12 $19 $1A $1B $1C $1D $1E $1F $40 $41 $42 $43 $44 $45 $46 $47
-    $60 $61 $62 $63 $64 $65 $66 $73 $74 $7B $7C $7D $7E $7F $80 $81
-    $82 $83 $84 $85 $86 $87 $88 $89 $8A $8B $5E $5F $00
-\end{verbatim}
+ZP_PTR_LO       = $00          ; General pointer low byte
+ZP_PTR_HI       = $01          ; General pointer high byte
+ZP_DEST_LO      = $04          ; Sector data destination low
+ZP_DEST_HI      = $05          ; Sector data destination high
+ZP_TEMP_A       = $0B          ; Temporary (seek: saved half-track)
+ZP_TEMP_B       = $0C          ; Temporary (seek: accel index / addr checksum)
+ZP_CUR_HTRK     = $0D          ; Current half-track (seek) / current sector
+ZP_TGT_HTRK     = $0E          ; Target half-track (seek)
+ZP_TGT_TRACK    = $0F          ; Target track for read
+ZP_TBL_INDEX    = $10          ; Page table index
+ZP_SLOT_X16     = $2B          ; Slot * 16
+ZP_ADDR_VOL     = $2C          ; Address field: volume
+ZP_ADDR_TRK     = $2D          ; Address field: track (also sector index)
+ZP_ADDR_SEC     = $2E          ; Address field: sector
+ZP_ADDR_CHK     = $2F          ; Address field: checksum
+ZP_JOY_FLAG     = $44          ; Bit 7: joystick present
+ZP_INPUT_LO_1   = $52          ; Input handler pointer 1 low
+ZP_INPUT_HI_1   = $53          ; Input handler pointer 1 high
+ZP_INPUT_LO_2   = $54          ; Input handler pointer 2 low
+ZP_INPUT_HI_2   = $55          ; Input handler pointer 2 high
+ZP_SEC_REMAIN   = $A0          ; Sectors remaining count
+ZP_NREAD_TEMP   = $A0          ; Nibble read temp (shared)
 
-Track 5+ page table (offset \$40):
-\begin{verbatim}
-    $02 $13 $14 $15 $16 $17 $18 $67 $68 $69 $6A $6B $6C $6D $6E $6F
-    $70 $71 $72 $75 $76 $77 $78 $79 $7A $8C $8D $8E $8F $90 $91 $92
-    ...
-\end{verbatim}
+; Sector buffer table: $90-$9F maps sector N to destination page.
+; Entry is 0 if sector already read or not needed.
+ZP_SEC_TABLE    = $90
 
-\subsection{Key loader variables}
+; =========================================================================
+;  Absolute addresses
+; =========================================================================
 
-\begin{center}
-\ra{1.3}
-\begin{tabular}{ll}
-\toprule
-\thead{Address} & \thead{Description} \\
-\midrule
-\$0D & Current track (zero page, used by seek) \\
-\$0F & Target track for read \\
-\$10 & Page table index \\
-\$2B & Slot * 16 (zero page) \\
-\$BF48 & Current track (persistent, survives ZP save/restore) \\
-\$BF49 & Slot * 16 (persistent) \\
-\$BF4A & Boot phase counter (\$FF = first boot, then 0--3) \\
-\$BFC0 & Screen address table (used by RWTS for sector destinations) \\
-\bottomrule
-\end{tabular}
-\end{center}
+GAME_INIT       = $4000         ; Game initialization entry point
 
-@ \section{RWTS}
+; Loader persistent variables (in $BF page, survive ZP save/restore).
+LDR_TRACK       = $BF48         ; Current track number
+LDR_SLOT        = $BF49         ; Slot * 16
+LDR_PHASE       = $BF4A         ; Boot phase counter ($FF = first boot)
 
-The Read/Write Track/Sector routines handle low-level disk I/O. They live
-at two addresses:
+; RWTS relocated addresses (code runs at $BE00/$BF00 after boot1 relocates).
+RWTS_RELOAD_SRC = $BE1E         ; Self-mod: source page for reload loop
+RWTS_RELOAD_DST = $BE21         ; Self-mod: dest page for reload loop
+RWTS_CONT       = $BEA3         ; Continue after RWTS reload
+RWTS_RESET_LC   = $BEE0         ; Reset: copy ROM to language card
+RWTS_SCROLL_UP  = $BF50         ; Scroll screen up routine
+RWTS_SCROLL_DN  = $BF7F         ; Scroll screen down routine
+RWTS_ADDR_TBL   = $BFC0         ; Hi-res screen address lookup table
 
-\begin{itemize}
-\item \$5000--\$50C7: Sector reading code (address field parsing, data field
-  decoding via 6-and-2 nibblization). This is the same code that lives
-  under the language card at \$D000.
-\item \$BE00--\$BEFF: High-level RWTS entry points (motor control, multi-sector
-  reads, screen clearing).
-\item \$BF00--\$BF5F: Reset handlers with multiple entry points for different
-  error conditions (displays `R', `P', `L', or `!' on screen).
-\item \$BF50--\$BFBF: Screen buffer management (reads sectors into hi-res
-  page memory).
-\item \$BFC0--\$BFFF: Hi-res screen address lookup table.
-\end{itemize}
+; Disk I/O soft switches (offset by slot).
+DISK_DATA       = $C08C         ; Read data latch
+DISK_PHASE0_OFF = $C080         ; Stepper motor phase 0 off
+DISK_MOTOR_OFF  = $C088         ; Drive motor off
+DISK_MOTOR_ON   = $C089         ; Drive motor on
 
-The RWTS uses standard Apple II 16-sector nibble encoding with the
-D5~AA~96 (address field) and D5~AA~AD (data field) prologues.
+; Other hardware.
+SW_PADDLE_TRIG  = $C070         ; Trigger paddle timer reset
+SW_PADDLE_BTN0  = $C064         ; Paddle button 0
+SW_PADDLE_BTN1  = $C065         ; Paddle button 1
+
+; Monitor/ROM.
+MON_INIT        = $FB2F         ; Initialize monitor
+MON_HOME        = $FC58         ; Clear screen
+MON_NORMAL      = $FE84         ; Normal text output mode
+ROM_MACHID      = $FBB4         ; Machine identification byte
+
+; =========================================================================
+;  RWTS --- Sector reading ($5000-$50C6)
+; =========================================================================
+
+        ORG $5000
+
+; Entry point from game: save zero page then enter loader.
+RWTS_ENTRY:
+        JMP SAVE_ZP
+
+; -------------------------------------------------------------------------
+;  READ_ADDR_FIELD --- Read and verify a sector address field.
+;
+;  Looks for the D5 AA 96 prologue, reads the 4-byte address field
+;  (volume, track, sector, checksum), verifies the checksum and DE
+;  epilogue. Returns carry clear on success, carry set on error.
+;  Address field values stored at $2C-$2F.
+; -------------------------------------------------------------------------
+
+READ_ADDR_FIELD:                ; $5003
+        SUBROUTINE
+        LDX ZP_SLOT_X16
+.wait_d5:
+        LDA DISK_DATA,X
+        BPL .wait_d5
+.chk_d5:
+        CMP #$D5                ; Address prologue byte 1
+        BNE .wait_d5
+        NOP                     ; Timing adjustment
+.wait_aa:
+        LDA DISK_DATA,X
+        BPL .wait_aa
+        CMP #$AA                ; Address prologue byte 2
+        BNE .chk_d5             ; Retry from D5 check
+        NOP
+.wait_96:
+        LDA DISK_DATA,X
+        BPL .wait_96
+        EOR #$96                ; Address prologue byte 3
+        BNE .chk_d5             ; Retry from D5 check
+
+; Read 4 pairs of odd-even encoded bytes: volume, track, sector, checksum.
+        LDY #$03                ; 4 bytes (Y = 3..0)
+.read_pair:
+        STA ZP_TEMP_B           ; Store running checksum (A=0 on first iter)
+.wait_odd:
+        LDA DISK_DATA,X
+        BPL .wait_odd
+        ROL                     ; Odd byte: shift into position
+        STA ZP_TEMP_A
+.wait_even:
+        LDA DISK_DATA,X
+        BPL .wait_even
+        AND ZP_TEMP_A           ; Even byte: combine
+        STA ZP_ADDR_VOL,Y       ; Store at $2C+Y
+        EOR ZP_TEMP_B           ; Running checksum
+        DEY
+        BPL .read_pair
+
+; Verify checksum (A should be 0) and DE epilogue.
+        TAY
+        BNE ERROR_RETURN        ; Checksum failed
+.wait_de:
+        LDA DISK_DATA,X
+        BPL .wait_de
+        CMP #$DE                ; Address epilogue
+        BNE ERROR_RETURN
+
+SUCCESS_RETURN:                 ; $5048
+        CLC                     ; Success: carry clear
+        RTS
+
+ERROR_RETURN:                   ; $504B
+        SEC                     ; Error: carry set
+        RTS
+
+; -------------------------------------------------------------------------
+;  READ_DATA_FIELD --- Read and decode a 6-and-2 encoded data sector.
+;
+;  Looks for D5 AA AD prologue, reads 342 nibbles into work buffers
+;  at $5200/$5300, decodes them via the translate table at $52D6,
+;  recombines into 256 data bytes stored at ($04),Y.
+;  Returns carry clear on success, carry set on error.
+; -------------------------------------------------------------------------
+
+READ_DATA_FIELD:                ; $504D
+        SUBROUTINE
+        LDX ZP_SLOT_X16
+        LDY #$18                ; Timeout counter
+.wait_d5:
+        DEY
+        BMI ERROR_RETURN
+.wait_dat:
+        LDA DISK_DATA,X
+        BPL .wait_dat
+.chk_d5:
+        CMP #$D5                ; Data prologue byte 1
+        BNE .wait_d5
+        NOP
+.wait_aa:
+        LDA DISK_DATA,X
+        BPL .wait_aa
+        CMP #$AA                ; Data prologue byte 2
+        BNE .chk_d5             ; Back to CMP #$D5
+.wait_ad:
+        LDA DISK_DATA,X
+        BPL .wait_ad
+        EOR #$AD                ; Data prologue byte 3
+        BNE .chk_d5
+
+; Read 86 auxiliary nibbles (2-bit portions) into $5300 buffer (backwards).
+        PHP                     ; Save flags (Z set, A=0)
+        JSR ERROR_RETURN        ; Set carry (harmless, PLP restores)
+        PLP                     ; Restore Z and A=0 as XOR seed
+        LDY #$56                ; 86 nibbles
+.read_aux:
+        STY ZP_TEMP_A
+.wait_aux:
+        LDY DISK_DATA,X
+        BPL .wait_aux
+        EOR NIBBLE_XLAT,Y       ; Decode through translate table
+        LDY ZP_TEMP_A
+        DEY
+        STA NIBBLE_BUF_AUX,Y   ; Store to $5300 buffer (backwards)
+        BNE .read_aux
+
+; Read 256 primary nibbles (6-bit portions) into $5200 buffer (forwards).
+.read_pri:
+        STY ZP_TEMP_A           ; Y=0 on first iter, then loop counter
+.wait_pri:
+        LDY DISK_DATA,X
+        BPL .wait_pri
+        EOR NIBBLE_XLAT,Y
+        LDY ZP_TEMP_A
+        STA NIBBLE_BUF_PRI,Y   ; Store to $5200 buffer
+        INY
+        BNE .read_pri
+
+; Read and verify checksum nibble.
+.wait_chk:
+        LDY DISK_DATA,X
+        BPL .wait_chk
+        EOR NIBBLE_XLAT,Y
+        BNE ERROR_RETURN        ; Checksum mismatch
+
+; Verify DE epilogue.
+.wait_epi:
+        LDA DISK_DATA,X
+        BPL .wait_epi
+        CMP #$DE
+        BNE ERROR_RETURN
+
+; Recombine 6-and-2 encoded data into 256 bytes at ($04).
+; Auxiliary buffer has 2-bit portions, primary has 6-bit portions.
+        LDY #$00
+.reset_x:
+        LDX #$56                ; Aux buffer index (86 entries)
+.decode:
+        DEX
+        BMI .reset_x            ; Wrap X back to $56 when negative
+        LDA NIBBLE_BUF_PRI,Y   ; 6-bit value
+        LSR NIBBLE_BUF_AUX,X   ; Shift out 2 bits from aux
+        ROL                     ; Bit 0 from aux
+        LSR NIBBLE_BUF_AUX,X
+        ROL                     ; Bit 1 from aux
+        STA (ZP_DEST_LO),Y     ; Store decoded byte
+        INY
+        BNE .decode
+        CLC                     ; Success
+        RTS
+
+; =========================================================================
+;  Seek step rate tables
+; =========================================================================
+
+SEEK_ACCEL_RATES:               ; $50C7
+        HEX 01 30 28 24 20 1E 1D 1C
+SEEK_DECEL_RATES:               ; $50CF
+        HEX 70 2C 26 22 1F 1E 1D 1C
+
+; =========================================================================
+;  SEEK --- Move disk arm to target half-track ($50D7)
+;
+;  Input: A = target half-track, $0D = current half-track
+;  Modifies: $0D updated to reflect movement
+; =========================================================================
+
+SEEK:                           ; $50D7
+        SUBROUTINE
+        STA ZP_TGT_HTRK        ; Target half-track
+        LDY #$00
+        STY ZP_TEMP_B           ; Acceleration index = 0
+.loop:
+        LDA ZP_CUR_HTRK        ; Current half-track
+        STA ZP_TEMP_A           ; Save for phase-off step
+        SEC
+        SBC ZP_TGT_HTRK        ; Distance = current - target
+        BEQ .done               ; At target
+        BCS .move_in            ; Current > target: move inward
+        INC ZP_CUR_HTRK        ; Current < target: step outward
+        EOR #$FF                ; Negate distance (make positive)
+        BCC .calc_rate          ; Always taken (carry clear from SBC)
+.move_in:
+        DEC ZP_CUR_HTRK        ; Step inward
+        ADC #$FE                ; A = distance - 2 (carry was set)
+.calc_rate:
+        CMP ZP_TEMP_B           ; Compare distance with accel index
+        BCC .use_dist           ; Use smaller of the two
+        LDA ZP_TEMP_B
+.use_dist:
+        CMP #$08                ; Cap at 7
+        BCS .step               ; If >= 8, use Y as-is
+        TAY                     ; Y = rate index (0-7)
+.step:
+        SEC                     ; Carry set for ROL in SET_PHASE
+        JSR SET_PHASE           ; Turn on new phase
+        LDA SEEK_ACCEL_RATES,Y  ; Acceleration delay
+        JSR DELAY
+        LDA ZP_TEMP_A           ; Saved old half-track
+        CLC                     ; Carry clear for ROL in SET_PHASE_A
+        JSR SET_PHASE_A         ; Turn off old phase
+        LDA SEEK_DECEL_RATES,Y  ; Deceleration delay
+        JSR DELAY
+        INC ZP_TEMP_B           ; Advance acceleration index
+        BNE .loop               ; Always taken
+.done:
+        JSR DELAY               ; Final settling delay
+        CLC                     ; Carry clear for final phase access
+
+; -------------------------------------------------------------------------
+;  SET_PHASE --- Access a stepper motor phase.
+;
+;  Uses $0D (current half-track) to select the phase.
+;  Carry flag selects on (SEC) or off (CLC) via ROL bit position.
+; -------------------------------------------------------------------------
+
+SET_PHASE:                      ; $511B
+        LDA ZP_CUR_HTRK
+SET_PHASE_A:                    ; $511D - entry with A = half-track
+        AND #$03                ; Phase 0-3
+        ROL                     ; Shift: carry→bit0, makes 0/1/2/3 → 0/1/2/3/4/5/6/7
+        ORA ZP_SLOT_X16         ; Add slot offset
+        TAX
+        LDA DISK_PHASE0_OFF,X   ; Access phase soft switch
+        RTS
+
+; -------------------------------------------------------------------------
+;  DELAY --- Delay loop.  A = number of iterations (each ~18 cycles).
+; -------------------------------------------------------------------------
+
+DELAY:                          ; $5127
+        SUBROUTINE
+        LDX #$12                ; Inner loop: 18 iterations
+.inner:
+        DEX
+        BNE .inner
+        NOP
+        SEC                     ; (no-op for timing)
+        SBC #$01                ; Decrement outer counter
+        BNE DELAY
+        RTS
+
+; -------------------------------------------------------------------------
+;  SEEK_TO_TRACK --- Seek to track A with motor on/off.
+;
+;  Input: A = target track
+;  Turns motor on, doubles track number to half-tracks, seeks, motor off.
+; -------------------------------------------------------------------------
+
+SEEK_TO_TRACK:                  ; $5133
+        SUBROUTINE
+        LDX ZP_SLOT_X16
+        CMP DISK_MOTOR_ON,X     ; Turn motor on (side effect of read)
+        CMP ZP_CUR_HTRK        ; Compare target with current track
+        BEQ .done               ; Already there
+        ASL                     ; Double to half-tracks
+        ASL ZP_CUR_HTRK        ; Double current too
+        JSR SEEK                ; Do the seek
+        LDX ZP_SLOT_X16
+.done:
+        CMP DISK_MOTOR_OFF,X    ; Turn motor off
+        RTS
+
+; =========================================================================
+;  READ_SECTORS --- Read all sectors for a track group ($5148)
+;
+;  Uses the page table at $5400 (starting at index ZP_TBL_INDEX) to
+;  determine which pages each sector's data goes to. Reads sectors from
+;  the current track, matching by address field. When all sectors for a
+;  track are read, advances to the next track. Stops when a $00
+;  terminator is found in the page table.
+; =========================================================================
+
+READ_SECTORS:                   ; $5148
+        SUBROUTINE
+
+; Build sector dispatch table: $90-$9F holds destination page for each sector.
+        LDX #$10                ; Clear 17 entries ($90-$A0)
+        LDA #$00
+.clear:
+        STA ZP_SEC_TABLE,X
+        DEX
+        BPL .clear
+
+; Fill sector table from page table. X = sector index, Y = table offset.
+        LDX #$00
+.fill:
+        LDY ZP_TBL_INDEX
+        LDA PAGE_TABLE,Y        ; Get destination page
+        BEQ .read_loop          ; $00 = end of this track's entries
+        STA ZP_SEC_TABLE,X      ; Map sector X to this page
+        INC ZP_TBL_INDEX        ; Advance table pointer
+        INC ZP_SEC_REMAIN       ; Count sectors to read
+        BEQ .read_loop          ; Overflow protection
+        INX
+        CPX #$10                ; Max 16 sectors per track
+        BCC .fill
+
+; Read loop: read sectors until all mapped sectors are done.
+.read_loop:
+        LDA ZP_TGT_TRACK       ; Seek to target track
+        JSR SEEK_TO_TRACK
+.retry:
+        JSR READ_ADDR_FIELD     ; Read address field
+        BCS .retry              ; Error: retry
+        LDA ZP_ADDR_SEC         ; Sector number from disk
+        STA ZP_CUR_HTRK        ; (reuse $0D as temp)
+        CMP ZP_TGT_TRACK       ; Verify we're on the right track
+        BNE .read_loop          ; Wrong track: re-seek
+        LDX ZP_ADDR_TRK        ; Sector number (used as table index)
+        LDA ZP_SEC_TABLE,X     ; Look up destination page
+        BEQ .retry              ; Already read or not needed: skip
+        STA ZP_DEST_HI          ; Set destination page
+        LDA #$00
+        STA ZP_DEST_LO          ; Destination low = $00
+        JSR READ_DATA_FIELD     ; Read and decode sector data
+        BCS .retry              ; Error: retry
+
+; Mark sector as done.
+        LDA #$00
+        LDX ZP_ADDR_TRK
+        STA ZP_SEC_TABLE,X     ; Clear entry
+        DEC ZP_SEC_REMAIN       ; One fewer sector to read
+        BNE .retry              ; More sectors: continue
+
+; Track done. Check if more tracks in this group.
+        INC ZP_TGT_TRACK       ; Next track
+        LDY ZP_TBL_INDEX
+        LDA PAGE_TABLE,Y        ; Check next entry
+        BNE READ_SECTORS        ; Non-zero: more tracks to read
+        RTS                     ; Done with this group
+
+; -------------------------------------------------------------------------
+;  SET_TRACK_AND_TABLE --- Set target track and table offset, then read.
+;
+;  Input: A = starting track, Y = page table offset
+; -------------------------------------------------------------------------
+
+SET_TRACK_AND_TABLE:            ; $519E
+        STY ZP_TBL_INDEX
+        STA ZP_TGT_TRACK
+        JMP READ_SECTORS
+
+; -------------------------------------------------------------------------
+;  SEEK_AND_RESTORE_ZP --- Seek to track A, then restore zero page.
+;
+;  Used to park the head and restore the game's zero page state
+;  after a disk read operation.
+; -------------------------------------------------------------------------
+
+SEEK_AND_RESTORE_ZP:            ; $51A5
+        STA LDR_TRACK           ; Remember track position
+        JSR SEEK_TO_TRACK       ; Seek (also turns motor off)
+        LDX #$00
+.restore:
+        LDA ZP_SAVE,X           ; Restore from save area
+        STA $00,X
+        INX
+        BNE .restore
+        RTS
+
+; -------------------------------------------------------------------------
+;  SAVE_ZP --- Save zero page to $5700 buffer, then enter loader.
+; -------------------------------------------------------------------------
+
+SAVE_ZP:                        ; $51B6
+        LDX #$00
+.save:
+        LDA $00,X
+        STA ZP_SAVE,X
+        INX
+        BNE .save
+        ; Fall through to LOADER_ENTRY
+
+; -------------------------------------------------------------------------
+;  LOADER_ENTRY --- Restore persistent state and dispatch.
+;
+;  Called from boot1 (JMP $51C0) or after SAVE_ZP.
+; -------------------------------------------------------------------------
+
+LOADER_ENTRY:                   ; $51C0
+        LDA LDR_TRACK
+        STA ZP_CUR_HTRK
+        LDA LDR_SLOT
+        STA ZP_SLOT_X16
+        JMP DISPATCH
+
+; Padding and residual data after loader code.
+        DS $51E0-*,0
+        HEX 05 0A 0F 14 00 00 00 00
+        HEX 56 A9 08 20 FF 56 20 00
+        HEX 40 A9 00 8D F8 03 8D FF
+
+; Track table for the 4 game-data loading phases.
+; Phase 0: track 5, Phase 1: track 10, Phase 2: track 15, Phase 3: track 20.
+TRACK_TABLE:                    ; $51F8
+        HEX 05 0A 0F 14
+
+; Residual data in sector (not referenced by loader code).
+        HEX A9 43 8D F9
+
+; =========================================================================
+;  Nibble buffers and translate table ($5200-$53FF)
+;
+;  $5200-$52FF: Primary nibble buffer (256 bytes, overwritten each read)
+;  $5300-$5355: Auxiliary nibble buffer (86 bytes, overwritten each read)
+;  $52D6-$53D5: 6-and-2 nibble translate table (256 bytes, persistent)
+;
+;  The translate table maps raw disk byte values to 6-bit values (0-63).
+;  Only entries at offsets $96-$FF are valid; others are zero.
+;  The table overlaps both buffers but is never overwritten by them:
+;  aux writes go to $5300-$5355, primary writes go to $5200-$52FF,
+;  and table reads go to $536C-$53D5.
+; =========================================================================
+
+        ORG $5200
+NIBBLE_BUF_PRI:                 ; $5200 - primary nibble buffer
+
+; Initial contents from disk (overwritten during first read).
+; This data happens to partially duplicate code from $555F but is never executed.
+        HEX 03 A9 6B 8D FA 03 A9 93 8D FB 03 A9 BB 8D FC 03
+        HEX AD 70 C0 A2 04 A0 00 AD 64 C0 0D 65 C0 10 15 88
+        HEX D0 F5 CA D0 F2 A9 19 85 52 85 54 A9 62 85 53 85
+        HEX 55 D0 0F 00 A9 61 85 52 A9 62 85 54 A9 C0 85 53
+        HEX 85 55 A9 08 8D BA 72 AD B4 FB C9 08 D0 0A A9 CB
+        HEX 8D 22 60 A9 CC 8D 0E 60 6C 4E 00 48 A2 00 B5 00
+        HEX BC 00 57 94 00 9D 00 57 E8 D0 F3 68 60 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 05 0A 0F 14 00 00 00 00 3C 00 00 20 20
+        HEX 00 00 00 00 00 20 20 00 00 00 00 00 20 20 00 00
+        HEX 00 00 00 20 2E 20 00 00 00 00 20 3F 20 00 00 00
+        HEX 00 20 3B 30 00 00 00 00 20 3B 38 20 20 2A 20 22
+        HEX 2E 3C 2F 21 2A 20
+
+; Nibble translate table: maps raw disk byte values to 6-bit values.
+; Spans $52D6-$53D5 (256 bytes). Only entries for disk bytes $96-$FF
+; (at offsets $536C-$53D5) contain valid values 0-63.
+NIBBLE_XLAT:                    ; $52D6
+        HEX 22 31 3E 3F 35 20 20 22 3F 3F
+        HEX 21 3C 2A 20 20 2F 3F 3E 3C 2A 20 20 20 26 3F 38
+        HEX 00 00 20 20 20 2F 20 00 00 00 20 20 2F 00 00 01
+
+        ORG $5300
+NIBBLE_BUF_AUX:                 ; $5300 - auxiliary nibble buffer
+; First $6C bytes are work buffer (overwritten during reads).
+; $536C-$53D5: 6-and-2 decode values (disk bytes $96-$FF → 0-63).
+; Value 0 at $536C maps disk byte $96 to decoded value 0.
+; Zeros in non-$96..$FF positions indicate invalid disk bytes.
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00
+        HEX 02 03 00 04 05 06 00 00 00 00 00 00 07 08 00 00
+        HEX 00 09 0A 0B 0C 0D 00 00 0E 0F 10 11 12 13 00 14
+        HEX 15 16 17 18 19 1A 00 00 00 00 00 00 00 00 00 00
+        HEX 00 1B 00 1C 1D 1E 00 00 00 1F 00 00 20 21 00 22
+        HEX 23 24 25 26 27 28 00 00 00 00 00 29 2A 2B 00 2C
+        HEX 2D 2E 2F 30 31 32 00 00 33 34 35 36 37 38 00 39
+        HEX 3A 3B 3C 3D 3E 3F 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+; =========================================================================
+;  Page destination table ($5400)
+; =========================================================================
+
+        ORG $5400
+PAGE_TABLE:
+; Track group 1-4 (offset $00): first boot loads game code/data.
+        HEX 5C 5D 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11
+        HEX 12 19 1A 1B 1C 1D 1E 1F 40 41 42 43 44 45 46 47
+        HEX 60 61 62 63 64 65 66 73 74 7B 7C 7D 7E 7F 80 81
+        HEX 82 83 84 85 86 87 88 89 8A 8B 5E 5F 00 00 00 00
+
+; Track group 5+ (offset $40): game data reload phases.
+PAGE_TABLE_RELOAD:
+        HEX 02 13 14 15 16 17 18 67 68 69 6A 6B 6C 6D 6E 6F
+        HEX 70 71 72 75 76 77 78 79 7A 8C 8D 8E 8F 90 91 92
+        HEX 93 94 95 96 97 98 99 9A 9B 9C 9D 9E 9F A0 A1 A2
+        HEX A3 A4 A5 A6 A7 A8 A9 AA AB AC AD AE AF B0 B1 B2
+        HEX B3 B4 B5 B6 B7 B8 B9 BA BB BC BD 00 00 00 00 00
+
+        DS $5500-*,0
+
+; =========================================================================
+;  DISPATCH --- Main loader dispatch ($5500)
+; =========================================================================
+
+        ORG $5500
+DISPATCH:                       ; $5500
+        SUBROUTINE
+
+; Check boot phase counter.
+        LDX LDR_PHASE
+        BPL .reload             ; >= 0: reload game data phase
+        JMP FIRST_BOOT          ; $FF: first boot
+
+; --- Reload path: load one set of game data (phases 0-3) ---
+.reload:
+        INX                     ; Advance phase
+        TXA
+        AND #$03                ; Wrap to 0-3
+        TAX
+        BIT ZP_JOY_FLAG        ; Check joystick present flag
+        BMI .store_phase        ; If joystick present, keep phase
+        LDX #$00               ; No joystick: always use phase 0
+.store_phase:
+        STX LDR_PHASE          ; Store new phase
+        LDY #$40               ; Page table offset = $40 (reload table)
+        LDA TRACK_TABLE,X      ; Get track for this phase
+        JSR SET_TRACK_AND_TABLE ; Read sectors from that track
+        LDA #$08               ; Park head at track 8
+        JSR SEEK_AND_RESTORE_ZP
+        RTS
+
+; =========================================================================
+;  FIRST_BOOT --- First-time boot sequence ($5524)
+; =========================================================================
+
+FIRST_BOOT:                     ; $5524
+        SUBROUTINE
+
+; --- Phase 1: Read tracks 1-4 (main game code and data) ---
+        LDA #$01               ; Starting track = 1
+        LDY #$00               ; Page table offset = $00
+        JSR SET_TRACK_AND_TABLE
+
+; Copy loaded data to stack page ($0100) and $0300.
+; The first two sectors loaded ($5C00 and $5D00 pages) contain
+; initial stack and $0300 data.
+        LDY #$00
+.copy_init:
+        LDA $5C00,Y
+        STA $0100,Y            ; Stack page
+        LDA $5D00,Y
+        STA $0300,Y            ; $0300 page
+        INY
+        CPY #$F0               ; Copy 240 bytes (leave top 16 for stack)
+        BCC .copy_init
+
+; Mark first boot complete.
+        INC LDR_PHASE          ; $FF -> $00
+
+; Reset stack and load track 5.
+        LDX #$FF
+        TXS                    ; Reset stack pointer
+        LDA #$05               ; Track 5
+        LDY #$40               ; Page table offset (reload table)
+        JSR SET_TRACK_AND_TABLE
+        LDA #$08               ; Park head at track 8
+        JSR SEEK_AND_RESTORE_ZP
+
+; --- Phase 2: Initialize game ---
+        JSR GAME_INIT           ; $4000
+
+; Set up vectors at $03F8-$03FF.
+        LDA #$00
+        STA $03F8
+        STA $03FF
+        LDA #$43
+        STA $03F9
+        LDA #$6B
+        STA $03FA
+        LDA #$93
+        STA $03FB
+        LDA #$BB
+        STA $03FC
+
+; --- Phase 3: Detect joystick ---
+; Read paddle buttons; if either is active (low), joystick is present.
+        LDA SW_PADDLE_TRIG     ; Reset paddle timers
+        LDX #$04               ; Outer timeout
+        LDY #$00               ; Inner timeout
+.joy_loop:
+        LDA SW_PADDLE_BTN0
+        ORA SW_PADDLE_BTN1
+        BPL .joy_found          ; Bit 7 clear = button active = joystick
+        DEY
+        BNE .joy_loop
+        DEX
+        BNE .joy_loop
+
+; No joystick: use keyboard input handlers.
+        LDA #$19
+        STA ZP_INPUT_LO_1
+        STA ZP_INPUT_LO_2
+        LDA #$62
+        STA ZP_INPUT_HI_1
+        STA ZP_INPUT_HI_2
+        BNE .patch              ; Always taken
+
+        BRK                    ; (dead byte, never reached)
+
+; Joystick detected: point input handlers to hardware buttons.
+.joy_found:
+        LDA #$61
+        STA ZP_INPUT_LO_1     ; ($52) = $C061 (paddle button 0)
+        LDA #$62
+        STA ZP_INPUT_LO_2     ; ($54) = $C062 (paddle button 1)
+        LDA #$C0
+        STA ZP_INPUT_HI_1
+        STA ZP_INPUT_HI_2
+
+; --- Phase 4: Machine-specific patches ---
+.patch:
+        LDA #$08
+        STA $72BA               ; Game code patch
+
+; Check machine type for Apple IIc-specific patches.
+        LDA ROM_MACHID          ; $FBB4
+        CMP #$08                ; Apple IIc identifier?
+        BNE .restore_zp
+        LDA #$CB
+        STA $6022               ; Patch game code for IIc
+        LDA #$CC
+        STA $600E               ; Patch game code for IIc
+
+; Restore zero page and jump to game.
+.restore_zp:
+        LDX #$00
+.restore:
+        LDA ZP_SAVE,X
+        DC.B $9D,$00,$00        ; STA $0000,X (forced absolute addressing)
+        INX
+        BNE .restore
+        JMP ($004E)             ; Indirect jump through ZP $4E/$4F (game entry)
+
+; Padding with residual data.
+        DS $55F2-*,0
+        HEX 05 0A 0F 14         ; Track numbers (unreferenced copy)
+        DS $55FC-*,0
+        HEX 04 A5 00 04         ; Residual data
+
+
+; =========================================================================
+;  Empty page ($5600) and ZP save area ($5700)
+; =========================================================================
+
+        ORG $5600
+        DS $100,0               ; Unused page
+
+        ORG $5700
+ZP_SAVE:                        ; Zero page save/restore buffer
+        HEX 80 00 00 06 00 00 30 00 04 01 01 01 01 01 01 00
+        HEX 00 40 50 00 03 3B 63 00 00 00 00 00 00 FF 01 09
+        HEX 00 00 00 00 00 00 00 00 00 00 20 00 00 00 27 00
+        HEX 40 FF FF FF 00 00 30 C0 30 01 00 00 00 00 00 00
+        HEX 00 0B 0A 0F 00 00 00 00 01 01 6B 02 02 00 A3 72
+        HEX 00 00 61 C0 62 C0 00 00 00 00 00 00 00 00 04 03
+        HEX 22 4A 70 90 B6 DE 56 DA 2A 56 82 6C AE 2A 98 C4
+        HEX 40 C4 43 6B 93 93 93 6B 6B 43 43 43 6B 93 00 24
+        HEX 48 70 98 00 30 58 80 A8 7C 01 01 01 00 FF FF FF
+        HEX BC AB AB FF 56 00 58 00 55 00 00 00 00 00 00 00
+        HEX DF ED EF F7 00 0C 08 18 08 00 00 01 3E 00 4D 00
+        HEX 00 01 FF 01 01 FF FF FF FF 00 48 92 DA 84 83 81
+        HEX 80 80 01 03 04 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 01 52 03 4E 88 CC EE FF 01 61 03 55
+        HEX 01 04 03 80 FF 11 14 16 18 6A 6A 6A 6A 02 02 01
+        HEX 01 1A 14 83 75 0C 02 01 D0 00 00 00 00 00 00 00
+
+; =========================================================================
+;  RWTS high-level code ($5800, relocated to $BE00 by boot1)
+; =========================================================================
+
+        ORG $5800
+RWTS_HIGH:
+; These routines execute at $BE00 after relocation by boot1.
+; Absolute address references within this code use $BExx/$BFxx addresses
+; because that is where the code runs. The bytes are the same regardless
+; of the ORG used for assembly.
+
+        HEX AE 49 BF BD 89 C0 20 50 BF E6 A0 E6 A1 AE 49 BF
+        HEX A9 D0 8D 1E BE A9 50 8D 21 BE A2 00 BD 00 D0 9D
+        HEX 00 50 E8 D0 F7 EE 1E BE EE 21 BE AD 21 BE C9 58
+        HEX D0 EA 20 00 50 4C A3 BE 8C C0 10 FB 2A 85 A0 BD
+        HEX 8C C0 10 FB 25 A0 91 A2 C8 D0 EC 0E FF FF BD 8C
+        HEX C0 10 FB C9 D4 D0 B9 E6 A3 C6 A1 D0 DA 4C A0 BE
+        HEX 4C 22 FC A0 77 4C E0 E3 A0 7B D0 F9 20 54 E2 A5
+        HEX DA D0 07 A5 DB D0 03 4C 7E E7 06 CE 26 CF 26 E6
+        HEX 26 E7 A5 E6 C5 DA A5 E7 E5 DB 90 0A 85 E7 A5 E6
+        HEX E5 DA 85 E6 E6 CE 88 D0 E1 60 FF FF FF FF FF FF
+        HEX 20 00 5C 20 7F BF A2 21 BD 80 73 85 A0 BD 40 74
+        HEX 85 A1 A0 27 A9 00 91 A0 88 10 FB E8 E0 BC 90 E8
+        HEX A9 00 A0 40 85 A0 84 A1 A2 20 A0 78 91 A0 C8 10
+        HEX FB A0 F8 91 A0 C8 30 FB E6 A1 CA D0 ED 60 80 83
+        HEX AD 81 C0 AD 81 C0 A0 00 A9 D0 84 A0 85 A1 B1 A0
+        HEX 91 A0 C8 D0 F9 E6 A1 D0 F5 2C 80 C0 60 4C 55 12
+
+; =========================================================================
+;  Reset handlers and screen address table ($5900, relocated to $BF00)
+; =========================================================================
+
+        ORG $5900
+RESET_HANDLERS:
+        HEX A9 D2 2C A9 D0 2C A9 CC 2C A9 A1 48 20 E0 BE 20
+        HEX 2F FB 20 58 FC 20 84 FE 68 8D 00 04 A0 00 98 99
+        HEX 00 BD C8 D0 FA CE 21 BF 2C 30 C0 AD 21 BF C9 08
+        HEX B0 EA 8D F3 03 8D F4 03 AD 49 BF 4A 4A 4A 4A 09
+        HEX C0 E9 00 48 A9 FF 48 60 08 60 00 A8 C8 F0 03 4C
+        HEX A0 28 A9 40 84 A0 85 A1 A2 00 BD C0 BF 85 A2 BD
+        HEX C1 BF 85 A3 A0 27 B1 A2 91 A0 88 10 F9 18 A5 A0
+        HEX 69 28 85 A0 90 02 E6 A1 E8 E8 E0 40 90 DC 60 A0
+        HEX 00 A9 45 84 A0 85 A1 A2 3E BD C0 BF 85 A2 BD C1
+        HEX BF 85 A3 A0 27 B1 A0 91 A2 88 10 F9 38 A5 A0 E9
+        HEX 28 85 A0 B0 02 C6 A1 CA CA 10 DE A2 27 BD 00 03
+        HEX 9D D0 53 9D D0 57 9D D0 5B 9D D0 5F CA 10 EE 60
+
+; Hi-res screen address lookup table.
+SCREEN_ADDR_TABLE:              ; $59C0 → $BFC0
+        HEX 80 40 00 41 80 41 00 42 00 44 80 44 00 45 80 45
+        HEX 00 48 80 48 00 49 80 49 00 4C 80 4C 00 4D 80 4D
+        HEX 00 50 80 50 00 51 80 51 00 54 80 54 00 55 80 55
+        HEX 00 58 80 58 00 59 80 59 00 5C 80 5C 00 5D 80 5D
+
+@
 
 @ \chapter{Game code}
 

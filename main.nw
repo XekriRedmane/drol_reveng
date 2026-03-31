@@ -2099,11 +2099,13 @@ ATTRACT_ANIM_3  = $1813         ; STUB — attract animation 3
 ATTRACT_ANIM_4  = $1844         ; STUB — attract animation 4
 GAME_START_INIT = $13A4         ; STUB — game start initialization
 
-; --- BIT targets (read-only during attract, data addresses) ---
-ATTRACT_BIT_1   = $6378         ; Read target for BIT NOP
-ATTRACT_BIT_2   = $63B4         ; Read target for BIT NOP
-ATTRACT_BIT_3   = $646D         ; Read target for BIT NOP
-ATTRACT_BIT_4   = $6409         ; Read target for BIT NOP
+; --- Movement subroutines (toggled via self-modifying JSR/BIT) ---
+; The main loop has 4 slots that are either JSR (active) or BIT (inactive).
+; The input handler toggles these to enable the pressed direction.
+DO_ASCEND       = $6378         ; STUB — ascend / move up
+DO_DESCEND      = $63B4         ; STUB — descend / move down
+DO_MOVE_LEFT    = $646D         ; STUB — move left
+DO_MOVE_RIGHT   = $6409         ; STUB — move right
 
 ; --- Soft switches ---
 KEYBOARD        = $C000         ; Keyboard data (bit 7 = key available)
@@ -2312,6 +2314,231 @@ GAME_INIT_EXTRA:
         HEX 9D A8 33 9D 50 32 C8 B1 FE 9D 28 35 9D
 @ %def GAME_INIT_EXTRA
 
+@ \chapter{Input system}
+
+\section{Input dispatcher}
+
+[[INPUT\_DISPATCH]] at \$6000 handles keyboard and joystick input during
+gameplay. If the input mode flag (\$48) is negative, it delegates to the
+joystick handler at \$012B. Otherwise it reads the keyboard and processes
+five keys:
+
+\begin{itemize}
+\item Right arrow (\$95): enable [[DO\_MOVE\_RIGHT]], disable [[DO\_MOVE\_LEFT]]
+\item Left arrow (\$88): enable [[DO\_MOVE\_LEFT]], disable [[DO\_MOVE\_RIGHT]]
+\item `A' (\$C1): fire/ascend --- enable [[DO\_ASCEND]], disable [[DO\_DESCEND]],
+  search for a rescuable entity within range
+\item `Z' (\$DA): descend --- enable [[DO\_DESCEND]], disable [[DO\_ASCEND]],
+  search for a rescuable entity, advance floor counter
+\item Space (\$A0): set jump flag (\$05 = \$FF)
+\end{itemize}
+
+Direction keys work by patching the opcode byte of the movement slots in
+the main loop: \$20 (JSR) to enable, \$2C (BIT) to disable.
+
+<<drol input defines>>=
+
+; --- Input constants ---
+KEY_RIGHT       = $95           ; Right arrow key code
+KEY_LEFT        = $88           ; Left arrow key code
+KEY_ACTION      = $C1           ; 'A' key code (fire/ascend)
+KEY_DESCEND     = $DA           ; 'Z' key code (descend)
+KEY_JUMP        = $A0           ; Space key code (jump)
+OPCODE_JSR      = $20           ; JSR opcode (enable direction)
+OPCODE_BIT      = $2C           ; BIT abs opcode (disable direction)
+
+; --- Game code stubs (referenced by input) ---
+JOYSTICK_HANDLER = $012B        ; STUB — joystick input handler
+@
+
+<<input dispatch>>=
+
+        ORG $6000
+INPUT_DISPATCH:
+        SUBROUTINE
+        ; Keyboard/joystick input dispatcher.
+        ;
+        ; Inputs:
+        ;   $48 — input mode (positive = keyboard, negative = joystick)
+        ;
+        ; Behavior:
+        ;   Joystick mode: delegates to JOYSTICK_HANDLER.
+        ;   Keyboard mode: reads $C000, dispatches on key code.
+        ;   Direction keys patch main loop movement slots (JSR/BIT toggle).
+        ;   Action keys search for rescuable entities within range.
+        ;
+        ; Modifies:
+        ;   SMC_ASCEND, SMC_DESCEND, SMC_MOVE_LEFT, SMC_MOVE_RIGHT,
+        ;   ZP $02-$07, $0B-$0D, $1D, $8D+X
+        ; Clobbers: A, X, Y
+
+        LDA $48                 ; Input mode flag
+        BPL .keyboard           ; Positive = keyboard
+        JMP JOYSTICK_HANDLER    ; Negative = joystick
+
+; --- Keyboard handler ---
+.keyboard:
+        LDA KEYBOARD            ; Read keyboard
+        BMI .got_key            ; Bit 7 set = key available
+        RTS                     ; No key pressed
+.got_key:
+
+; --- Right arrow ---
+        CMP #KEY_RIGHT
+        BNE .check_left
+        BIT KBDSTROBE           ; Clear keyboard strobe
+        STA $07                 ; Store key code
+        LDY #OPCODE_JSR
+        STY SMC_MOVE_RIGHT      ; Enable move right
+        LDY #OPCODE_BIT
+        STY SMC_MOVE_LEFT       ; Disable move left
+        RTS
+
+; --- Left arrow ---
+.check_left:
+        CMP #KEY_LEFT
+        BNE .check_action
+        BIT KBDSTROBE
+        STA $07
+        LDY #OPCODE_JSR
+        STY SMC_MOVE_LEFT       ; Enable move left
+        LDY #OPCODE_BIT
+        STY SMC_MOVE_RIGHT      ; Disable move right
+        RTS
+
+; --- 'A' key (fire / ascend) ---
+.check_action:
+        CMP #KEY_ACTION
+        BNE .check_descend
+        BIT KBDSTROBE
+        LDY #OPCODE_JSR
+        STY SMC_ASCEND          ; Enable ascend
+        LDY #OPCODE_BIT
+        STY SMC_DESCEND         ; Disable descend
+        LDA $03                 ; Current floor/level
+        BMI .clamp_low
+        CMP #$03
+        BCC .clamp_low
+        CMP #$0A
+        BCC .set_action
+        LDA #$09                ; Clamp high
+        STA $03
+        BPL .set_action
+.clamp_low:
+        LDA #$03                ; Clamp low
+        STA $03
+.set_action:
+        LDY #$01
+        STY $02                 ; Set action flag
+        DEY
+        STY $07                 ; Clear key code
+        DEY
+        STY $0D                 ; Set search direction ($FF)
+        LDX $41                 ; Number of entities
+.search_entity:
+        SEC
+        LDA $66,X               ; Entity Y position
+        SBC $4A                 ; Player Y position
+        CMP #$18                ; Distance check
+        BCS .next_entity
+        CMP #$15
+        BCC .next_entity
+        LDY $0B                 ; Current rescue index
+        DEY
+        BEQ .next_entity
+        LDA $03F8,Y             ; Entity type table
+        CMP $72,X               ; Compare with entity attribute
+        BEQ .found_entity
+.next_entity:
+        DEX
+        BPL .search_entity
+        RTS                     ; No entity found
+.found_entity:
+        STY $0B                 ; Update rescue index
+        LDA #$01
+        STA $8D,X               ; Activate entity
+        STA $1D                 ; Set entity-found flag
+        LDA #$00
+        STA $04                 ; Clear state
+        RTS
+
+; --- 'Z' key (descend) ---
+.check_descend:
+        CMP #KEY_DESCEND
+        BNE .check_jump
+        BIT KBDSTROBE
+        LDA $0D                 ; Check current direction
+        BMI .check_floor
+        LDX $41                 ; Number of entities
+.search_descend:
+        SEC
+        LDA $66,X               ; Entity Y position
+        SBC $4A                 ; Player Y position
+        CMP #$18
+        BCS .no_match_d
+        CMP #$15
+        BCC .no_match_d
+        LDY $0C                 ; Descend rescue index
+        LDA $03F8,Y             ; Entity type table
+        CMP $72,X               ; Compare entity attribute
+        BEQ .found_descend
+.no_match_d:
+        DEX
+        BPL .search_descend
+.check_floor:
+        LDA $06                 ; Floor counter
+        LDX $0C
+        CMP $83,X               ; Compare with limit
+        BEQ .done_descend
+        BNE .set_descend_dir
+.found_descend:
+        INY
+        STY $0C                 ; Update descend index
+        LDY #$00
+        STY $04                 ; Clear state
+        INY
+        STY $8D,X               ; Activate entity
+        STY $1D                 ; Set entity-found flag
+        CLC
+        LDA $06                 ; Advance floor counter
+        ADC #$04
+        STA $06
+.set_descend_dir:
+        LDA #OPCODE_JSR
+        STA SMC_DESCEND         ; Enable descend
+        LDA #OPCODE_BIT
+        STA SMC_ASCEND          ; Disable ascend
+        LDA $03                 ; Current floor
+        BMI .clamp_low_d
+        CMP #$03
+        BCC .clamp_low_d
+        CMP #$0A
+        BCC .set_descend
+        LDA #$09
+        STA $03
+        BPL .set_descend
+.clamp_low_d:
+        LDA #$03
+        STA $03
+.set_descend:
+        LDY #$FF
+        STY $02                 ; Set descend direction flag
+        INY
+        STY $07                 ; Clear key code
+.done_descend:
+        RTS
+
+; --- Space key (jump) ---
+.check_jump:
+        CMP #KEY_JUMP
+        BNE .unknown_key
+        LDY #$FF
+        STY $05                 ; Set jump flag
+        BIT KBDSTROBE
+.unknown_key:
+        RTS
+@ %def INPUT_DISPATCH
+
 @ \chapter{Game loop}
 
 The main game loop lives at \$67CB in the persistent game code area
@@ -2363,14 +2590,19 @@ SMC_INPUT = *
         JSR INPUT_DISPATCH      ; Input handler (BIT during attract)
         JSR INPUT_PROCESS       ; Input processing
 
-; --- Attract-mode entry point ($67D7) ---
-; These BIT instructions are harmless reads used as 3-byte NOPs.
-; The attract loop enters here via JSR ATTRACT_ENTRY, skipping input.
+; --- Movement direction slots ($67D7) ---
+; Each slot is either JSR (active direction) or BIT (inactive / attract).
+; The input handler patches the opcode byte to toggle directions.
+; During attract mode, all four are BIT (harmless reads).
 ATTRACT_ENTRY:
-        BIT ATTRACT_BIT_1       ; (attract entry) read only
-        BIT ATTRACT_BIT_2       ; read only
-        BIT ATTRACT_BIT_3       ; read only
-        BIT ATTRACT_BIT_4       ; read only
+SMC_ASCEND = *
+        BIT DO_ASCEND           ; Ascend (JSR when active)
+SMC_DESCEND = *
+        BIT DO_DESCEND          ; Descend (JSR when active)
+SMC_MOVE_LEFT = *
+        BIT DO_MOVE_LEFT        ; Move left (JSR when active)
+SMC_MOVE_RIGHT = *
+        BIT DO_MOVE_RIGHT       ; Move right (JSR when active)
 
         JSR MOVE_PHYSICS        ; Movement / physics
         JSR COLLISION_DETECT    ; Collision detection
@@ -2412,7 +2644,7 @@ SMC_ATTRACT = *
         JMP GAME_OVER           ; Game over handler
 .next_frame:
         JMP MAIN_LOOP           ; Next frame
-@ %def MAIN_LOOP SMC_INPUT ATTRACT_ENTRY SMC_RENDER SMC_ATTRACT
+@ %def MAIN_LOOP SMC_INPUT ATTRACT_ENTRY SMC_ASCEND SMC_DESCEND SMC_MOVE_LEFT SMC_MOVE_RIGHT SMC_RENDER SMC_ATTRACT
 
 \section{Title screen and attract}
 
@@ -2520,10 +2752,12 @@ COPY_HGR1_TO_HGR2:
 <<drol.asm>>=
         PROCESSOR 6502
 <<drol defines>>
+<<drol input defines>>
 <<game init>>
 <<game init padding>>
 <<title screen data>>
 <<game init remaining>>
+<<input dispatch>>
 <<main loop>>
 <<attract loop>>
 <<copy hgr1 to hgr2>>

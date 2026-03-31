@@ -236,6 +236,12 @@ MON_HOME        = $FC58         ; Clear screen
 LDR_TRACK       = $BF48         ; Current track number
 LDR_SLOT        = $BF49         ; Slot number * 16
 LDR_PHASE       = $BF4A         ; Boot phase counter ($FF = first boot)
+
+; Loader entry point (in loader binary, not accessible by label).
+LOADER_INIT     = $51C0         ; Loader init entry point
+
+; Text screen.
+TEXT_SCREEN      = $0400         ; First line of text screen
 @
 
 <<boot1 entry>>=
@@ -393,14 +399,14 @@ BOOT1_ENTRY:                    ; $0801
 .decode_text:
         LDA SPLASH_TEXT,X
         EOR #$AB
-        STA $0400,X             ; First line of text screen
+        STA TEXT_SCREEN,X       ; First line of text screen
         INX
         CPX #$28                ; 40 columns
         BNE .decode_text
 
 ; Enter the loader.
 
-        JMP $51C0               ; Loader init entry point
+        JMP LOADER_INIT         ; Loader init entry point
 
 ; Pad to fill the rest of the sector with zeros.
 ; $08D0-$08F7: splash text (XOR-encoded, all zeros in this image).
@@ -575,6 +581,20 @@ MON_INIT        = $FB2F         ; Initialize monitor
 MON_HOME        = $FC58         ; Clear screen
 MON_NORMAL      = $FE84         ; Normal text output mode
 ROM_MACHID      = $FBB4         ; Machine identification byte
+
+; Staging buffers (loaded from track 1, copied to $0100/$0300).
+STAGE_STACK     = $5C00         ; Staging buffer for stack page ($0100)
+STAGE_VECTORS   = $5D00         ; Staging buffer for vector page ($0300)
+STACK_PAGE      = $0100         ; Stack page destination
+VECTOR_PAGE     = $0300         ; Vector page destination
+
+; Game code patch addresses (not yet RE'd).
+PATCH_72BA      = $72BA         ; STUB — game code patch
+PATCH_6022      = $6022         ; STUB — Apple IIc patch location
+PATCH_600E      = $600E         ; STUB — Apple IIc patch location
+
+; Game entry.
+ZP_GAME_ENTRY   = $4E           ; Indirect jump vector for game entry ($4E/$4F)
 @
 
 <<rwts entry>>=
@@ -1221,10 +1241,10 @@ FIRST_BOOT:                     ; $5524
 ; initial stack and $0300 data.
         LDY #$00
 .copy_init:
-        LDA $5C00,Y
-        STA $0100,Y            ; Stack page
-        LDA $5D00,Y
-        STA $0300,Y            ; $0300 page
+        LDA STAGE_STACK,Y
+        STA STACK_PAGE,Y       ; Stack page
+        LDA STAGE_VECTORS,Y
+        STA VECTOR_PAGE,Y      ; Vector page
         INY
         CPY #$F0               ; Copy 240 bytes (leave top 16 for stack)
         BCC .copy_init
@@ -1295,16 +1315,16 @@ FIRST_BOOT:                     ; $5524
 ; --- Phase 4: Machine-specific patches ---
 .patch:
         LDA #$08
-        STA $72BA               ; Game code patch
+        STA PATCH_72BA          ; Game code patch
 
 ; Check machine type for Apple IIc-specific patches.
         LDA ROM_MACHID          ; $FBB4
         CMP #$08                ; Apple IIc identifier?
         BNE .restore_zp
         LDA #$CB
-        STA $6022               ; Patch game code for IIc
+        STA PATCH_6022          ; Patch game code for IIc
         LDA #$CC
-        STA $600E               ; Patch game code for IIc
+        STA PATCH_600E          ; Patch game code for IIc
 
 ; Restore zero page and jump to game.
 .restore_zp:
@@ -1314,7 +1334,7 @@ FIRST_BOOT:                     ; $5524
         DC.B $9D,$00,$00        ; STA $0000,X (forced absolute addressing)
         INX
         BNE .restore
-        JMP ($004E)             ; Indirect jump through ZP $4E/$4F (game entry)
+        JMP (ZP_GAME_ENTRY)     ; Indirect jump through ZP $4E/$4F (game entry)
 
 ; Padding with residual data.
         DS $55F2-*,0
@@ -1455,6 +1475,21 @@ HIRES2_ROW188   = $53D0         ; Hi-res page 2, row 188
 HIRES2_ROW189   = $57D0         ; Hi-res page 2, row 189
 HIRES2_ROW190   = $5BD0         ; Hi-res page 2, row 190
 HIRES2_ROW191   = $5FD0         ; Hi-res page 2, row 191
+
+; --- Text screen and display data ---
+TEXT_SCREEN     = $0400          ; First line of text screen
+BOTTOM_ROW_DATA = $0300          ; Screen row data for bottom fill
+
+; --- Applesoft ROM ---
+AS_HPLOT_ENTRY  = $E3E0         ; Applesoft HPLOT entry point
+AS_GETNUM       = $E254         ; Applesoft GETNUM (parse numeric parameter)
+AS_DIV_ZERO_ERR = $E77E         ; Applesoft division by zero error
+
+; --- Game code stubs (not yet reverse-engineered) ---
+GAME_LINE_TBL_LO = $7380        ; Hi-res line address table (low bytes)
+GAME_LINE_TBL_HI = $7440        ; Hi-res line address table (high bytes)
+GAME_ROUTINE_1255 = $1255       ; STUB — not yet disassembled
+GAME_SCROLL_HANDLER = $28A0     ; Game scroll handler (called from SCROLL_UP)
 @
 
 \section{RWTS reload}
@@ -1575,7 +1610,7 @@ PATCH_BELL:
 ; Trampoline: HPLOT with Y=$77 (hi-res page 2 base).
 PATCH_HPLOT:
         LDY #$77
-        JMP $E3E0               ; Applesoft HPLOT entry
+        JMP AS_HPLOT_ENTRY      ; Applesoft HPLOT entry
 
 ; Trampoline: HPLOT with Y=$7B (alternate base), shares JMP with PATCH_HPLOT.
 PATCH_HPLOT2:
@@ -1601,12 +1636,12 @@ DIVIDE:
         ; Modifies:
         ;   $CE, $CF, $E6, $E7
         ; Clobbers: A, Y
-        JSR $E254               ; Applesoft GETNUM
+        JSR AS_GETNUM           ; Applesoft GETNUM
         LDA $DA                 ; Divisor low
         BNE .do_div
         LDA $DB                 ; Divisor high
         BNE .do_div
-        JMP $E77E               ; Division by zero error
+        JMP AS_DIV_ZERO_ERR     ; Division by zero error
 .do_div:
         ASL $CE                 ; Shift dividend left
         ROL $CF
@@ -1666,9 +1701,9 @@ SCREEN_RESTORE:
         JSR SCROLL_DN
         LDX #$21                ; Start at line $21
 .clear_lines:
-        LDA $7380,X             ; Line address table low
+        LDA GAME_LINE_TBL_LO,X  ; Line address table low
         STA $A0
-        LDA $7440,X             ; Line address table high
+        LDA GAME_LINE_TBL_HI,X  ; Line address table high
         STA $A1
         LDY #$27                ; 40 bytes per line
         LDA #$00
@@ -1746,7 +1781,7 @@ COPY_ROM_TO_LC:
         RTS
 
 ; Jump to game routine.
-        JMP $1255
+        JMP GAME_ROUTINE_1255
 @ %def COPY_ROM_TO_LC
 
 \section{Reset handlers}
@@ -1792,7 +1827,7 @@ RESET_BANG:
         JSR MON_HOME            ; Clear screen
         JSR MON_NORMAL          ; Normal text mode
         PLA
-        STA $0400               ; Display error char at top-left
+        STA TEXT_SCREEN          ; Display error char at top-left
 
 ; Clear memory from $BDFF downward to $0800, with beeps.
 .clear_outer:
@@ -1870,7 +1905,7 @@ SCROLL_UP_PRE:
         TAY                     ; Save A
         INY
         BEQ .skip               ; If A was $FF, skip to main scroll
-        JMP $28A0               ; Otherwise jump to game scroll handler
+        JMP GAME_SCROLL_HANDLER ; Otherwise jump to game scroll handler
 
 ; The JMP $28A0 above is $4C $A0 $28. Entry at $BF50 sees $A0 $28 = LDY #$28.
 SCROLL_UP = SCROLL_UP_PRE + 5  ; $BF50: overlapping entry (LDY #$28)
@@ -1953,7 +1988,7 @@ SCROLL_DN:
 ; Fill bottom 4 hi-res rows (188-191) from $0300 data.
         LDX #$27                ; 40 bytes
 .fill_bottom:
-        LDA $0300,X
+        LDA BOTTOM_ROW_DATA,X
         STA HIRES2_ROW188,X     ; Row 188
         STA HIRES2_ROW189,X     ; Row 189
         STA HIRES2_ROW190,X     ; Row 190
@@ -2025,6 +2060,54 @@ ZP_STREAM_HI    = $A1           ; Data stream pointer high
 ZP_DEST_LO_G    = $A2           ; Unpack destination low
 ZP_DEST_HI_G    = $A3           ; Unpack destination high
 ZP_SAVED_Y      = $A4           ; Saved Y during stream read
+
+; --- Main loop subroutine stubs (not yet RE'd) ---
+RENDER_SETUP    = $699C         ; STUB — rendering setup
+SCROLL_CAMERA   = $719D         ; STUB — scroll / camera update
+INPUT_DISPATCH  = $6000         ; STUB — input handler (keyboard/joystick)
+INPUT_PROCESS   = $6109         ; STUB — input processing
+MOVE_PHYSICS    = $6138         ; STUB — movement / physics
+COLLISION_DETECT = $64CB        ; STUB — collision detection
+ENEMY_AI_1      = $0F5D         ; STUB — enemy AI (part 1)
+ENEMY_AI_2      = $0F37         ; STUB — enemy AI (part 2)
+SPRITE_RENDER   = $64DF         ; STUB — sprite rendering
+SCREEN_EFFECTS  = $6683         ; STUB — screen effects
+SCORE_DISPLAY   = $673B         ; STUB — score / status display
+SOUND_UPDATE    = $6ABA         ; STUB — sound effects
+ANIM_UPDATE     = $6B39         ; STUB — animation update
+ENTITY_PROCESS  = $6CFE         ; STUB — entity processing
+LEVEL_LOGIC     = $6F9C         ; STUB — level logic
+PROJECTILE_HANDLER = $0C98      ; STUB — projectile handling
+HAZARD_CHECK    = $0E5A         ; STUB — hazard checking
+PLAYER_STATE    = $1646         ; STUB — player state update
+PLAYER_RENDER   = $16AC         ; STUB — player rendering
+BG_RESTORE      = $13D6         ; STUB — background restore
+SPRITE_DRAW_1   = $1423         ; STUB — sprite draw (part 1)
+SPRITE_DRAW_2   = $1536         ; STUB — sprite draw (part 2)
+SPRITE_DRAW_3   = $1591         ; STUB — sprite draw (part 3)
+PAGE_FLIP_PREP  = $130A         ; STUB — page flip preparation
+DISPLAY_UPDATE  = $10AB         ; STUB — display update
+PAGE_FLIP       = $683C         ; STUB — page flip
+POST_FRAME      = $10CF         ; STUB — post-frame cleanup
+LEVEL_COMPLETE  = $7208         ; STUB — level complete handler
+GAME_OVER       = $BDA0         ; STUB — game over handler
+
+; --- Attract-mode subroutine stubs ---
+ATTRACT_ANIM_1  = $17A6         ; STUB — attract animation 1
+ATTRACT_ANIM_2  = $17E1         ; STUB — attract animation 2
+ATTRACT_ANIM_3  = $1813         ; STUB — attract animation 3
+ATTRACT_ANIM_4  = $1844         ; STUB — attract animation 4
+GAME_START_INIT = $13A4         ; STUB — game start initialization
+
+; --- BIT targets (read-only during attract, data addresses) ---
+ATTRACT_BIT_1   = $6378         ; Read target for BIT NOP
+ATTRACT_BIT_2   = $63B4         ; Read target for BIT NOP
+ATTRACT_BIT_3   = $646D         ; Read target for BIT NOP
+ATTRACT_BIT_4   = $6409         ; Read target for BIT NOP
+
+; --- Soft switches ---
+KEYBOARD        = $C000         ; Keyboard data (bit 7 = key available)
+KBDSTROBE       = $C010         ; Clear keyboard strobe
 @
 
 <<game init>>=
@@ -2051,8 +2134,8 @@ GAME_INIT_NOP:
         DS 19,$EA
 
 GAME_INIT:                      ; $4013
-        LDY #$00
-        LDA #$41                ; Stream starts at $4100
+        LDY #<TITLE_SCREEN_DATA ; Stream pointer low ($00)
+        LDA #>TITLE_SCREEN_DATA ; Stream pointer high ($41)
         STY ZP_STREAM_LO
         STA ZP_STREAM_HI
 .next_record:
@@ -2229,6 +2312,209 @@ GAME_INIT_EXTRA:
         HEX 9D A8 33 9D 50 32 C8 B1 FE 9D 28 35 9D
 @ %def GAME_INIT_EXTRA
 
+@ \chapter{Game loop}
+
+The main game loop lives at \$67CB in the persistent game code area
+(\$6000--\$66FF). Each frame calls approximately 25~subroutines that handle
+rendering, input, physics, collision detection, and AI.
+
+\section{Main loop dispatcher}
+
+[[MAIN_LOOP]] at \$67CB calls subroutines in a fixed order each frame.
+After all per-frame work, it increments the frame counter at \$FD, checks
+two game-state flags (\$5E and \$39), and either loops back to \$67CB or
+branches to level-complete (\$7208) or game-over (\$BDA0) handlers.
+
+\paragraph{Attract mode.}
+During the attract/title screen, the loop is entered via [[JSR \$67D7]],
+which skips the first three calls (rendering setup, scroll, and input).
+Four [[BIT abs]] instructions at \$67D7--\$67E0 serve as 3-byte NOPs
+during normal play; during attract mode they are the entry point that
+harmlessly reads memory before falling through to the active subroutines.
+
+\paragraph{Self-modifying patches.}
+Three bytes are patched when transitioning from attract to game mode:
+\begin{itemize}
+\item \$67D1: changed from [[BIT]] (\$2C) to [[JSR]] (\$20) --- enables input handling
+\item \$67EF: changed from [[BIT]] (\$2C) to [[JSR]] (\$20) --- enables another subsystem
+\item \$6827: changed from [[JSR]] (\$20) to [[NOP]] (\$EA) --- disables attract-mode behavior
+\end{itemize}
+
+<<main loop>>=
+
+        ORG $67CB
+MAIN_LOOP:
+        SUBROUTINE
+        ; Main game loop — executes one frame of game logic.
+        ;
+        ; Behavior:
+        ;   Calls ~25 subroutines for rendering, input, physics, AI.
+        ;   Increments frame counter. Checks $5E (level complete) and
+        ;   $39 (game over) flags to exit the loop.
+        ;
+        ; Modifies:
+        ;   All game state via subroutine calls, ZP $FD (frame counter)
+        ; Clobbers: A, X, Y
+
+; --- Per-frame subroutine calls ---
+        JSR RENDER_SETUP        ; Rendering setup
+        JSR SCROLL_CAMERA       ; Scroll / camera
+SMC_INPUT = *
+        JSR INPUT_DISPATCH      ; Input handler (BIT during attract)
+        JSR INPUT_PROCESS       ; Input processing
+
+; --- Attract-mode entry point ($67D7) ---
+; These BIT instructions are harmless reads used as 3-byte NOPs.
+; The attract loop enters here via JSR ATTRACT_ENTRY, skipping input.
+ATTRACT_ENTRY:
+        BIT ATTRACT_BIT_1       ; (attract entry) read only
+        BIT ATTRACT_BIT_2       ; read only
+        BIT ATTRACT_BIT_3       ; read only
+        BIT ATTRACT_BIT_4       ; read only
+
+        JSR MOVE_PHYSICS        ; Movement / physics
+        JSR COLLISION_DETECT    ; Collision detection
+        JSR ENEMY_AI_1          ; Enemy AI (part 1)
+        JSR ENEMY_AI_2          ; Enemy AI (part 2)
+SMC_RENDER = *
+        JSR SPRITE_RENDER       ; Sprite rendering (BIT during attract)
+        JSR SCREEN_EFFECTS      ; Screen effects
+        JSR SCORE_DISPLAY       ; Score / status display
+        JSR SOUND_UPDATE        ; Sound effects
+        JSR ANIM_UPDATE         ; Animation update
+        JSR ENTITY_PROCESS      ; Entity processing
+        JSR LEVEL_LOGIC         ; Level logic
+        JSR PROJECTILE_HANDLER  ; Projectile handling
+        JSR HAZARD_CHECK        ; Hazard checking
+        JSR PLAYER_STATE        ; Player state update
+        JSR PLAYER_RENDER       ; Player rendering
+        JSR BG_RESTORE          ; Background restore
+        JSR SPRITE_DRAW_1       ; Sprite draw (part 1)
+        JSR SPRITE_DRAW_2       ; Sprite draw (part 2)
+        JSR SPRITE_DRAW_3       ; Sprite draw (part 3)
+        JSR PAGE_FLIP_PREP      ; Page flip preparation
+        JSR DISPLAY_UPDATE      ; Display update
+        JSR PAGE_FLIP           ; Page flip
+
+; --- Frame end ---
+        INC $FD                 ; Increment frame counter
+SMC_ATTRACT = *
+        NOP                     ; (JSR during attract mode)
+        JSR POST_FRAME          ; Post-frame cleanup
+
+; --- Exit checks ---
+        LDA $5E                 ; Level-complete flag
+        BPL .check_game_over
+        JMP LEVEL_COMPLETE      ; Level complete handler
+.check_game_over:
+        LDA $39                 ; Game-over flag
+        BPL .next_frame
+        JMP GAME_OVER           ; Game over handler
+.next_frame:
+        JMP MAIN_LOOP           ; Next frame
+@ %def MAIN_LOOP SMC_INPUT ATTRACT_ENTRY SMC_RENDER SMC_ATTRACT
+
+\section{Title screen and attract}
+
+At startup, [[JMP (\$004E)]] enters [[COPY\_HGR1\_TO\_HGR2]] at \$72A3
+in the level data area. This copies the title screen from hi-res page~1
+to page~2, clears the keyboard strobe, and enters the attract loop.
+
+The attract loop at [[ATTRACT\_LOOP]] (\$7263) calls the main game loop's
+attract entry point ([[JSR \$67D7]]), which runs the game's rendering and
+animation subsystems without input handling. After each frame, it polls
+the joystick buttons and keyboard. When input is detected, it patches
+the main loop for game mode and jumps to [[MAIN\_LOOP]].
+
+<<attract loop>>=
+
+        ORG $7263
+ATTRACT_LOOP:
+        SUBROUTINE
+        ; Title screen attract loop — animates until input detected.
+        ;
+        ; Behavior:
+        ;   Calls main loop from attract entry (skipping input).
+        ;   Polls joystick buttons ($52/$54) and keyboard ($C000).
+        ;   On input: sets input mode flag ($48), patches main loop
+        ;   for game mode, calls $13A4 (game start init), enters
+        ;   MAIN_LOOP.
+        ;
+        ; Modifies:
+        ;   $48, $67D1, $67EF, $6827 (self-modifying patches)
+        ; Clobbers: A, X, Y
+
+; --- Attract frame ---
+        JSR ATTRACT_ENTRY       ; Run one frame (rendering/animation only)
+        JSR ATTRACT_ANIM_1      ; Attract-mode animation 1
+        JSR ATTRACT_ANIM_2      ; Attract-mode animation 2
+        JSR ATTRACT_ANIM_3      ; Attract-mode animation 3
+        JSR ATTRACT_ANIM_4      ; Attract-mode animation 4
+
+; --- Poll input ---
+        LDY #$00
+        LDA ($52),Y             ; Read joystick button 1
+        BMI .input_detected     ; Bit 7 set = button pressed
+        LDA ($54),Y             ; Read joystick button 2
+        BMI .input_detected
+        LDA KEYBOARD            ; Read keyboard
+        BPL ATTRACT_LOOP        ; No key = continue attract
+        LDA #$01                ; Keyboard input mode
+        BPL .set_mode           ; Always taken
+.input_detected:
+        LDA #$FF                ; Joystick input mode
+.set_mode:
+        STA $48                 ; Store input mode flag
+        LDA KBDSTROBE           ; Clear keyboard strobe
+
+; --- Patch main loop for game mode ---
+        LDA #$EA                ; NOP opcode
+        STA SMC_ATTRACT         ; $6827: disable attract JSR → NOP
+        LDA #$20                ; JSR opcode
+        STA SMC_INPUT           ; $67D1: enable input handler
+        STA SMC_RENDER          ; $67EF: enable sprite rendering
+
+; --- Start game ---
+        JSR GAME_START_INIT     ; Game start initialization
+        LDA $38
+        STA $36                 ; Copy initial state
+        JMP MAIN_LOOP           ; Enter main game loop
+@ %def ATTRACT_LOOP
+
+<<copy hgr1 to hgr2>>=
+
+        ORG $72A3
+COPY_HGR1_TO_HGR2:
+        SUBROUTINE
+        ; Copy hi-res page 1 to page 2, then enter attract loop.
+        ;
+        ; Inputs:
+        ;   ZP $29/$2A = $2000 (hi-res page 1)
+        ;   ZP $2F/$30 = $4000 (hi-res page 2)
+        ;
+        ; Behavior:
+        ;   Page-by-page copy from $2000-$3FFF to $4000-$5FFF,
+        ;   then clears keyboard strobe and enters ATTRACT_LOOP.
+        ;
+        ; Modifies:
+        ;   Hi-res page 2 ($4000-$5FFF), ZP $2A/$30
+        ; Clobbers: A, Y
+
+        LDY #$00
+.copy:
+        LDA ($29),Y             ; Read from hi-res page 1
+        STA ($2F),Y             ; Write to hi-res page 2
+        INY
+        BNE .copy
+        INC $2A                 ; Next source page
+        INC $30                 ; Next dest page
+        LDA $2A
+        CMP #$40                ; Done when source reaches $4000
+        BNE .copy
+        LDA KBDSTROBE           ; Clear keyboard strobe
+        JMP ATTRACT_LOOP        ; Enter attract loop
+@ %def COPY_HGR1_TO_HGR2
+
 \section{Assembly}
 
 <<drol.asm>>=
@@ -2238,6 +2524,9 @@ GAME_INIT_EXTRA:
 <<game init padding>>
 <<title screen data>>
 <<game init remaining>>
+<<main loop>>
+<<attract loop>>
+<<copy hgr1 to hgr2>>
 @
 
 @ \appendix

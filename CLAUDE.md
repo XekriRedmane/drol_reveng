@@ -76,6 +76,19 @@ Individual routine chunks are named after their subroutine (e.g., `<<scroll up>>
 - Chunk references in the collection chunk follow ascending ORG address order.
 - After adding a chunk, run `python .claude/skills/chunk-placement/check_placement.py` to verify.
 
+### Code chunk rules
+
+- Replace raw hex addresses to code with labels in the code: `JSR $XXXX` and `JMP $XXXX` must use labels.
+- Replace raw hex addresses to data that is not in zero-page with labels for the data: `LDA $XXXX` / `STA $XXXX`, especially when indexed, e.g. `LDA $XXXX,X` or `LDA ($XXXX),Y`. If the address is a zero-page address, then use
+a symbolic name with EQU.
+- If a label is not known in the reverse-engineered code or data yet, then it may be given a symbolic name with
+an EQU until such time as the code or data is reverse-engineered. For addresses in ROM, an EQU may be used.
+- If an immediate value is known to be a label, then use the label.
+- If an immediate value is known to be the low or high value of the label, then use `#<label` or `#>label`.
+- If an immediate value is known to be an offset into a record, then create a symbolic name for the offset
+with an EQU and use the symbolic name.
+- For 16-bit data addresses, only create a label for the first address. Use label+1 for the second address.
+
 ### Chunk annotation
 
 Every routine with a `SUBROUTINE` directive must have a **header plate** comment block immediately after `SUBROUTINE`:
@@ -103,7 +116,6 @@ ROUTINE_LABEL:
 Omit the Outputs section if the routine doesn't return meaningful values (e.g., ends with `JMP`). Omit Modifies if only registers are affected.
 
 Additional annotation rules:
-- Replace raw hex addresses with named EQUs. `JSR $XXXX` and `JMP $XXXX` must use labels. `LDA $XXXX` / `STA $XXXX` should use EQUs when the address is meaningful.
 - Comment the **purpose**, not the mechanics: "extract location tier" not "rotate left 4 times".
 - Use `; --- section name ---` headers between logical phases within a long routine.
 - Align all `;` comments to the same column within each routine.

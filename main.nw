@@ -19,6 +19,13 @@
 
 \usepackage[colorlinks=true, urlcolor=blue, linkcolor=red]{hyperref}
 
+% Apple II hi-res pixel colors for graphics appendix.
+\definecolor{apple_white}{rgb}{0.9,0.9,0.9}
+\newcommand{\Cbk}{\cellcolor{black}}
+\newcommand{\Cbw}{\cellcolor{apple_white}}
+\newcommand{\Cbg}{\cellcolor{green}}
+\newcommand{\Cbv}{\cellcolor{violet}}
+
 \usepackage {booktabs}
 
 \usepackage {tikz}
@@ -200,8 +207,7 @@ sector. The PROM stores it at page [[\$27]], increments [[\$27]], and re-enters
 language card, relocate loader and RWTS, display splash text, and jump
 to the loader entry at [[\$51C0]].
 
-<<boot1.asm>>=
-        PROCESSOR 6502
+<<boot1 defines>>=
 
 ; Zero page locations used by boot1 and the PROM.
 DEST_PAGE       = $27           ; PROM: destination page for next sector read
@@ -230,12 +236,30 @@ MON_HOME        = $FC58         ; Clear screen
 LDR_TRACK       = $BF48         ; Current track number
 LDR_SLOT        = $BF49         ; Slot number * 16
 LDR_PHASE       = $BF4A         ; Boot phase counter ($FF = first boot)
+@
 
-; =========================================================================
-;  BOOT1 --- Track 0, Sector 0
-; =========================================================================
+<<boot1 entry>>=
 
         ORG $0800
+        SUBROUTINE
+
+        ; Boot sector entry — multi-phase loader for Drol.
+        ;
+        ; Inputs:
+        ;   DEST_PAGE — destination page set by boot0 PROM ($27)
+        ;   X — slot number * 16 (from PROM)
+        ;
+        ; Behavior:
+        ;   Phase 1 (DEST_PAGE=$09): switches to hi-res graphics, patches
+        ;     re-entry JMP and reset vector, redirects loading to $5000.
+        ;   Phase 2 (DEST_PAGE<$5A): returns to PROM to read next sector.
+        ;   Phase 3 (DEST_PAGE>=$5A): copies ROM to language card, relocates
+        ;     RWTS to $BE00, backs up loader to $D000, decodes splash text,
+        ;     and jumps to loader entry at $51C0.
+        ;
+        ; Modifies:
+        ;   SOFTEV, SOFTEV_CHK, NMIVEC, LDR_SLOT, LDR_PHASE, LDR_TRACK,
+        ;   $BE00-$BFFF (RWTS), $D000-$D7FF (loader backup), language card RAM
 
 BOOT1_SECTORS:
         .BYTE $01               ; Sector count for boot0 (just this sector)
@@ -387,7 +411,12 @@ SPLASH_TEXT:
         DS $28,0                ; 40 bytes of encoded text (all $00)
 
         DS $0900-*,0            ; Pad to end of sector
+@ %def BOOT1_SECTORS BOOT1_ENTRY SPLASH_TEXT
 
+<<boot1.asm>>=
+        PROCESSOR 6502
+<<boot1 defines>>
+<<boot1 entry>>
 @
 
 \section{Loader}
@@ -477,8 +506,7 @@ consecutive tracks (5--9, 10--14, 15--19, 20--24). Each phase replaces
 75 pages (19,200 bytes) of level data while leaving the persistent
 game code untouched.
 
-<<loader.asm>>=
-        PROCESSOR 6502
+<<loader defines>>=
 
 ; =========================================================================
 ;  Zero page locations
@@ -547,10 +575,9 @@ MON_INIT        = $FB2F         ; Initialize monitor
 MON_HOME        = $FC58         ; Clear screen
 MON_NORMAL      = $FE84         ; Normal text output mode
 ROM_MACHID      = $FBB4         ; Machine identification byte
+@
 
-; =========================================================================
-;  RWTS --- Sector reading ($5000-$50C6)
-; =========================================================================
+<<rwts entry>>=
 
         ORG $5000
 
@@ -559,16 +586,26 @@ RWTS_ENTRY:
         JMP SAVE_ZP
 
 ; -------------------------------------------------------------------------
-;  READ_ADDR_FIELD --- Read and verify a sector address field.
-;
-;  Looks for the D5 AA 96 prologue, reads the 4-byte address field
-;  (volume, track, sector, checksum), verifies the checksum and DE
-;  epilogue. Returns carry clear on success, carry set on error.
-;  Address field values stored at $2C-$2F.
+;  READ_ADDR_FIELD
 ; -------------------------------------------------------------------------
 
 READ_ADDR_FIELD:                ; $5003
         SUBROUTINE
+        ; Read and verify a 16-sector address field.
+        ;
+        ; Inputs:
+        ;   ZP_SLOT_X16 — slot * 16 for disk I/O
+        ;
+        ; Behavior:
+        ;   Scans for D5 AA 96 prologue, reads 4 odd-even encoded
+        ;   bytes (volume, track, sector, checksum), verifies the
+        ;   running XOR checksum is zero, and checks for the DE
+        ;   epilogue byte.
+        ;
+        ; Outputs:
+        ;   Carry clear = success, carry set = error
+        ;   ZP_ADDR_VOL/TRK/SEC/CHK ($2C-$2F) = decoded fields
+        ; Clobbers: A, X, Y
         LDX ZP_SLOT_X16
 .wait_d5:
         LDA DISK_DATA,X
@@ -616,6 +653,7 @@ READ_ADDR_FIELD:                ; $5003
         CMP #$DE                ; Address epilogue
         BNE ERROR_RETURN
 
+; Shared return points: carry clear = success, carry set = error.
 SUCCESS_RETURN:                 ; $5048
         CLC                     ; Success: carry clear
         RTS
@@ -625,16 +663,30 @@ ERROR_RETURN:                   ; $504B
         RTS
 
 ; -------------------------------------------------------------------------
-;  READ_DATA_FIELD --- Read and decode a 6-and-2 encoded data sector.
-;
-;  Looks for D5 AA AD prologue, reads 342 nibbles into work buffers
-;  at $5200/$5300, decodes them via the translate table at $52D6,
-;  recombines into 256 data bytes stored at ($04),Y.
-;  Returns carry clear on success, carry set on error.
+;  READ_DATA_FIELD
 ; -------------------------------------------------------------------------
 
 READ_DATA_FIELD:                ; $504D
         SUBROUTINE
+        ; Read and decode a 6-and-2 encoded sector data field.
+        ;
+        ; Inputs:
+        ;   ZP_SLOT_X16 — slot * 16 for disk I/O
+        ;   ZP_DEST_LO/HI ($04/$05) — destination pointer
+        ;
+        ; Behavior:
+        ;   Scans for D5 AA AD prologue, reads 86 auxiliary nibbles
+        ;   and 256 primary nibbles through the translate table at
+        ;   NIBBLE_XLAT, verifies the checksum nibble and DE epilogue,
+        ;   then recombines 6-bit and 2-bit portions into 256 bytes.
+        ;
+        ; Outputs:
+        ;   Carry clear = success, carry set = error
+        ;   256 bytes written to (ZP_DEST_LO),Y
+        ;
+        ; Modifies:
+        ;   NIBBLE_BUF_PRI ($5200), NIBBLE_BUF_AUX ($5300)
+        ; Clobbers: A, X, Y
         LDX ZP_SLOT_X16
         LDY #$18                ; Timeout counter
 .wait_d5:
@@ -729,14 +781,27 @@ SEEK_DECEL_RATES:               ; $50CF
         HEX 70 2C 26 22 1F 1E 1D 1C
 
 ; =========================================================================
-;  SEEK --- Move disk arm to target half-track ($50D7)
-;
-;  Input: A = target half-track, $0D = current half-track
-;  Modifies: $0D updated to reflect movement
+;  SEEK
 ; =========================================================================
 
 SEEK:                           ; $50D7
         SUBROUTINE
+        ; Move disk arm to target half-track.
+        ;
+        ; Inputs:
+        ;   A — target half-track number
+        ;   ZP_CUR_HTRK ($0D) — current half-track position
+        ;   ZP_SLOT_X16 — slot * 16 for phase soft switches
+        ;
+        ; Behavior:
+        ;   Steps the stepper motor one half-track at a time toward
+        ;   the target, using acceleration/deceleration delay tables
+        ;   for smooth head movement. Turns each phase on, waits,
+        ;   then turns the old phase off.
+        ;
+        ; Modifies:
+        ;   ZP_CUR_HTRK ($0D) — updated to new position
+        ; Clobbers: A, X, Y
         STA ZP_TGT_HTRK        ; Target half-track
         LDY #$00
         STY ZP_TEMP_B           ; Acceleration index = 0
@@ -777,13 +842,8 @@ SEEK:                           ; $50D7
         JSR DELAY               ; Final settling delay
         CLC                     ; Carry clear for final phase access
 
-; -------------------------------------------------------------------------
-;  SET_PHASE --- Access a stepper motor phase.
-;
-;  Uses $0D (current half-track) to select the phase.
-;  Carry flag selects on (SEC) or off (CLC) via ROL bit position.
-; -------------------------------------------------------------------------
-
+; Access a stepper motor phase. Carry selects on (SEC) or off (CLC).
+; SET_PHASE uses ZP_CUR_HTRK; SET_PHASE_A takes half-track in A.
 SET_PHASE:                      ; $511B
         LDA ZP_CUR_HTRK
 SET_PHASE_A:                    ; $511D - entry with A = half-track
@@ -795,11 +855,20 @@ SET_PHASE_A:                    ; $511D - entry with A = half-track
         RTS
 
 ; -------------------------------------------------------------------------
-;  DELAY --- Delay loop.  A = number of iterations (each ~18 cycles).
+;  DELAY
 ; -------------------------------------------------------------------------
 
 DELAY:                          ; $5127
         SUBROUTINE
+        ; Delay loop (~18 cycles per outer iteration).
+        ;
+        ; Inputs:
+        ;   A — number of outer-loop iterations
+        ;
+        ; Behavior:
+        ;   Each iteration runs an 18-cycle inner loop, then
+        ;   decrements A until zero.
+        ; Clobbers: A, X
         LDX #$12                ; Inner loop: 18 iterations
 .inner:
         DEX
@@ -811,14 +880,25 @@ DELAY:                          ; $5127
         RTS
 
 ; -------------------------------------------------------------------------
-;  SEEK_TO_TRACK --- Seek to track A with motor on/off.
-;
-;  Input: A = target track
-;  Turns motor on, doubles track number to half-tracks, seeks, motor off.
+;  SEEK_TO_TRACK
 ; -------------------------------------------------------------------------
 
 SEEK_TO_TRACK:                  ; $5133
         SUBROUTINE
+        ; Seek to a track with automatic motor on/off.
+        ;
+        ; Inputs:
+        ;   A — target track number (0-34)
+        ;   ZP_CUR_HTRK ($0D) — current half-track position
+        ;   ZP_SLOT_X16 — slot * 16
+        ;
+        ; Behavior:
+        ;   Turns motor on, converts track to half-tracks, calls
+        ;   SEEK, then turns motor off.
+        ;
+        ; Modifies:
+        ;   ZP_CUR_HTRK ($0D) — updated to new position
+        ; Clobbers: A, X, Y
         LDX ZP_SLOT_X16
         CMP DISK_MOTOR_ON,X     ; Turn motor on (side effect of read)
         CMP ZP_CUR_HTRK        ; Compare target with current track
@@ -832,17 +912,28 @@ SEEK_TO_TRACK:                  ; $5133
         RTS
 
 ; =========================================================================
-;  READ_SECTORS --- Read all sectors for a track group ($5148)
-;
-;  Uses the page table at $5400 (starting at index ZP_TBL_INDEX) to
-;  determine which pages each sector's data goes to. Reads sectors from
-;  the current track, matching by address field. When all sectors for a
-;  track are read, advances to the next track. Stops when a $00
-;  terminator is found in the page table.
+;  READ_SECTORS
 ; =========================================================================
 
 READ_SECTORS:                   ; $5148
         SUBROUTINE
+        ; Read all sectors for a track group.
+        ;
+        ; Inputs:
+        ;   ZP_TGT_TRACK ($0F) — starting track number
+        ;   ZP_TBL_INDEX ($10) — index into PAGE_TABLE
+        ;   ZP_SLOT_X16 — slot * 16
+        ;
+        ; Behavior:
+        ;   Builds a sector dispatch table ($90-$9F) from PAGE_TABLE,
+        ;   then reads sectors one at a time, matching address fields.
+        ;   When all sectors for a track are done, advances to the
+        ;   next track. Stops on a $00 terminator in the page table.
+        ;
+        ; Modifies:
+        ;   ZP_SEC_TABLE ($90-$9F), ZP_TGT_TRACK, ZP_TBL_INDEX
+        ;   Sector data written to pages specified by PAGE_TABLE
+        ; Clobbers: A, X, Y
 
 ; Build sector dispatch table: $90-$9F holds destination page for each sector.
         LDX #$10                ; Clear 17 entries ($90-$A0)
@@ -900,24 +991,13 @@ READ_SECTORS:                   ; $5148
         BNE READ_SECTORS        ; Non-zero: more tracks to read
         RTS                     ; Done with this group
 
-; -------------------------------------------------------------------------
-;  SET_TRACK_AND_TABLE --- Set target track and table offset, then read.
-;
-;  Input: A = starting track, Y = page table offset
-; -------------------------------------------------------------------------
-
+; Set target track (A) and page table offset (Y), then jump to READ_SECTORS.
 SET_TRACK_AND_TABLE:            ; $519E
         STY ZP_TBL_INDEX
         STA ZP_TGT_TRACK
         JMP READ_SECTORS
 
-; -------------------------------------------------------------------------
-;  SEEK_AND_RESTORE_ZP --- Seek to track A, then restore zero page.
-;
-;  Used to park the head and restore the game's zero page state
-;  after a disk read operation.
-; -------------------------------------------------------------------------
-
+; Seek to track A, save track in LDR_TRACK, then restore zero page from ZP_SAVE.
 SEEK_AND_RESTORE_ZP:            ; $51A5
         STA LDR_TRACK           ; Remember track position
         JSR SEEK_TO_TRACK       ; Seek (also turns motor off)
@@ -929,10 +1009,7 @@ SEEK_AND_RESTORE_ZP:            ; $51A5
         BNE .restore
         RTS
 
-; -------------------------------------------------------------------------
-;  SAVE_ZP --- Save zero page to $5700 buffer, then enter loader.
-; -------------------------------------------------------------------------
-
+; Save zero page to ZP_SAVE ($5700), then fall through to LOADER_ENTRY.
 SAVE_ZP:                        ; $51B6
         LDX #$00
 .save:
@@ -942,12 +1019,7 @@ SAVE_ZP:                        ; $51B6
         BNE .save
         ; Fall through to LOADER_ENTRY
 
-; -------------------------------------------------------------------------
-;  LOADER_ENTRY --- Restore persistent state and dispatch.
-;
-;  Called from boot1 (JMP $51C0) or after SAVE_ZP.
-; -------------------------------------------------------------------------
-
+; Restore persistent state (track, slot) to ZP, then jump to DISPATCH.
 LOADER_ENTRY:                   ; $51C0
         LDA LDR_TRACK
         STA ZP_CUR_HTRK
@@ -968,6 +1040,9 @@ TRACK_TABLE:                    ; $51F8
 
 ; Residual data in sector (not referenced by loader code).
         HEX A9 43 8D F9
+@ %def RWTS_ENTRY READ_ADDR_FIELD SUCCESS_RETURN ERROR_RETURN READ_DATA_FIELD SEEK_ACCEL_RATES SEEK_DECEL_RATES SEEK SET_PHASE SET_PHASE_A DELAY SEEK_TO_TRACK READ_SECTORS SET_TRACK_AND_TABLE SEEK_AND_RESTORE_ZP SAVE_ZP LOADER_ENTRY TRACK_TABLE
+
+<<nibble buffers>>=
 
 ; =========================================================================
 ;  Nibble buffers and translate table ($5200-$53FF)
@@ -1033,6 +1108,9 @@ NIBBLE_BUF_AUX:                 ; $5300 - auxiliary nibble buffer
         HEX 3A 3B 3C 3D 3E 3F 00 00 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+@ %def NIBBLE_BUF_PRI NIBBLE_XLAT NIBBLE_BUF_AUX
+
+<<page table>>=
 
 ; =========================================================================
 ;  Page destination table ($5400)
@@ -1055,6 +1133,9 @@ PAGE_TABLE_RELOAD:
         HEX B3 B4 B5 B6 B7 B8 B9 BA BB BC BD 00 00 00 00 00
 
         DS $5500-*,0
+@ %def PAGE_TABLE PAGE_TABLE_RELOAD
+
+<<dispatch>>=
 
 ; =========================================================================
 ;  DISPATCH --- Main loader dispatch ($5500)
@@ -1063,6 +1144,24 @@ PAGE_TABLE_RELOAD:
         ORG $5500
 DISPATCH:                       ; $5500
         SUBROUTINE
+
+        ; Main loader dispatch — routes to reload or first boot.
+        ;
+        ; Inputs:
+        ;   LDR_PHASE — boot phase ($FF = first boot, 0-3 = reload phase)
+        ;   ZP_JOY_FLAG — bit 7 set if joystick present
+        ;
+        ; Behavior:
+        ;   If LDR_PHASE is $FF, jumps to FIRST_BOOT for initial setup.
+        ;   Otherwise advances phase (mod 4), selects the corresponding
+        ;   track from TRACK_TABLE, reads level data, and parks the head.
+        ;
+        ; Outputs:
+        ;   LDR_PHASE — updated phase counter
+        ;
+        ; Modifies:
+        ;   LDR_PHASE, disk head position
+        ; Clobbers: A, X, Y
 
 ; Check boot phase counter.
         LDX LDR_PHASE
@@ -1093,6 +1192,24 @@ DISPATCH:                       ; $5500
 
 FIRST_BOOT:                     ; $5524
         SUBROUTINE
+
+        ; First-time boot — loads game, detects hardware, patches code.
+        ;
+        ; Inputs:
+        ;   LDR_PHASE — must be $FF (first boot marker)
+        ;
+        ; Behavior:
+        ;   Phase 1: reads tracks 1-4, copies stack and $0300 init data.
+        ;   Phase 2: loads level data from track 5, calls GAME_INIT.
+        ;   Phase 3: probes paddle buttons to detect joystick; sets input
+        ;     handler pointers accordingly.
+        ;   Phase 4: applies Apple IIc patches if needed, restores zero
+        ;     page from ZP_SAVE, and jumps to game entry via ($004E).
+        ;
+        ; Modifies:
+        ;   LDR_PHASE, $0100-$01EF, $0300-$03EF, $03F8-$03FC,
+        ;   ZP_INPUT_LO/HI_1/2, ZP_JOY_FLAG, game code patches
+        ; Clobbers: A, X, Y
 
 ; --- Phase 1: Read tracks 1-4 (main game code and data) ---
         LDA #$01               ; Starting track = 1
@@ -1204,13 +1321,16 @@ FIRST_BOOT:                     ; $5524
         HEX 05 0A 0F 14         ; Track numbers (unreferenced copy)
         DS $55FC-*,0
         HEX 04 A5 00 04         ; Residual data
+@ %def DISPATCH FIRST_BOOT
 
+<<empty and zp save>>=
 
 ; =========================================================================
 ;  Empty page ($5600) and ZP save area ($5700)
 ; =========================================================================
 
         ORG $5600
+UNUSED_PAGE:
         DS $100,0               ; Unused page
 
         ORG $5700
@@ -1231,6 +1351,9 @@ ZP_SAVE:                        ; Zero page save/restore buffer
         HEX 00 00 00 00 01 52 03 4E 88 CC EE FF 01 61 03 55
         HEX 01 04 03 80 FF 11 14 16 18 6A 6A 6A 6A 02 02 01
         HEX 01 1A 14 83 75 0C 02 01 D0 00 00 00 00 00 00 00
+@ %def UNUSED_PAGE ZP_SAVE
+
+<<rwts high level>>=
 
 ; =========================================================================
 ;  RWTS high-level code ($5800, relocated to $BE00 by boot1)
@@ -1259,6 +1382,9 @@ RWTS_HIGH:
         HEX FB A0 F8 91 A0 C8 30 FB E6 A1 CA D0 ED 60 80 83
         HEX AD 81 C0 AD 81 C0 A0 00 A9 D0 84 A0 85 A1 B1 A0
         HEX 91 A0 C8 D0 F9 E6 A1 D0 F5 2C 80 C0 60 4C 55 12
+@ %def RWTS_HIGH
+
+<<reset handlers raw>>=
 
 ; =========================================================================
 ;  Reset handlers and screen address table ($5900, relocated to $BF00)
@@ -1285,88 +1411,27 @@ SCREEN_ADDR_TABLE:              ; $59C0 → $BFC0
         HEX 00 48 80 48 00 49 80 49 00 4C 80 4C 00 4D 80 4D
         HEX 00 50 80 50 00 51 80 51 00 54 80 54 00 55 80 55
         HEX 00 58 80 58 00 59 80 59 00 5C 80 5C 00 5D 80 5D
+@ %def RESET_HANDLERS SCREEN_ADDR_TABLE
 
+<<loader.asm>>=
+        PROCESSOR 6502
+<<loader defines>>
+<<rwts entry>>
+<<nibble buffers>>
+<<page table>>
+<<dispatch>>
+<<empty and zp save>>
+<<rwts high level>>
+<<reset handlers raw>>
 @
 
-@ \chapter{RWTS relocated code (\$BE00--\$BFFF)}
+@ \chapter{RWTS relocated code}
 
 This code lives at \$5800--\$59FF on disk (loaded by boot1 as part of the
 loader) and is relocated to \$BE00--\$BFFF by boot1. It is never called by
 the loader itself; the game calls into it directly.
 
-\section{RWTS reload (\$BE00)}
-
-When the game needs to load new level data, it calls the RWTS reload entry
-at \$BE00. This routine:
-\begin{enumerate}
-\item Turns the drive motor on.
-\item Calls the screen scroll-up routine to save the current screen.
-\item Copies the loader code from the language card backup (\$D000--\$D7FF)
-  back to \$5000--\$57FF, since the loader's memory may have been partially
-  overwritten by game data.
-\item Calls the loader entry at \$5000, which saves zero page and dispatches
-  to load the next level data set.
-\item When the loader returns, restores the screen and continues.
-\end{enumerate}
-
-\section{Sector data reader (\$BE37)}
-
-An alternate sector data reader at \$BE37 reads odd/even nibble-encoded
-data directly into memory via [[\$A2]]/[[\$A3]] pointer. It reads 256-byte
-blocks in a loop, checking for a \$D4 marker between blocks, and repeats
-until a page counter at [[\$A1]] reaches zero.
-
-Note: the entry at \$BE37 overlaps with the last byte of the [[JMP \$BEA3]]
-instruction at \$BE35. The byte \$BE at that position serves double duty as
-both the high byte of the JMP target and the LDX abs,Y opcode.
-
-\section{Applesoft and Monitor patches (\$BE60)}
-
-Several jump vectors at \$BE60--\$BE99 patch into Applesoft BASIC and
-Monitor ROM routines. These include a division routine at \$BE6C--\$BE99
-using \$DA/\$DB as divisor and \$CE/\$CF/\$E6/\$E7 as dividend/result.
-
-\section{Screen management (\$BEA0)}
-
-\begin{itemize}
-\item \$BEA0: Calls \$5C00 (game routine) and scrolls screen down.
-\item \$BEA3: Screen restore --- clears hi-res lines using address tables
-  at \$7380/\$7440, then clears the hi-res screen holes.
-\item \$BEE0: Copies ROM \$D000--\$FFFF to language card RAM (same operation
-  as boot1's phase 3, used on reset to restore LC state).
-\item \$BEFD: Jump to \$1255 (game routine).
-\end{itemize}
-
-\section{Reset handlers (\$BF00)}
-
-Four entry points display different error characters on reset:
-\begin{itemize}
-\item \$BF00: displays `R' (\$D2)
-\item \$BF03: displays `P' (\$D0)
-\item \$BF06: displays `L' (\$CC)
-\item \$BF09: displays `!' (\$A1)
-\end{itemize}
-
-The handler copies ROM to language card, reinitializes the Monitor,
-clears the screen, clears memory from \$BD00 downward (with beeps),
-then reboots into the slot's ROM.
-
-\section{Screen scroll routines (\$BF50, \$BF7F)}
-
-\begin{itemize}
-\item \$BF50: Scroll screen up --- copies 32 hi-res lines from screen
-  addresses (via table at \$BFC0) to a buffer at \$4000.
-\item \$BF7F: Scroll screen down --- copies from the buffer back to screen,
-  then fills the bottom 4 text lines from \$0300 data.
-\end{itemize}
-
-\section{Screen address table (\$BFC0)}
-
-A 64-byte table of 32 address pairs (lo/hi) pointing to hi-res page 2
-screen line addresses, used by the scroll routines.
-
-<<rwts.asm>>=
-        PROCESSOR 6502
+<<rwts defines>>=
 
 ; --- Loader addresses ---
 LOADER_ENTRY    = $5000
@@ -1385,14 +1450,39 @@ MON_HOME        = $FC58
 MON_BELL2       = $FC22
 MON_NORMAL      = $FE84
 
+; --- Hi-res page 2 row addresses (bottom 4 rows) ---
+HIRES2_ROW188   = $53D0         ; Hi-res page 2, row 188
+HIRES2_ROW189   = $57D0         ; Hi-res page 2, row 189
+HIRES2_ROW190   = $5BD0         ; Hi-res page 2, row 190
+HIRES2_ROW191   = $5FD0         ; Hi-res page 2, row 191
+@
+
+\section{RWTS reload}
+
+When the game needs to load new level data, it calls the RWTS reload entry
+at \$BE00. This routine turns the drive motor on, saves the screen,
+copies the loader code from the language card backup (\$D000--\$D7FF)
+back to \$5000--\$57FF, calls the loader entry at \$5000 to load the
+next level data set, then restores the screen and returns.
+
+<<rwts reload>>=
+
         ORG $BE00
-
-; =========================================================================
-;  RWTS_RELOAD ($BE00) --- Restore loader from LC, call it, restore screen
-; =========================================================================
-
 RWTS_RELOAD:
         SUBROUTINE
+        ; Reload the loader from language card and call it to load level data.
+        ;
+        ; Inputs:
+        ;   LDR_SLOT — disk slot * 16
+        ;
+        ; Behavior:
+        ;   Turns on drive motor, scrolls screen up to save it,
+        ;   copies $D000-$D7FF back to $5000-$57FF (restoring the loader),
+        ;   calls LOADER_ENTRY, then jumps to SCREEN_RESTORE.
+        ;
+        ; Modifies:
+        ;   $5000-$57FF (loader restored), $A0-$A1, screen buffer
+        ; Clobbers: A, X
         LDX LDR_SLOT
         LDA DISK_MOTOR_ON,X    ; Turn motor on
         JSR SCROLL_UP          ; Save screen content
@@ -1420,19 +1510,23 @@ RWTS_RELOAD:
         JSR LOADER_ENTRY
 JMP_TO_RESTORE:
         JMP SCREEN_RESTORE     ; Restore screen and return
+@ %def RWTS_RELOAD JMP_TO_RESTORE
 
-; =========================================================================
-;  NIBBLE_READER ($BE37) --- Read odd/even nibble data from disk
-;
-;  Overlapping entry: $BE37 is the 3rd byte of JMP SCREEN_RESTORE above.
-;  The byte $BE (high byte of JMP target) also serves as the LDX abs,Y
-;  opcode when branched to directly.
-;
-;  Reads 256-byte blocks of odd/even encoded nibble data into ($A2),Y.
-;  After each block, checks for $D4 marker. Repeats until $A1 reaches 0.
-;  On prologue mismatch, branches back to $BE10 to retry the reload.
-; =========================================================================
+\section{Sector data reader}
 
+An alternate sector data reader at \$BE37 reads odd/even nibble-encoded
+data directly into memory via the [[\$A2]]/[[\$A3]] pointer. It reads
+256-byte blocks in a loop, checking for a \$D4 marker between blocks,
+and repeats until a page counter at [[\$A1]] reaches zero.
+
+Note: the entry at \$BE37 overlaps with the last byte of the [[JMP]]
+instruction at \$BE35. The byte \$BE at that position serves double duty
+as both the high byte of the JMP target and the LDX abs,Y opcode.
+
+<<nibble reader>>=
+
+        ORG $BE38
+; Read odd/even nibble-encoded sector data into memory via $A2/$A3, $A1 pages.
 ; $BE37 is the 3rd byte of the JMP above. When branched to, $BE serves
 ; as the LDX abs,Y opcode: LDX $C08C,Y.
 NIBBLE_READER = $BE37               ; Overlaps with 3rd byte of JMP above
@@ -1463,31 +1557,50 @@ NIBBLE_READER = $BE37               ; Overlaps with 3rd byte of JMP above
         DEC $A1                ; Decrement block count
         BNE NIBBLE_READER      ; More blocks: continue reading
         JMP SCREEN_PRE_RESTORE ; Done: restore screen
+@ %def NIBBLE_READER
 
-; =========================================================================
-;  Applesoft/Monitor patches ($BE60)
-; =========================================================================
+\section{Applesoft and Monitor patches}
 
-PATCH_BELL:                     ; $BE60
+Several jump vectors patch into Applesoft BASIC and Monitor ROM routines.
+These include a 16-bit division routine using \$DA/\$DB as divisor and
+\$CE/\$CF/\$E6/\$E7 as dividend/result.
+
+<<applesoft patches>>=
+
+        ORG $BE60
+; Trampoline: redirect BELL to Monitor BELL2.
+PATCH_BELL:
         JMP MON_BELL2           ; Redirect to Monitor bell
 
-PATCH_HPLOT:                    ; $BE63
+; Trampoline: HPLOT with Y=$77 (hi-res page 2 base).
+PATCH_HPLOT:
         LDY #$77
         JMP $E3E0               ; Applesoft HPLOT entry
 
-PATCH_HPLOT2:                   ; $BE68
+; Trampoline: HPLOT with Y=$7B (alternate base), shares JMP with PATCH_HPLOT.
+PATCH_HPLOT2:
         LDY #$7B
         BNE PATCH_HPLOT+2       ; Share JMP $E3E0
 
-; -------------------------------------------------------------------------
-;  DIVIDE --- 16-bit division ($BE6C)
-;
-;  Divides ($CE/$CF/$E6/$E7) by ($DA/$DB).
-;  Uses Monitor GETNUM ($E254) for setup.
-; -------------------------------------------------------------------------
-
-DIVIDE:                         ; $BE6C
+DIVIDE:
         SUBROUTINE
+        ; 16-bit unsigned division via repeated subtraction.
+        ;
+        ; Inputs:
+        ;   $DA/$DB — divisor (16-bit)
+        ;   $CE/$CF — dividend (16-bit, shifted out as quotient)
+        ;
+        ; Behavior:
+        ;   Calls Applesoft GETNUM to parse parameters. If divisor is
+        ;   zero, jumps to Applesoft division-by-zero error. Otherwise
+        ;   performs 16 iterations of shift-and-subtract division.
+        ;
+        ; Outputs:
+        ;   $CE/$CF — quotient, $E6/$E7 — remainder
+        ;
+        ; Modifies:
+        ;   $CE, $CF, $E6, $E7
+        ; Clobbers: A, Y
         JSR $E254               ; Applesoft GETNUM
         LDA $DA                 ; Divisor low
         BNE .do_div
@@ -1516,16 +1629,39 @@ DIVIDE:                         ; $BE6C
 
 ; Padding
         HEX FF FF FF FF FF FF
+@ %def PATCH_BELL PATCH_HPLOT PATCH_HPLOT2 DIVIDE
 
-; =========================================================================
-;  Screen management ($BEA0)
-; =========================================================================
+\section{Screen management}
 
-SCREEN_PRE_RESTORE:             ; $BEA0
+The screen management routines handle saving and restoring the hi-res
+display during disk loads. SCREEN\_PRE\_RESTORE calls a game callback
+at \$5C00 before restoring. SCREEN\_RESTORE scrolls the screen back
+down, clears hi-res lines using address tables at \$7380/\$7440,
+and clears the hi-res screen holes.
+
+<<screen restore>>=
+
+        ORG $BEA0
+; Call game screen callback at $5C00, then fall through to SCREEN_RESTORE.
+SCREEN_PRE_RESTORE:
         JSR GAME_SCREEN_RTN     ; $5C00 (game callback)
 
-SCREEN_RESTORE:                 ; $BEA3
+SCREEN_RESTORE:
         SUBROUTINE
+        ; Restore hi-res screen after a disk load.
+        ;
+        ; Inputs:
+        ;   Buffer at $4000 — saved screen lines from SCROLL_UP
+        ;
+        ; Behavior:
+        ;   Scrolls saved lines back to screen via SCROLL_DN, clears
+        ;   hi-res lines $21-$BB using address tables at $7380/$7440,
+        ;   then zeroes screen hole bytes ($x78-$x7F, $xF8-$xFF)
+        ;   across hi-res page 2 ($4000-$5FFF).
+        ;
+        ; Modifies:
+        ;   Hi-res page 2, $A0-$A3
+        ; Clobbers: A, X, Y
 ; Scroll screen back down, then clear hi-res lines.
         JSR SCROLL_DN
         LDX #$21                ; Start at line $21
@@ -1569,13 +1705,30 @@ SCREEN_RESTORE:                 ; $BEA3
 
 ; Data bytes (purpose unclear, possibly sprite data or flags).
         HEX 80 83
+@ %def SCREEN_PRE_RESTORE SCREEN_RESTORE
 
-; =========================================================================
-;  COPY_ROM_TO_LC ($BEE0) --- Copy ROM $D000-$FFFF to language card RAM
-; =========================================================================
+\section{Copy ROM to language card}
 
-COPY_ROM_TO_LC:                 ; $BEE0
+Copies the Apple II ROM (\$D000--\$FFFF) into language card RAM. This is
+the same operation performed by boot1's phase 3. Used by the reset handler
+to restore the language card state.
+
+<<copy rom to lc>>=
+
+        ORG $BEE0
+COPY_ROM_TO_LC:
         SUBROUTINE
+        ; Copy Apple II ROM ($D000-$FFFF) into language card RAM.
+        ;
+        ; Behavior:
+        ;   Enables LC bank 1 write mode with ROM readable, then
+        ;   copies each byte from ROM into LC RAM via indirect
+        ;   addressing. Loops from $D000 until high byte wraps to $00.
+        ;   Write-protects LC on exit.
+        ;
+        ; Modifies:
+        ;   Language card RAM ($D000-$FFFF), $A0/$A1
+        ; Clobbers: A, Y
         LDA LC_BANK1_RWROM      ; Enable LC writes, read ROM
         LDA LC_BANK1_RWROM      ; (must read twice)
         LDY #$00
@@ -1593,30 +1746,46 @@ COPY_ROM_TO_LC:                 ; $BEE0
         RTS
 
 ; Jump to game routine.
-        JMP $1255               ; $BEFD
+        JMP $1255
+@ %def COPY_ROM_TO_LC
 
-; =========================================================================
-;  RESET HANDLERS ($BF00)
-;
-;  Four entry points using the BIT abs trick to skip LDA #imm instructions.
-;  Each loads a different character into A, then falls through to common code.
-; =========================================================================
+\section{Reset handlers}
+
+Four entry points display different error characters on reset, using the
+BIT abs trick to skip [[LDA \#imm]] instructions:
+`R' (\$D2), `P' (\$D0), `L' (\$CC), or `!' (\$A1).
+
+The common handler copies ROM to language card, reinitializes the Monitor,
+clears the screen, clears memory from \$BD00 downward (with beeps via the
+speaker toggle), then reboots into the slot's ROM using a PHA/PHA/RTS trick.
+
+<<reset handlers>>=
 
         ORG $BF00
 
-RESET_R:                        ; $BF00 - display 'R'
+RESET_R:
         LDA #$D2
         DC.B $2C                ; BIT abs (skip next 2 bytes)
-RESET_P:                        ; $BF03 - display 'P'
+RESET_P:
         LDA #$D0
         DC.B $2C                ; BIT abs (skip next 2 bytes)
-RESET_L:                        ; $BF06 - display 'L'
+RESET_L:
         LDA #$CC
         DC.B $2C                ; BIT abs (skip next 2 bytes)
-RESET_BANG:                     ; $BF09 - display '!'
+RESET_BANG:
         LDA #$A1
 
 ; Common reset handler.
+        ; Restore language card, clear screen, wipe memory $0800-$BDFF
+        ; with speaker beeps, then reboot via slot ROM.
+        ;
+        ; Inputs:
+        ;   A — error character to display (from RESET_R/P/L/BANG)
+        ;   LDR_SLOT — boot slot * 16
+        ;
+        ; Modifies:
+        ;   $0800-$BDFF (zeroed), language card RAM, screen
+        ; Clobbers: A, X, Y
         PHA                     ; Save error character
         JSR COPY_ROM_TO_LC      ; Restore language card
         JSR MON_INIT            ; Initialize monitor
@@ -1655,31 +1824,49 @@ RESET_BANG:                     ; $BF09 - display '!'
         PHA                     ; Push low byte ($FF)
         RTS                     ; "Return" to $CnFF+1 = $Cn00 (slot ROM)
 
-; =========================================================================
-;  Loader persistent state ($BF48-$BF4F)
-;  These locations are used as variables by the loader, NOT as code.
-; =========================================================================
-
+; Loader persistent state (used as variables, not code).
 LDR_TRACK       = $BF48         ; Current track
 LDR_SLOT        = $BF49         ; Slot * 16
 LDR_PHASE       = $BF4A         ; Boot phase counter
 
 ; Emit the initial values at these locations.
-        PHP                     ; $BF48: initial value $08 (from reset handler)
+        PHP                     ; $BF48: initial value $08
         RTS                     ; $BF49: initial value $60 (slot 6 * 16)
         BRK                     ; $BF4A: initial value $00
+@ %def RESET_R RESET_P RESET_L RESET_BANG LDR_TRACK LDR_SLOT LDR_PHASE
 
-; =========================================================================
-;  SCROLL_UP ($BF50) --- Copy screen lines to buffer at $4000
-;
-;  Two entry points:
-;    $BF4B: Preamble --- checks A; if A != $FF, jumps to game handler.
-;    $BF50: Main entry (from RWTS_RELOAD) --- overlaps with JMP operand.
-;           Entered at byte 2 of JMP $28A0, which reads as LDY #$28.
-; =========================================================================
+\section{Screen scroll routines}
 
-SCROLL_UP_PRE:                  ; $BF4B
+Two screen scroll routines save and restore hi-res screen content during
+disk loads. SCROLL\_UP copies 32 hi-res lines to a buffer at \$4000.
+SCROLL\_DN copies from the buffer back to the screen, then fills the
+bottom 4 text lines from \$0300 data.
+
+SCROLL\_UP has two entry points: a preamble at \$BF4B that checks whether
+to use a game scroll handler, and the main entry at \$BF50 which overlaps
+with the operand bytes of a [[JMP \$28A0]] instruction (the byte sequence
+\$A0 \$28 reads as [[LDY \#\$28]] when entered at \$BF50).
+
+<<scroll up>>=
+
+        ORG $BF4B
+SCROLL_UP_PRE:
         SUBROUTINE
+        ; Save 32 hi-res screen lines to a buffer at $4000.
+        ;
+        ; Inputs:
+        ;   A — if $FF, perform scroll; otherwise jump to game handler at $28A0
+        ;
+        ; Behavior:
+        ;   Checks A for $FF; if not, delegates to game scroll handler.
+        ;   Otherwise copies 32 lines (40 bytes each) from hi-res page 2
+        ;   to the buffer at $4000, using SCREEN_ADDR_TBL for source
+        ;   addresses. SCROLL_UP ($BF50) is an alternate entry that
+        ;   overlaps with the JMP operand bytes (LDY #$28).
+        ;
+        ; Modifies:
+        ;   $4000-$44FF, $A0-$A3
+        ; Clobbers: A, X, Y
         TAY                     ; Save A
         INY
         BEQ .skip               ; If A was $FF, skip to main scroll
@@ -1688,7 +1875,7 @@ SCROLL_UP_PRE:                  ; $BF4B
 ; The JMP $28A0 above is $4C $A0 $28. Entry at $BF50 sees $A0 $28 = LDY #$28.
 SCROLL_UP = SCROLL_UP_PRE + 5  ; $BF50: overlapping entry (LDY #$28)
 
-.skip:                          ; $BF52
+.skip:
         LDA #$40
         STY $A0                 ; Dest low = 0 (Y=0 from BEQ path)
         STA $A1                 ; Dest high = $40
@@ -1716,13 +1903,26 @@ SCROLL_UP = SCROLL_UP_PRE + 5  ; $BF50: overlapping entry (LDY #$28)
         CPX #$40                ; 32 lines (64 bytes in table)
         BCC .copy_line
         RTS
+@ %def SCROLL_UP_PRE SCROLL_UP
 
-; =========================================================================
-;  SCROLL_DN ($BF7F) --- Restore screen from buffer, fill bottom lines
-; =========================================================================
+<<scroll dn>>=
 
-SCROLL_DN:                      ; $BF7F
+        ORG $BF7F
+SCROLL_DN:
         SUBROUTINE
+        ; Restore 32 hi-res screen lines from the buffer and fill bottom rows.
+        ;
+        ; Inputs:
+        ;   Buffer at $4000-$44FF — saved screen data from SCROLL_UP
+        ;
+        ; Behavior:
+        ;   Copies 32 lines (40 bytes each) from the buffer back to
+        ;   hi-res page 2 in reverse order using SCREEN_ADDR_TBL,
+        ;   then fills the bottom 4 screen rows (188-191) from $0300 data.
+        ;
+        ; Modifies:
+        ;   Hi-res page 2, $A0-$A3
+        ; Clobbers: A, X, Y
         LDY #$00
         LDA #$45
         STY $A0                 ; Source = $4500 (buffer after scroll data)
@@ -1750,28 +1950,48 @@ SCROLL_DN:                      ; $BF7F
         DEX
         BPL .copy_line
 
-; Fill bottom 4 text lines from $0300 data.
+; Fill bottom 4 hi-res rows (188-191) from $0300 data.
         LDX #$27                ; 40 bytes
 .fill_bottom:
         LDA $0300,X
-        STA $53D0,X             ; Hi-res line addresses for bottom rows
-        STA $57D0,X
-        STA $5BD0,X
-        STA $5FD0,X
+        STA HIRES2_ROW188,X     ; Row 188
+        STA HIRES2_ROW189,X     ; Row 189
+        STA HIRES2_ROW190,X     ; Row 190
+        STA HIRES2_ROW191,X     ; Row 191
         DEX
         BPL .fill_bottom
         RTS
+@ %def SCROLL_DN
 
-; =========================================================================
-;  SCREEN_ADDR_TBL ($BFC0) --- Hi-res page 2 line address pairs
-; =========================================================================
+\section{Screen address table}
 
-SCREEN_ADDR_TBL:                ; $BFC0
+A 64-byte table of 32 address pairs (lo/hi) pointing to hi-res page 2
+screen line addresses, used by the scroll routines.
+
+<<screen addr tbl>>=
+
+        ORG $BFC0
+SCREEN_ADDR_TBL:
         HEX 80 40 00 41 80 41 00 42 00 44 80 44 00 45 80 45
         HEX 00 48 80 48 00 49 80 49 00 4C 80 4C 00 4D 80 4D
         HEX 00 50 80 50 00 51 80 51 00 54 80 54 00 55 80 55
         HEX 00 58 80 58 00 59 80 59 00 5C 80 5C 00 5D 80 5D
+@ %def SCREEN_ADDR_TBL
 
+\section{Assembly}
+
+<<rwts.asm>>=
+        PROCESSOR 6502
+<<rwts defines>>
+<<rwts reload>>
+<<nibble reader>>
+<<applesoft patches>>
+<<screen restore>>
+<<copy rom to lc>>
+<<reset handlers>>
+<<scroll up>>
+<<scroll dn>>
+<<screen addr tbl>>
 @
 
 @ \chapter{Game code}
@@ -1779,5 +1999,108 @@ SCREEN_ADDR_TBL:                ; $BFC0
 This chapter will contain the reverse-engineered game code as the project
 progresses. The game entry point is [[\$4000]], called by the loader after
 the initial data load.
+
+@ \appendix
+
+\chapter{Apple II Hi-Res Graphics}
+
+Hi-res graphics on the Apple II is odd. Graphics are memory-mapped, not exactly
+consecutively, and bits don't always correspond to pixels. Color especially is
+odd, compared to today's luxurious 32-bit per pixel RGBA.
+
+The Apple II has two hi-res graphics pages, and maps the area from [[$2000-$3FFF]] to
+high-res graphics page 1 (HGR1), and [[$4000-$5FFF]] to page 2 (HGR2).
+
+First we'll talk about pixels. Nominally, the resolution of the hi-res graphics screen
+is 280 pixels wide by 192 pixels tall. In the memory map, each row is represented
+by 40 bytes. The high bit of each byte is not used for pixel data, but is used to
+control color.
+
+Here are some rules for how these bytes are turned into pixels:
+\begin{itemize}
+  \item Pixels are drawn to the screen from byte data least significant bit first.
+        This means that for the first byte bit 0 is column 0, bit 1 is column 1,
+        and so on.
+  \item A pattern of [[11]] results in two white pixels at the [[1]] positions.
+  \item A pattern of [[010]] results at least in a colored pixel at the [[1]] position.
+  \item A pattern of [[101]] results at least in a colored pixel at the [[0]] position.
+  \item So, a pattern of [[01010]] results in at least three consecutive colored
+        pixels starting from the first [[1]] to the last [[1]]. The last [[0]] bit
+        would also be colored if followed by a [[1]].
+  \item Likewise, a pattern of [[11011]] results in two white pixels, a colored pixel,
+        and then two more white pixels.
+  \item The color of a [[010]] pixel depends on the column that the [[1]] falls on, and
+        also whether the high bit of its byte was set or not.
+  \item The color of a [[11011]] pixel depends on the column that the [[0]] falls on, and
+        also whether the high bit of its byte was set or not.
+
+        \begin{center}
+        \begin{tabular}{@{}rcc@{}} \toprule
+        & Odd & Even \\ \cmidrule(r){2-3}
+        High bit clear & Green & Violet \\
+        High bit set & Orange & Blue \\ \bottomrule
+        \end{tabular}
+        \end{center}
+
+        The implication is that you can only select one pair of colors per byte.
+\end{itemize}
+
+An example would probably be good here. We will take one of the font characters from
+Ali Baba and the Forty Thieves, the lower-case [[r]]:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}rccc@{}} \toprule
+Bytes & Bits & Colorset & Pixel Data \\ \cmidrule{1-3}
+[[00 00]] & [[00000000 00000000]] & [[0]] & [[00000000000000]] \\
+[[00 00]] & [[00000000 00000000]] & [[0]] & [[00000000000000]] \\
+[[00 00]] & [[00000000 00000000]] & [[0]] & [[00000000000000]] \\
+[[00 00]] & [[00000000 00000000]] & [[0]] & [[00000000000000]] \\
+[[55 2A]] & [[01010101 00101010]] & [[0]] & [[10101010101010]] \\
+[[00 00]] & [[00000000 00000000]] & [[0]] & [[00000000000000]] \\
+[[46 07]] & [[01000110 00000111]] & [[0]] & [[01100011110000]] \\
+[[76 08]] & [[01110110 00001000]] & [[0]] & [[01101110001000]] \\
+[[00 1E]] & [[00000000 00011110]] & [[0]] & [[01111000011000]] \\
+[[00 06]] & [[00000000 00000110]] & [[0]] & [[01100000010000]] \\
+[[00 06]] & [[00000000 00000110]] & [[0]] & [[01100000000000]] \\
+[[00 06]] & [[00000000 00000110]] & [[0]] & [[01100000000000]] \\
+[[2A 00]] & [[00101010 00000000]] & [[0]] & [[00000000000000]] \\
+[[00 00]] & [[00000000 00000000]] & [[0]] & [[00000000000000]] \\
+[[07 00]] & [[00000111 00000000]] & [[0]] & [[00000000000000]] \\
+[[08 00]] & [[00001000 00000000]] & [[0]] & [[00000000000000]] \\ \bottomrule
+\end{tabular}
+\caption{Font character example}
+\label{table:fontexample}
+\end{table}
+
+Assuming that the following bits are all zero, and we place the
+character starting at column 0, we should see this:
+
+\begin{center}
+\scalebox{0.8}{
+\begin{tabular}{@{}rcccccccccccccc@{}}
+0 & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+1 & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+2 & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+3 & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+4 & \Cbv & \Cbv & \Cbv & \Cbv & \Cbv & \Cbv & \Cbv & \Cbv & \Cbv & \Cbv & \Cbv & \Cbv & \Cbv & \Cbk \\
+5 & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+6 & \Cbk & \Cbw & \Cbw & \Cbk & \Cbk & \Cbk & \Cbw & \Cbw & \Cbw & \Cbw & \Cbk & \Cbk & \Cbk & \Cbk \\
+7 & \Cbk & \Cbw & \Cbw & \Cbv & \Cbw & \Cbw & \Cbw & \Cbk & \Cbk & \Cbk & \Cbv & \Cbk & \Cbk & \Cbk \\
+8 & \Cbk & \Cbw & \Cbw & \Cbw & \Cbw & \Cbk & \Cbk & \Cbk & \Cbk & \Cbw & \Cbw & \Cbk & \Cbk & \Cbk \\
+9 & \Cbk & \Cbw & \Cbw & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbg & \Cbk & \Cbk & \Cbk & \Cbk \\
+10 & \Cbk & \Cbw & \Cbw & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+11 & \Cbk & \Cbw & \Cbw & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+12 & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+13 & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+14 & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+15 & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk & \Cbk \\
+\end{tabular}
+}
+\end{center}
+
+The violet line goes all the way across the character in the rendered image because it
+is followed by another font character with that line, so the lines connect according
+to the pixel color rules.
 
 \end{document}

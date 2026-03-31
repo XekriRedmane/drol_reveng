@@ -1994,11 +1994,251 @@ SCREEN_ADDR_TBL:
 <<screen addr tbl>>
 @
 
-@ \chapter{Game code}
+@ \chapter{Game initialization}
 
-This chapter will contain the reverse-engineered game code as the project
-progresses. The game entry point is [[\$4000]], called by the loader after
-the initial data load.
+The game entry point is [[\$4000]], called by the loader's [[FIRST\_BOOT]]
+via [[JSR \$4000]]. The first 19 bytes (\$4000--\$4012) are NOPs --- the
+original copy protection was patched out. The real initialization begins
+at \$4013.
+
+\section{Title screen unpacker}
+
+[[GAME\_INIT]] at \$4013 unpacks a data stream from \$4100 into hi-res
+page~1 (\$2000--\$3FFF), drawing the title screen. The stream consists
+of 37 records, each containing a 2-byte destination address (lo/hi)
+followed by 40 data bytes. A \$FF terminator ends the stream.
+
+After [[GAME\_INIT]] returns, [[FIRST\_BOOT]] sets up vectors, detects
+the joystick, applies machine-specific patches, restores zero page from
+[[ZP\_SAVE]], and enters the game via [[JMP (\$004E)]]. The initial
+value of \$4E/\$4F from [[ZP\_SAVE]] is \$72A3, which is in the
+swappable level data area loaded from track~5.
+
+<<drol defines>>=
+
+; --- Hi-res page 1 ---
+HGR1_BASE       = $2000         ; Hi-res graphics page 1 base address
+
+; --- Zero page (game init) ---
+ZP_STREAM_LO    = $A0           ; Data stream pointer low
+ZP_STREAM_HI    = $A1           ; Data stream pointer high
+ZP_DEST_LO_G    = $A2           ; Unpack destination low
+ZP_DEST_HI_G    = $A3           ; Unpack destination high
+ZP_SAVED_Y      = $A4           ; Saved Y during stream read
+@
+
+<<game init>>=
+
+        ORG $4000
+GAME_INIT_NOP:
+        SUBROUTINE
+        ; Title screen unpacker — draws initial hi-res display.
+        ;
+        ; Inputs:
+        ;   Data stream at $4100: [dest_lo, dest_hi, 40 bytes]... $FF
+        ;
+        ; Behavior:
+        ;   Reads records from $4100. Each record has a 2-byte destination
+        ;   address followed by 40 bytes of screen data, written via
+        ;   indirect indexed store. $FF terminates the stream.
+        ;   Fills 37 rows of hi-res page 1 ($2000-$3FFF).
+        ;
+        ; Modifies:
+        ;   Hi-res page 1 ($2000-$3FFF)
+        ; Clobbers: A, Y
+
+; $4000-$4012: NOPs (copy protection removed).
+        DS 19,$EA
+
+GAME_INIT:                      ; $4013
+        LDY #$00
+        LDA #$41                ; Stream starts at $4100
+        STY ZP_STREAM_LO
+        STA ZP_STREAM_HI
+.next_record:
+        JSR .read_byte          ; Read destination low
+        CMP #$FF                ; Terminator?
+        BNE .store_lo
+        RTS                     ; Done
+.store_lo:
+        STA ZP_DEST_LO_G       ; Destination low byte
+        JSR .read_byte
+        STA ZP_DEST_HI_G       ; Destination high byte
+        LDY #$27                ; 40 bytes per record
+.copy_byte:
+        JSR .read_byte
+        STA (ZP_DEST_LO_G),Y   ; Store to destination
+        DEY
+        BPL .copy_byte
+        BMI .next_record        ; Always taken — next record
+
+; Read next byte from the data stream at (ZP_STREAM_LO).
+.read_byte:                     ; $4036
+        STY ZP_SAVED_Y
+        LDY #$00
+        LDA (ZP_STREAM_LO),Y   ; Read byte
+        LDY ZP_SAVED_Y         ; Restore Y
+        INC ZP_STREAM_LO       ; Advance pointer
+        BNE .read_done
+        INC ZP_STREAM_HI
+.read_done:
+        RTS
+@ %def GAME_INIT_NOP GAME_INIT
+
+\section{Title screen data}
+
+The packed data stream at \$4100--\$4712 contains 37 records (1555 bytes)
+of hi-res screen data for the title screen. Each record writes 40 bytes
+to a specific hi-res page 1 address.
+
+<<game init padding>>=
+
+; $4045-$40FF: unused space after GAME_INIT code.
+        ORG $4045
+GAME_INIT_PAD:
+        DS $4100-*,0
+@ %def GAME_INIT_PAD
+
+<<title screen data>>=
+
+        ORG $4100
+TITLE_SCREEN_DATA:
+; 37 records of [dest_lo, dest_hi, 40 data bytes] + $FF terminator.
+; Writes to hi-res page 1 ($2000-$3FFF) to draw the title screen.
+        HEX 00 20 00 00 00 00 00 00 00 00 00 00 00 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 24 00 00 00 00
+        HEX 00 00 00 00 00 00 00 7E 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 7E 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 28 1F 78 3F 43 70 1F 01 78 3E 3E
+        HEX 70 7E 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 7E 00 0F 7C 1F 61 78 0F 40 7C 00 00 00 2C
+        HEX 01 79 6F 4E 7C 77 67 3E 3E 3E 70 7E 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 7E 00 00 7C
+        HEX 77 67 3E 3B 73 5F 00 00 00 30 01 79 6F 4E 7C 07
+        HEX 60 3E 3E 3E 70 7E 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 7E 00 00 7C 77 67 3E 03 70 1F
+        HEX 00 00 00 34 0F 79 6F 4E 7C 07 61 78 3E 3F 70 7E
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 7E 00 07 7C 77 67 3E 03 70 7C 00 00 00 38 01 78
+        HEX 3F 4E 7C 07 67 60 3E 3E 70 7E 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 7E 00 00 7C 1F 67
+        HEX 3E 03 73 70 00 00 00 3C 01 79 6F 4E 7C 77 67 6E
+        HEX 3E 3E 70 7E 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 7E 00 00 7C 77 67 3E 3B 73 77 00 00
+        HEX 80 20 1F 79 6F 43 70 1F 01 78 3E 3E 70 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 00
+        HEX 0F 7C 77 61 78 0F 40 7C 00 00 80 24 00 00 00 00
+        HEX 00 00 00 00 00 00 00 54 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 2A 00 00 00 00 00 00 00
+        HEX 00 00 00 00 80 28 00 00 00 00 00 00 00 00 00 00
+        HEX 00 54 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 2A 00 00 00 00 00 00 00 00 00 00 00 80 2C
+        HEX 00 00 00 00 00 00 00 00 00 00 00 54 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 2A 00 00 00
+        HEX 00 00 00 00 00 00 00 00 80 30 82 D4 82 D4 82 D4
+        HEX 82 D4 82 D4 00 54 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 2A 82 D4 82 D4 82 D4 82 D4 82
+        HEX D4 00 80 34 8A C5 8A C5 8A C5 8A C5 8A C5 00 54
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 2A 8A C5 8A C5 8A C5 8A C5 8A C5 00 80 38 8A C5
+        HEX 8A C5 8A C5 8A C5 8A C5 00 54 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 2A 8A C5 8A C5 8A
+        HEX C5 8A C5 8A C5 00 80 3C 8A C5 8A C5 8A C5 8A C5
+        HEX 8A C5 00 54 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 2A 8A C5 8A C5 8A C5 8A C5 8A C5 00
+        HEX 00 21 8A C5 8A C5 8A C5 8A C5 8A C5 00 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 8A
+        HEX C5 8A C5 8A C5 8A C5 8A C5 00 00 25 82 D4 82 D4
+        HEX 82 D4 82 D4 82 D4 00 54 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 2A 82 D4 82 D4 82 D4 82
+        HEX D4 82 D4 00 00 29 00 00 00 00 00 00 00 00 00 00
+        HEX 00 54 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 2A 00 00 00 00 00 00 00 00 00 00 00 00 2D
+        HEX 00 00 00 00 00 00 00 00 00 00 00 54 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 2A 0F 7F 7F
+        HEX 78 00 00 00 00 00 00 00 00 31 84 00 00 00 00 8A
+        HEX D0 00 00 00 00 54 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 2A 1F 7F 7F 7C 00 00 00 00 00
+        HEX 00 00 00 35 95 00 00 00 00 AA F4 0A 55 2A 40 54
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 2A 1C 00 00 1C 00 00 00 00 81 A0 00 00 39 97 00
+        HEX 00 00 80 AA D4 08 00 00 40 54 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 2A 1C 00 00 1C 82
+        HEX D4 82 D4 85 A8 00 00 3D 95 82 D0 88 D1 AA D4 0A
+        HEX 55 2A 40 54 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 2A 1C 00 00 1C 8A C5 8A C5 83 A8 00
+        HEX 80 21 95 8A F4 AE D1 A8 D4 0A 55 2A 40 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 1C
+        HEX 00 00 1C 8A C5 8A C5 85 AC 00 80 25 95 8A D4 AA
+        HEX D1 A8 D4 00 00 00 00 54 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 2A 1C 00 00 1C 8A C5 8A
+        HEX C5 82 D2 00 80 29 95 8A 94 8A D1 AA D4 0A 55 2A
+        HEX 40 54 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 2A 1C 00 00 1C 8A C5 8A C5 85 E5 00 80 2D
+        HEX 95 8A D4 82 D0 AA D4 0A 55 2A 40 54 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 2A 1C 00 00
+        HEX 1C 82 D4 82 D4 85 E5 00 80 31 95 8A D4 82 D0 AA
+        HEX D4 08 00 00 40 54 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 2A 1C 00 00 1C 00 00 00 00 82
+        HEX D0 00 80 35 84 82 D0 80 C0 8A D0 0A 55 2A 40 54
+        HEX 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 2A 1F 7F 7F 7C 00 00 00 00 87 F8 00 80 39 00 00
+        HEX 00 00 00 00 00 00 00 00 00 54 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00 00 00 2A 0F 7F 7F 78 00
+        HEX 00 00 00 00 00 00 80 3D 00 00 00 00 00 00 00 00
+        HEX 00 00 00 54 00 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 2A 00 00 00 00 00 00 00 00 00 00 00
+        HEX 00 22 00 00 00 00 00 00 00 00 00 00 00 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 00
+        HEX 00 00 00 00 00 00 00 00 00 00 D0 33 2A 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55
+        HEX 2A 55 2A 55 D0 37 2A 55 2A 55 2A 55 2A 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 D0 3B
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 D0 3F 2A 55 2A 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55
+        HEX 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55 2A 55
+        HEX 2A 55 FF
+@ %def TITLE_SCREEN_DATA
+
+<<game init remaining>>=
+
+; $4713-$47FF: screen initialization routines and data tables.
+; These routines fill hi-res page 2 rows from $0300 data.
+; Not yet disassembled.
+        ORG $4713
+GAME_INIT_EXTRA:
+        HEX 0B E4 2D F0 04 CA 4C AB 04 A2 27 BD 00 03 9D 28
+        HEX 50 9D 28 54 9D 28 58 9D 28 5C 9D A8 52 9D A8 56
+        HEX 9D A8 5A 9D A8 5E 9D 50 51 9D 50 55 9D 50 59 9D
+        HEX 50 5D E0 00 F0 04 CA 4C 1E 05 60 A0 00 A6 59 E0
+        HEX 28 90 08 98 18 69 23 A8 4C 02 07 B1 FE 9D A8 20
+        HEX 9D 28 23 9D D0 21 C8 B1 FE 9D A8 24 9D 28 27 9D
+        HEX D0 25 C8 B1 FE 9D A8 28 9D 28 2B 9D D0 29 C8 B1
+        HEX FE 9D A8 2C 9D 28 2F 9D D0 2D C8 B1 FE 9D A8 30
+        HEX 9D 28 33 9D D0 31 C8 B1 FE 9D A8 34 9D 28 37 9D
+        HEX D0 35 C8 B1 FE 9D A8 38 9D 28 3B 9D D0 39 C8 B1
+        HEX FE 9D A8 3C 9D 28 3F 9D D0 3D C8 B1 FE 9D 28 21
+        HEX 9D A8 23 9D 50 22 C8 B1 FE 9D 28 25 9D A8 27 9D
+        HEX 50 26 C8 B1 FE 9D 28 29 9D A8 2B 9D 50 2A C8 B1
+        HEX FE 9D 28 2D 9D A8 2F 9D 50 2E C8 B1 FE 9D 28 31
+        HEX 9D A8 33 9D 50 32 C8 B1 FE 9D 28 35 9D
+@ %def GAME_INIT_EXTRA
+
+\section{Assembly}
+
+<<drol.asm>>=
+        PROCESSOR 6502
+<<drol defines>>
+<<game init>>
+<<game init padding>>
+<<title screen data>>
+<<game init remaining>>
+@
 
 @ \appendix
 

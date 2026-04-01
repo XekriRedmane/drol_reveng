@@ -2072,7 +2072,6 @@ ZP_HGR_DST      = $2F           ; Hi-res copy destination pointer (2 bytes)
 
 ; --- Main loop subroutine stubs (not yet RE'd) ---
 RENDER_SETUP    = $699C         ; STUB — rendering setup
-SCROLL_CAMERA   = $719D         ; STUB — scroll / camera update
 PAUSE_HANDLER   = $0E51         ; STUB — wait for keypress (pause)
 COLLISION_DETECT = $64CB        ; STUB — collision detection
 ENEMY_AI_1      = $0F5D         ; STUB — enemy AI (part 1)
@@ -2096,15 +2095,12 @@ PAGE_FLIP_PREP  = $130A         ; STUB — page flip preparation
 DISPLAY_UPDATE  = $10AB         ; STUB — display update
 PAGE_FLIP       = $683C         ; STUB — page flip
 POST_FRAME      = $10CF         ; STUB — post-frame cleanup
-LEVEL_COMPLETE  = $7208         ; STUB — level complete handler
 GAME_OVER       = $BDA0         ; STUB — game over handler
 
 ; --- Attract-mode subroutine stubs ---
 ATTRACT_ANIM_1  = $17A6         ; STUB — attract animation 1
 ATTRACT_ANIM_2  = $17E1         ; STUB — attract animation 2
-ATTRACT_ANIM_3  = $1813         ; STUB — attract animation 3
 ATTRACT_ANIM_4  = $1844         ; STUB — attract animation 4
-GAME_START_INIT = $13A4         ; STUB — game start initialization
 
 ; --- Movement subroutines (toggled via self-modifying JSR/BIT) ---
 ; The main loop has 4 slots that are either JSR (active) or BIT (inactive).
@@ -2121,6 +2117,12 @@ FLOOR_Y_TABLE   = $03F8         ; Floor Y positions (indexed 1-4)
 KEYBOARD        = $C000         ; Keyboard data (bit 7 = key available)
 KBDSTROBE       = $C010         ; Clear keyboard strobe
 SW_SPEAKER      = $C030         ; Speaker toggle
+SW_PUSH_BTN0    = $C061         ; Push button 0 (bit 7 = pressed)
+SW_PUSH_BTN1    = $C062         ; Push button 1 (bit 7 = pressed)
+
+; --- Zero-page (input pointers) ---
+ZP_INPUT_1      = $52           ; Input handler pointer 1 (2 bytes)
+ZP_INPUT_2      = $54           ; Input handler pointer 2 (2 bytes)
 @
 
 <<game init>>=
@@ -2375,7 +2377,6 @@ OPCODE_JSR      = $20           ; JSR opcode (enable direction)
 OPCODE_BIT      = $2C           ; BIT abs opcode (disable direction)
 
 ; --- Game code stubs (referenced by input) ---
-JOYSTICK_HANDLER = $012B        ; STUB — joystick input handler
 @
 
 <<input dispatch>>=
@@ -2399,7 +2400,7 @@ INPUT_DISPATCH:
         ;   ZP $02-$07, $0B-$0D, $1D, $8D+X
         ; Clobbers: A, X, Y
 
-        LDA $48                 ; Input mode flag
+        LDA ZP_INPUT_MODE       ; Input mode flag
         BPL .keyboard           ; Positive = keyboard
         JMP JOYSTICK_HANDLER    ; Negative = joystick
 
@@ -2414,7 +2415,8 @@ INPUT_DISPATCH:
         CMP #KEY_RIGHT
         BNE .check_left
         BIT KBDSTROBE           ; Clear keyboard strobe
-        STA $07                 ; Store key code
+INPUT_SET_RIGHT:
+        STA ZP_KEY_CODE         ; Store key code
         LDY #OPCODE_JSR
         STY SMC_MOVE_RIGHT      ; Enable move right
         LDY #OPCODE_BIT
@@ -2426,7 +2428,8 @@ INPUT_DISPATCH:
         CMP #KEY_LEFT
         BNE .check_action
         BIT KBDSTROBE
-        STA $07
+INPUT_SET_LEFT:
+        STA ZP_KEY_CODE
         LDY #OPCODE_JSR
         STY SMC_MOVE_LEFT       ; Enable move left
         LDY #OPCODE_BIT
@@ -2438,6 +2441,7 @@ INPUT_DISPATCH:
         CMP #KEY_ACTION
         BNE .check_descend
         BIT KBDSTROBE
+INPUT_DO_ASCEND:
         LDY #OPCODE_JSR
         STY SMC_ASCEND          ; Enable ascend
         LDY #OPCODE_BIT
@@ -2458,14 +2462,14 @@ INPUT_DISPATCH:
         LDY #$01
         STY $02                 ; Set action flag
         DEY
-        STY $07                 ; Clear key code
+        STY ZP_KEY_CODE         ; Clear key code
         DEY
         STY $0D                 ; Set search direction ($FF)
         LDX $41                 ; Number of entities
 .search_entity:
         SEC
         LDA $66,X               ; Entity Y position
-        SBC $4A                 ; Player Y position
+        SBC ZP_PLAYER_Y         ; Player Y position
         CMP #$18                ; Distance check
         BCS .next_entity
         CMP #$15
@@ -2494,13 +2498,14 @@ INPUT_DISPATCH:
         CMP #KEY_DESCEND
         BNE .check_jump
         BIT KBDSTROBE
+INPUT_DO_DESCEND:
         LDA $0D                 ; Check current direction
         BMI .check_floor
         LDX $41                 ; Number of entities
 .search_descend:
         SEC
         LDA $66,X               ; Entity Y position
-        SBC $4A                 ; Player Y position
+        SBC ZP_PLAYER_Y         ; Player Y position
         CMP #$18
         BCS .no_match_d
         CMP #$15
@@ -2551,7 +2556,7 @@ INPUT_DISPATCH:
         LDY #$FF
         STY $02                 ; Set descend direction flag
         INY
-        STY $07                 ; Clear key code
+        STY ZP_KEY_CODE         ; Clear key code
 .done_descend:
         RTS
 
@@ -2560,11 +2565,11 @@ INPUT_DISPATCH:
         CMP #KEY_JUMP
         BNE .unknown_key
         LDY #$FF
-        STY $05                 ; Set jump flag
+        STY ZP_JUMP_FLAG        ; Set jump flag
         BIT KBDSTROBE
 .unknown_key:
         RTS
-@ %def INPUT_DISPATCH
+@ %def INPUT_DISPATCH INPUT_SET_RIGHT INPUT_SET_LEFT INPUT_DO_ASCEND INPUT_DO_DESCEND
 
 \section{Meta-key handler}
 
@@ -2652,6 +2657,153 @@ PAUSE_HANDLER:
         RTS
 @ %def PAUSE_HANDLER
 
+\section{Joystick input handler}
+
+[[JOYSTICK\_HANDLER]] at \$012B reads the Apple~II game-port buttons and
+paddles. The input dispatcher jumps here when joystick mode is active
+(\$48 negative).
+
+Buttons~0 and~1 both trigger a jump (\$05~=~\$FF). The zero-page flag
+\$49 tracks press state to prevent auto-repeat: the jump flag is only
+set on the initial button-down transition.
+
+Paddle reading alternates between axes each frame, gated by the display
+page flag in ZP~\$00 (which toggles sign every frame via
+[[DISPLAY\_PAGE\_FLIP]]). On positive frames the vertical axis~(1) is
+read; on negative frames the horizontal axis~(0). This spreads the
+paddle timing overhead across two frames.
+
+Vertical zones: $<$\$50 = ascend, \$50--\$AE = dead zone, $\ge$\$AF =
+descend. Horizontal zones: $<$\$3C = hard left, \$3C--\$63 = soft left
+(with hysteresis), \$64--\$9B = dead zone, \$9C--\$C2 = soft right
+(with hysteresis), $\ge$\$C3 = hard right. In the soft zones the
+joystick won't re-issue a direction command if the player is already
+moving that way, preventing jitter at the threshold.
+
+Each direction branch tail-calls into [[INPUT\_DISPATCH]] at the
+appropriate entry point to share the keyboard handler's direction-setting
+logic.
+
+<<joystick handler defines>>=
+
+; --- Apple II ROM ---
+PREAD           = $FB1E         ; Read paddle axis X → Y (ROM)
+
+; --- Zero-page (input) ---
+ZP_PAGE_FLAG    = $00           ; Display page flag (toggles sign each frame)
+ZP_LAST_DIR     = $01           ; Last direction key code
+ZP_JUMP_FLAG    = $05           ; Jump flag ($FF = jump requested)
+ZP_KEY_CODE     = $07           ; Current key code
+ZP_INPUT_MODE   = $48           ; Input mode (positive = keyboard, negative = joystick)
+ZP_BTN_STATE    = $49           ; Button state ($FF = pressed, $01 = released)
+
+; --- Joystick thresholds ---
+JOY_V_UP        = $50           ; Vertical: below = ascend
+JOY_V_DOWN      = $AF           ; Vertical: above = descend
+JOY_H_LEFT_HARD = $3C           ; Horizontal: below = hard left
+JOY_H_LEFT_SOFT = $64           ; Horizontal: below = soft left
+JOY_H_RIGHT_SOFT = $9C          ; Horizontal: above = soft right
+JOY_H_RIGHT_HARD = $C3          ; Horizontal: above = hard right
+@
+
+<<joystick handler>>=
+
+        ORG $012B
+JOYSTICK_HANDLER:
+        SUBROUTINE
+        ; Joystick input handler — reads buttons and paddles.
+        ;
+        ; Inputs:
+        ;   SW_PUSH_BTN0/1 — button state (bit 7 = pressed)
+        ;   ZP_PAGE_FLAG — selects vertical or horizontal axis
+        ;
+        ; Behavior:
+        ;   Buttons: set jump flag on initial press.
+        ;   Vertical axis (even frames): ascend or descend.
+        ;   Horizontal axis (odd frames): move left or right.
+        ;   Tail-calls into INPUT_DISPATCH entry points.
+        ;
+        ; Modifies:
+        ;   ZP_BTN_STATE, ZP_JUMP_FLAG, direction slots via INPUT_DISPATCH
+        ; Clobbers: A, X, Y
+
+; --- Button handling ---
+        LDA SW_PUSH_BTN0        ; Check button 0
+        BPL .check_btn1         ; Not pressed → check button 1
+.btn_pressed:
+        LDA ZP_BTN_STATE        ; Already in pressed state?
+        BMI .read_paddle        ; Yes → skip (no auto-repeat)
+        LDA #$FF
+        STA ZP_BTN_STATE        ; Mark as pressed
+        STA ZP_JUMP_FLAG        ; Set jump flag
+        BMI .read_paddle        ; Always taken
+
+.check_btn1:
+        LDA SW_PUSH_BTN1        ; Check button 1
+        BMI .btn_pressed        ; Pressed → same as button 0
+        LDA #$01
+        STA ZP_BTN_STATE        ; Mark as released
+
+; --- Paddle axis selection ---
+.read_paddle:
+        LDA ZP_PAGE_FLAG        ; Display page flag
+        BMI .read_horizontal    ; Negative → horizontal axis
+
+; --- Vertical axis (paddle 1) ---
+        LDX #$01                ; Axis 1 = vertical
+        JSR PREAD               ; Read paddle → Y
+        CPY #JOY_V_UP           ; Above ascend threshold?
+        BCS .check_descend_v    ; Yes → check descend zone
+        JMP INPUT_DO_ASCEND     ; Ascend
+
+.check_descend_v:
+        CPY #JOY_V_DOWN         ; Above descend threshold?
+        BCS .do_descend_v       ; Yes → descend
+        RTS                     ; Dead zone — no action
+
+.do_descend_v:
+        JMP INPUT_DO_DESCEND    ; Descend
+
+; --- Horizontal axis (paddle 0) ---
+.read_horizontal:
+        LDX #$00                ; Axis 0 = horizontal
+        JSR PREAD               ; Read paddle → Y
+        CPY #JOY_H_LEFT_HARD   ; Hard left zone?
+        BCS .check_soft_left    ; No → check soft left
+        LDA #KEY_LEFT           ; Left arrow key code
+        JMP INPUT_SET_LEFT      ; Set left direction
+
+.check_soft_left:
+        CPY #JOY_H_LEFT_SOFT   ; Soft left zone?
+        BCS .check_dead_zone    ; No → check dead zone
+        LDA ZP_LAST_DIR         ; Already moving left?
+        CMP #KEY_LEFT
+        BEQ .no_change          ; Yes → no action (hysteresis)
+        LDA #KEY_LEFT
+        JMP INPUT_SET_LEFT      ; Set left direction
+
+.no_change:
+        RTS
+
+.check_dead_zone:
+        CPY #JOY_H_RIGHT_SOFT  ; In dead zone?
+        BCS .check_soft_right   ; No → check right zones
+        RTS                     ; Dead zone — no action
+
+.check_soft_right:
+        CPY #JOY_H_RIGHT_HARD  ; Hard right zone?
+        BCS .hard_right         ; Yes → set right
+        LDA ZP_LAST_DIR         ; Already moving right?
+        CMP #KEY_RIGHT
+        BEQ .no_change          ; Yes → no action (hysteresis)
+        LDA #KEY_RIGHT
+        JMP INPUT_SET_RIGHT     ; Set right direction
+
+.hard_right:
+        LDA #KEY_RIGHT
+        JMP INPUT_SET_RIGHT     ; Set right direction
+@ %def JOYSTICK_HANDLER
+
 \section{Extended key handler}
 
 [[KEY\_HANDLER\_EXT]] at \$0194 handles Ctrl-J (switch to joystick mode),
@@ -2681,7 +2833,7 @@ KEY_HANDLER_EXT:
         CMP #KEY_CTRL_J
         BNE .check_kbd
         LDA #$FF
-        STA $48                 ; Joystick mode
+        STA ZP_INPUT_MODE       ; Joystick mode
         BIT KBDSTROBE
         RTS
 
@@ -2689,7 +2841,7 @@ KEY_HANDLER_EXT:
         CMP #KEY_CTRL_K
         BNE .check_speaker
         LDA #$01
-        STA $48                 ; Keyboard mode
+        STA ZP_INPUT_MODE       ; Keyboard mode
         BIT KBDSTROBE
         RTS
 
@@ -2836,12 +2988,408 @@ SMC_PAGE_SWITCH = *+1
         LDA SMC_PAGE_SWITCH     ; Read current page switch low byte
         EOR #$01                ; Toggle $54 ↔ $55
         STA SMC_PAGE_SWITCH     ; Patch for next frame
-        LDA $00
+        LDA ZP_PAGE_FLAG
         CLC
         ADC #$80                ; Advance scroll offset
-        STA $00
+        STA ZP_PAGE_FLAG
         RTS
 @ %def DISPLAY_PAGE_FLIP SMC_PAGE_SWITCH
+
+\section{Game start initialization}
+
+[[GAME\_START\_INIT]] at \$13A4 is called from the attract loop when the
+player presses a key or button. It resets the player position to the
+starting Y-coordinate (\$6B), zeros the three score digits (\$2B--\$2D),
+sets the initial lives count, calls two initialization subroutines
+([[INIT\_ENTITY\_STATE]] and [[INIT\_LEVEL\_STATE]]), and then tail-calls
+[[LOAD\_LEVEL]] to load the first level.
+
+<<game start init defines>>=
+
+; --- Zero-page (game start) ---
+ZP_PLAYER_Y     = $4A           ; Player Y position
+ZP_SCORE_0      = $2B           ; Score digit 0 (ones)
+ZP_SCORE_1      = $2C           ; Score digit 1 (tens)
+ZP_SCORE_2      = $2D           ; Score digit 2 (hundreds)
+ZP_LIVES        = $2E           ; Lives remaining
+ZP_LEVEL_STATE  = $5E           ; Level state flag
+ZP_LEVEL_NUM    = $46           ; Current level number
+ZP_HIGH_SCORE_FLAG = $44        ; High score flag ($FF = no high score)
+
+; --- Game state ---
+SCORE_DISPLAY_VAL = $65AB       ; Score display value
+LIVES_DISPLAY_VAL = $65A7       ; Lives display value
+ZP_ENTITY_D1    = $D1           ; Entity state 1
+ZP_ENTITY_D2    = $D2           ; Entity state 2
+ZP_ENTITY_D3    = $D3           ; Entity state 3
+
+; --- Subroutine stubs (game start) ---
+INIT_LEVEL_STATE = $11B8        ; STUB — initialize level state tables
+LOAD_LEVEL      = $6AA7         ; STUB — load level data
+@
+
+<<game start init>>=
+
+        ORG $13A4
+GAME_START_INIT:
+        SUBROUTINE
+        ; Game start initialization — reset player and game state.
+        ;
+        ; Behavior:
+        ;   Sets player Y to starting position ($6B).
+        ;   Zeros score digits. Sets initial lives ($27).
+        ;   Calls entity and level initialization.
+        ;   Tail-calls LOAD_LEVEL to begin first level.
+        ;
+        ; Modifies:
+        ;   ZP $2B-$2E, $44, $46, $4A, $5E, $D1-$D3,
+        ;   $65A7, $65AB
+        ; Clobbers: A, X
+
+; --- Player start position ---
+        LDA #$6B
+        STA ZP_PLAYER_Y         ; Starting Y position
+
+; --- Clear score ---
+        LDA #$00
+        STA ZP_SCORE_0           ; Score digit 0
+        STA ZP_SCORE_1           ; Score digit 1
+        STA ZP_SCORE_2           ; Score digit 2
+        STA SCORE_DISPLAY_VAL    ; Clear score display
+
+; --- Set initial lives ---
+        LDA #$27
+        STA ZP_LIVES             ; Initial lives count
+        LDA #$28
+        STA LIVES_DISPLAY_VAL    ; Initial lives display value
+
+; --- Initialize subsystems ---
+        JSR INIT_ENTITY_STATE    ; Reset entity ZP state
+        JSR INIT_LEVEL_STATE     ; Reset level state tables
+
+; --- Set level state ---
+        LDA #$04
+        STA ZP_LEVEL_STATE       ; Initial level state
+        LDX #$00
+        STX ZP_ENTITY_D1         ; Clear entity state 1
+        STX ZP_ENTITY_D2         ; Clear entity state 2
+        STX ZP_ENTITY_D3         ; Clear entity state 3
+        STX ZP_LEVEL_NUM         ; Start at level 0
+        DEX
+        STX ZP_HIGH_SCORE_FLAG   ; No high score yet ($FF)
+
+; --- Load first level ---
+        JMP LOAD_LEVEL           ; Tail-call: load level data
+@ %def GAME_START_INIT
+
+\section{Difficulty configuration update}
+
+[[SCROLL\_CAMERA]] at \$719D runs once every 256 frames (when the frame
+counter wraps to zero). It reads two game-progress bytes (\$D1 and \$D2),
+nibble-swaps and combines them into a single difficulty index, then
+selects one of four configuration presets for ZP variables \$31--\$35
+and~\$40. These variables control enemy spawn counts and behavior
+thresholds used by the per-frame AI and hazard routines.
+
+The four presets correspond to increasing difficulty:
+\begin{itemize}
+\item Index $<$ 4: all entity slots disabled (\$31--\$33 = \$FF), minimal activity.
+\item Index 4--15: one slot enabled, moderate activity.
+\item Index 16--23: all slots enabled with standard thresholds.
+\item Index $\ge$ 24: maximum difficulty with the highest thresholds.
+\end{itemize}
+
+The sub-entry at [[INIT\_ENTITY\_STATE]] (\$71D6) is also called directly
+by [[GAME\_START\_INIT]] to reset entity state when starting a new game.
+
+<<scroll camera>>=
+
+        ORG $719D
+SCROLL_CAMERA:
+        SUBROUTINE
+        ; Difficulty configuration update — adjusts entity parameters.
+        ;
+        ; Runs every 256 frames (when ZP $FD wraps to zero).
+        ; Computes difficulty index from $D1/$D2, selects preset.
+        ;
+        ; Inputs:
+        ;   $FD — frame counter (only acts when zero)
+        ;   $D1, $D2 — game progress state
+        ;
+        ; Modifies:
+        ;   ZP $31-$35, $40
+        ; Clobbers: A, X
+
+; --- Guard: only run when frame counter = 0 ---
+        LDA $FD
+        BNE .done
+
+; --- Compute difficulty index ---
+        LDA ZP_ENTITY_D2         ; High nibble of D2
+        AND #$F0
+        LSR
+        LSR
+        LSR
+        LSR
+        STA $5C                  ; Temp: D2 high nibble → low
+        LDA ZP_ENTITY_D1         ; Low nibble of D1
+        AND #$0F
+        ASL
+        ASL
+        ASL
+        ASL                      ; D1 low nibble → high
+        ORA $5C                  ; Combine: (D1_lo << 4) | (D2_hi >> 4)
+
+; --- Select preset based on index ---
+        CMP #$04
+        BCC INIT_ENTITY_STATE    ; < 4: minimal
+        CMP #$10
+        BCC .preset_moderate     ; 4-15: moderate
+        CMP #$18
+        BCC .preset_standard     ; 16-23: standard
+
+; --- Preset: maximum difficulty (index >= 24) ---
+        LDA #$03
+        STA $40
+        STA $31
+        LDA #$01
+        STA $32
+        STA $33
+        LDA #$F0
+        STA $34
+        LDA #$30
+        STA $35
+.done:
+        RTS
+
+; --- Preset: minimal (index < 4) ---
+; Also called by GAME_START_INIT to reset entity state.
+INIT_ENTITY_STATE:
+        LDX #$FF
+        STX $31                  ; Disable all entity slots
+        STX $32
+        STX $33
+        INX
+        STX $34                  ; Clear threshold
+        INX
+        STX $40                  ; Set count to 1
+        LDA #$50
+        STA $35                  ; Low difficulty threshold
+        RTS
+
+; --- Preset: moderate (index 4-15) ---
+.preset_moderate:
+        LDX #$FF
+        STX $32                  ; Disable slot 2
+        INX
+        STX $31                  ; Enable slot 1
+        INX
+        STX $33                  ; Enable slot 3
+        LDA #$40
+        STA $34                  ; Moderate threshold
+        RTS
+
+; --- Preset: standard (index 16-23) ---
+.preset_standard:
+        LDX #$01
+        STX $31                  ; Enable all slots
+        STX $32
+        STX $33
+        INX
+        STX $40                  ; Set count to 2
+        LDA #$80
+        STA $34                  ; Standard threshold
+        RTS
+@ %def SCROLL_CAMERA INIT_ENTITY_STATE
+
+\section{Level complete handler}
+
+[[LEVEL\_COMPLETE]] at \$7208 runs when the level-complete flag (\$5E)
+goes negative. It first clears the keyboard strobe, calls a transition
+routine, then patches the main loop to disable attract behavior.
+
+If extra lives remain (\$8C $>$ 0), the handler loops showing an
+extra-life animation. Each iteration decrements the extra-life counter,
+sets up sprite parameters, draws a sprite, and runs one frame of the
+main loop. During this animation, keyboard or joystick input is polled;
+if detected, control transfers to the attract loop's input-detection
+code.
+
+When the extra-life count reaches zero, [[GAME\_START\_INIT]] is called
+to reset game state, the sound flag is refreshed, sprite rendering is
+re-enabled, and execution falls through into [[ATTRACT\_LOOP]].
+
+<<level complete defines>>=
+
+; --- Subroutine stubs (level complete) ---
+LEVEL_TRANSITION = $116C        ; STUB — level transition effects
+SPRITE_DRAW_CALL = $656F        ; STUB — sprite draw subroutine
+SPRITE_PTR_LO   = $65B3         ; Sprite data pointer, low byte
+SPRITE_PTR_HI   = $65B4         ; Sprite data pointer, high byte
+SMC_ATTRACT_RTS = $6827         ; Self-mod: attract loop control
+SMC_COLLISION_A = $64FA         ; Self-mod: collision parameter A
+SMC_COLLISION_B = $64F6         ; Self-mod: collision parameter B
+
+; --- Zero-page (level complete) ---
+ZP_EXTRA_LIVES  = $8C           ; Extra lives counter for animation
+ZP_SPRITE_W     = $56           ; Sprite width
+ZP_SPRITE_H     = $57           ; Sprite height
+ZP_SPRITE_Y     = $5B           ; Sprite Y position
+ZP_SPRITE_X     = $5D           ; Sprite X column
+ZP_SOUND_A      = $36           ; Sound flag A
+ZP_SOUND_B      = $38           ; Sound flag B
+@
+
+<<level complete>>=
+
+        ORG $7208
+LEVEL_COMPLETE:
+        SUBROUTINE
+        ; Level complete handler — shows extra-life animation, restarts.
+        ;
+        ; Inputs:
+        ;   ZP_EXTRA_LIVES ($8C) — extra lives to animate
+        ;
+        ; Behavior:
+        ;   Animates each extra life with a sprite loop.
+        ;   Polls input during animation.
+        ;   When done, calls GAME_START_INIT and falls into ATTRACT_LOOP.
+        ;
+        ; Modifies:
+        ;   $8C, sprite parameters, main loop patches
+        ; Clobbers: A, X, Y
+
+; --- Initialization ---
+        LDA KBDSTROBE            ; Clear keyboard strobe
+        JSR LEVEL_TRANSITION     ; Transition effects
+        LDA #$60                 ; RTS opcode
+        STA SMC_ATTRACT_RTS      ; Patch: disable attract subroutine
+        LDA #$06
+        STA SMC_COLLISION_A      ; Adjust collision parameter
+        LDA #$13
+        STA SMC_COLLISION_B      ; Adjust collision parameter
+
+; --- Extra-life animation loop ---
+.check_extra:
+        LDA ZP_EXTRA_LIVES       ; Extra lives remaining?
+        BEQ .no_more_lives       ; None left → start new game
+        DEC ZP_EXTRA_LIVES       ; Consume one extra life
+
+; --- Draw extra-life sprite ---
+        LDA #$06
+        STA ZP_SPRITE_W          ; Sprite width = 6
+        LDA #$0E
+        STA ZP_SPRITE_H          ; Sprite height = 14
+        LDA #$2E
+        STA ZP_SPRITE_Y          ; Y position = $2E
+        LDA #$17
+        STA ZP_SPRITE_X          ; X column = $17
+        LDA #$7D
+        STA SPRITE_PTR_LO        ; Sprite data pointer low
+        LDA #$B6
+        STA SPRITE_PTR_HI        ; Sprite data pointer high
+        JSR SPRITE_DRAW_CALL     ; Draw extra-life sprite
+
+; --- Poll input during animation ---
+        LDA KEYBOARD             ; Check keyboard
+        BMI ATTRACT_KEY_DETECT   ; Key pressed → handle input
+        LDY #$00
+        LDA (ZP_INPUT_1),Y       ; Check joystick button 1
+        BMI ATTRACT_JOY_DETECT   ; Pressed → handle input
+        LDA (ZP_INPUT_2),Y       ; Check joystick button 2
+        BMI ATTRACT_JOY_DETECT   ; Pressed → handle input
+
+; --- Run one frame and continue loop ---
+        JSR MAIN_LOOP            ; Run one game frame
+        JMP .check_extra         ; Check for more extra lives
+
+; --- No more extra lives: reset and restart ---
+.no_more_lives:
+        JSR GAME_START_INIT      ; Reset game state
+        LDA ZP_SOUND_A
+        STA ZP_SOUND_B           ; Sync sound flags
+        LDA #OPCODE_JSR
+        STA ZP_SOUND_A           ; Re-enable sound
+        STA SMC_RENDER           ; Re-enable sprite rendering
+                                 ; Fall through to ATTRACT_LOOP
+@ %def LEVEL_COMPLETE
+
+\section{Attract elevator animation}
+
+[[ATTRACT\_ANIM\_3]] at \$1813 controls the vertical oscillation of an
+attract-mode element (likely an elevator or platform). ZP \$F3 holds the
+current Y position and \$F7 the direction flag: negative means moving
+down (incrementing Y), positive means moving up (decrementing Y).
+
+The element bounces between Y~=~\$81 (top) and Y~=~\$86 (bottom). At
+Y~=~\$84 while moving up, the animation pauses until ZP~\$1F reaches~5,
+creating a brief hesitation in the middle of the travel.
+
+<<attract anim 3 defines>>=
+
+; --- Zero-page (attract elevator) ---
+ZP_ELEV_Y       = $F3           ; Elevator Y position (attract)
+ZP_ELEV_DIR     = $F7           ; Elevator direction (negative=down, positive=up)
+ZP_ANIM_COUNTER = $1F           ; Animation frame counter
+@
+
+<<attract anim 3>>=
+
+        ORG $1813
+ATTRACT_ANIM_3:
+        SUBROUTINE
+        ; Attract elevator animation — oscillate Y position.
+        ;
+        ; Inputs:
+        ;   ZP_ELEV_DIR ($F7) — direction flag
+        ;   ZP_ELEV_Y ($F3) — current Y position
+        ;
+        ; Modifies:
+        ;   ZP_ELEV_Y, ZP_ELEV_DIR
+        ; Clobbers: A, Y
+
+; --- Check direction ---
+        LDA ZP_ELEV_DIR          ; Direction flag
+        BPL .moving_up           ; Positive → moving up
+
+; --- Moving down: increment Y toward $86 ---
+        LDA ZP_ELEV_Y
+        CMP #$86                 ; Reached bottom?
+        BNE .step_down
+        LDA #$01                 ; Reverse: start moving up
+        STA ZP_ELEV_DIR
+        RTS
+
+.step_down:
+        CLC
+        ADC #$01                 ; Move down one step
+        STA ZP_ELEV_Y
+        RTS
+
+; --- Moving up: decrement Y toward $81 ---
+.moving_up:
+        LDA ZP_ELEV_Y
+        CMP #$81                 ; Reached top?
+        BEQ .reverse_down        ; Yes → reverse direction
+
+        CMP #$84                 ; At pause point?
+        BNE .step_up             ; No → continue
+        LDY ZP_ANIM_COUNTER      ; Check animation counter
+        CPY #$05                 ; Counter >= 5?
+        BCC .step_up             ; No → keep moving
+        RTS                      ; Yes → pause (wait for counter)
+
+.step_up:
+        SEC
+        SBC #$01                 ; Move up one step
+        STA ZP_ELEV_Y
+        RTS
+
+.reverse_down:
+        LDA #$FF                 ; Reverse: start moving down
+        STA ZP_ELEV_DIR
+        RTS
+@ %def ATTRACT_ANIM_3
 
 \section{Title screen and attract}
 
@@ -2883,17 +3431,18 @@ ATTRACT_LOOP:
 ; --- Poll input ---
         LDY #$00
         LDA ($52),Y             ; Read joystick button 1
-        BMI .input_detected     ; Bit 7 set = button pressed
+        BMI ATTRACT_JOY_DETECT  ; Bit 7 set = button pressed
         LDA ($54),Y             ; Read joystick button 2
-        BMI .input_detected
+        BMI ATTRACT_JOY_DETECT
         LDA KEYBOARD            ; Read keyboard
         BPL ATTRACT_LOOP        ; No key = continue attract
+ATTRACT_KEY_DETECT:
         LDA #$01                ; Keyboard input mode
-        BPL .set_mode           ; Always taken
-.input_detected:
+        BPL ATTRACT_SET_MODE    ; Always taken
+ATTRACT_JOY_DETECT:
         LDA #$FF                ; Joystick input mode
-.set_mode:
-        STA $48                 ; Store input mode flag
+ATTRACT_SET_MODE:
+        STA ZP_INPUT_MODE       ; Store input mode flag
         LDA KBDSTROBE           ; Clear keyboard strobe
 
 ; --- Patch main loop for game mode ---
@@ -2908,7 +3457,7 @@ ATTRACT_LOOP:
         LDA $38
         STA $36                 ; Copy initial state
         JMP MAIN_LOOP           ; Enter main game loop
-@ %def ATTRACT_LOOP
+@ %def ATTRACT_LOOP ATTRACT_KEY_DETECT ATTRACT_JOY_DETECT ATTRACT_SET_MODE
 
 <<start attract>>=
 
@@ -2950,9 +3499,16 @@ START_ATTRACT:
         PROCESSOR 6502
 <<drol defines>>
 <<drol input defines>>
+<<joystick handler defines>>
 <<input process defines>>
+<<game start init defines>>
+<<level complete defines>>
+<<attract anim 3 defines>>
+<<joystick handler>>
 <<key handler ext>>
 <<pause handler>>
+<<game start init>>
+<<attract anim 3>>
 <<game init>>
 <<game init padding>>
 <<title screen data>>
@@ -2961,6 +3517,8 @@ START_ATTRACT:
 <<input process>>
 <<display page flip>>
 <<main loop>>
+<<scroll camera>>
+<<level complete>>
 <<attract loop>>
 <<start attract>>
 @

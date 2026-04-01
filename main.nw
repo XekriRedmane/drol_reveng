@@ -2073,9 +2073,7 @@ ZP_HGR_DST      = $2F           ; Hi-res copy destination pointer (2 bytes)
 ; --- Main loop subroutine stubs (not yet RE'd) ---
 RENDER_SETUP    = $699C         ; STUB — rendering setup
 SCROLL_CAMERA   = $719D         ; STUB — scroll / camera update
-INPUT_DISPATCH  = $6000         ; STUB — input handler (keyboard/joystick)
-INPUT_PROCESS   = $6109         ; STUB — input processing
-MOVE_PHYSICS    = $6138         ; STUB — movement / physics
+PAUSE_HANDLER   = $0E51         ; STUB — wait for keypress (pause)
 COLLISION_DETECT = $64CB        ; STUB — collision detection
 ENEMY_AI_1      = $0F5D         ; STUB — enemy AI (part 1)
 ENEMY_AI_2      = $0F37         ; STUB — enemy AI (part 2)
@@ -2122,6 +2120,7 @@ FLOOR_Y_TABLE   = $03F8         ; Floor Y positions (indexed 1-4)
 ; --- Soft switches ---
 KEYBOARD        = $C000         ; Keyboard data (bit 7 = key available)
 KBDSTROBE       = $C010         ; Clear keyboard strobe
+SW_SPEAKER      = $C030         ; Speaker toggle
 @
 
 <<game init>>=
@@ -2567,6 +2566,142 @@ INPUT_DISPATCH:
         RTS
 @ %def INPUT_DISPATCH
 
+\section{Meta-key handler}
+
+[[INPUT\_PROCESS]] at \$6109 handles non-movement keys during gameplay:
+ESC pauses, Ctrl-R restarts, Ctrl-S toggles sound. Unrecognized keys
+fall through to [[KEY\_HANDLER\_EXT]] at \$0194, which handles
+Ctrl-J (joystick mode), Ctrl-K (keyboard mode), and Ctrl-V (speaker click).
+
+<<input process defines>>=
+
+; --- Meta-key codes ---
+KEY_ESC         = $9B           ; ESC key (pause)
+KEY_CTRL_R      = $92           ; Ctrl-R (restart game)
+KEY_CTRL_S      = $93           ; Ctrl-S (toggle sound)
+KEY_CTRL_J      = $8A           ; Ctrl-J (switch to joystick)
+KEY_CTRL_K      = $8B           ; Ctrl-K (switch to keyboard)
+KEY_CTRL_V      = $96           ; Ctrl-V (speaker click)
+
+; --- Sound ---
+SOUND_FLAG_MASK = $10           ; Bit 4 of ZP $36: sound on/off toggle
+@
+
+<<input process>>=
+
+        ORG $6109
+INPUT_PROCESS:
+        SUBROUTINE
+        ; Meta-key handler — ESC/Ctrl-R/Ctrl-S and extended keys.
+        ;
+        ; Behavior:
+        ;   Checks keyboard for special control keys. ESC pauses
+        ;   (waits for next keypress). Ctrl-R restarts the game.
+        ;   Ctrl-S toggles the sound flag. Other keys dispatch
+        ;   to KEY_HANDLER_EXT.
+        ;
+        ; Modifies:
+        ;   ZP $36/$38 (sound flag toggle)
+        ; Clobbers: A
+
+        LDA KEYBOARD            ; Check for key
+        BMI .got_key
+        RTS                     ; No key
+.got_key:
+        CMP #KEY_ESC
+        BNE .check_restart
+        JSR PAUSE_HANDLER       ; Wait for next keypress
+        BIT KBDSTROBE
+        RTS
+
+.check_restart:
+        CMP #KEY_CTRL_R
+        BNE .check_sound
+        BIT KBDSTROBE
+        JSR GAME_START_INIT     ; Restart game
+        RTS
+
+.check_sound:
+        CMP #KEY_CTRL_S
+        BEQ .toggle_sound
+        JMP KEY_HANDLER_EXT     ; Try extended key handler
+
+.toggle_sound:
+        LDA $36
+        EOR #SOUND_FLAG_MASK    ; Toggle sound bit
+        STA $36
+        STA $38
+        BIT KBDSTROBE
+        RTS
+@ %def INPUT_PROCESS
+
+\section{Pause handler}
+
+[[PAUSE\_HANDLER]] at \$0E51 clears the keyboard strobe, then waits in a
+tight loop until a new key is pressed. Used by the ESC key to pause the game.
+
+<<pause handler>>=
+
+        ORG $0E51
+PAUSE_HANDLER:
+        ; Wait for keypress — clear strobe, loop until key available.
+        BIT KBDSTROBE           ; Clear keyboard strobe
+.wait:
+        LDA KEYBOARD            ; Poll keyboard
+        BPL .wait               ; Loop until bit 7 set
+        RTS
+@ %def PAUSE_HANDLER
+
+\section{Extended key handler}
+
+[[KEY\_HANDLER\_EXT]] at \$0194 handles Ctrl-J (switch to joystick mode),
+Ctrl-K (switch to keyboard mode), and Ctrl-V (click the speaker). Any
+other key just clears the strobe and returns.
+
+<<key handler ext>>=
+
+        ORG $0194
+KEY_HANDLER_EXT:
+        SUBROUTINE
+        ; Extended key handler — input mode switching and speaker.
+        ;
+        ; Inputs:
+        ;   A — key code from keyboard
+        ;
+        ; Behavior:
+        ;   Ctrl-J: set $48=$FF (joystick mode).
+        ;   Ctrl-K: set $48=$01 (keyboard mode).
+        ;   Ctrl-V: toggle speaker.
+        ;   Other: clear strobe and return.
+        ;
+        ; Modifies:
+        ;   ZP $48 (input mode flag)
+        ; Clobbers: A
+
+        CMP #KEY_CTRL_J
+        BNE .check_kbd
+        LDA #$FF
+        STA $48                 ; Joystick mode
+        BIT KBDSTROBE
+        RTS
+
+.check_kbd:
+        CMP #KEY_CTRL_K
+        BNE .check_speaker
+        LDA #$01
+        STA $48                 ; Keyboard mode
+        BIT KBDSTROBE
+        RTS
+
+.check_speaker:
+        CMP #KEY_CTRL_V
+        BNE .unknown
+        BIT SW_SPEAKER          ; Click speaker
+.unknown:
+        BIT KBDSTROBE           ; Clear strobe
+        RTS
+@ %def KEY_HANDLER_EXT
+
 @ \chapter{Game loop}
 
 The main game loop lives at \$67CB in the persistent game code area
@@ -2632,7 +2767,7 @@ SMC_MOVE_LEFT = *
 SMC_MOVE_RIGHT = *
         BIT DO_MOVE_RIGHT       ; Move right (JSR when active)
 
-        JSR MOVE_PHYSICS        ; Movement / physics
+        JSR DISPLAY_PAGE_FLIP   ; Toggle hi-res display page
         JSR COLLISION_DETECT    ; Collision detection
         JSR ENEMY_AI_1          ; Enemy AI (part 1)
         JSR ENEMY_AI_2          ; Enemy AI (part 2)
@@ -2673,6 +2808,40 @@ SMC_ATTRACT = *
 .next_frame:
         JMP MAIN_LOOP           ; Next frame
 @ %def MAIN_LOOP SMC_INPUT ATTRACT_ENTRY SMC_ASCEND SMC_DESCEND SMC_MOVE_LEFT SMC_MOVE_RIGHT SMC_RENDER SMC_ATTRACT
+
+\section{Display page flip}
+
+[[DISPLAY\_PAGE\_FLIP]] at \$6138 toggles the active hi-res display page
+using self-modifying code. The instruction at \$6138 alternates between
+[[LDA \$C054]] (page~1) and [[LDA \$C055]] (page~2) by XOR-patching its
+own operand byte at \$6139. It also adjusts ZP \$00 by adding \$80 each
+frame (a half-page scroll offset counter).
+
+<<display page flip>>=
+
+        ORG $6138
+DISPLAY_PAGE_FLIP:
+        ; Toggle hi-res display page via self-modifying LDA $C054/$C055.
+        ;
+        ; Behavior:
+        ;   XOR-patches its own operand byte to alternate between
+        ;   $C054 (page 1) and $C055 (page 2) each frame. Also
+        ;   advances ZP $00 by $80.
+        ;
+        ; Modifies:
+        ;   Display page soft switch, ZP $00, self ($6139)
+        ; Clobbers: A
+SMC_PAGE_SWITCH = *+1
+        LDA $C055               ; Toggle display page (operand patched)
+        LDA SMC_PAGE_SWITCH     ; Read current page switch low byte
+        EOR #$01                ; Toggle $54 ↔ $55
+        STA SMC_PAGE_SWITCH     ; Patch for next frame
+        LDA $00
+        CLC
+        ADC #$80                ; Advance scroll offset
+        STA $00
+        RTS
+@ %def DISPLAY_PAGE_FLIP SMC_PAGE_SWITCH
 
 \section{Title screen and attract}
 
@@ -2741,7 +2910,7 @@ ATTRACT_LOOP:
         JMP MAIN_LOOP           ; Enter main game loop
 @ %def ATTRACT_LOOP
 
-<<copy hgr1 to hgr2>>=
+<<start attract>>=
 
         ORG $72A3
 START_ATTRACT:
@@ -2781,14 +2950,19 @@ START_ATTRACT:
         PROCESSOR 6502
 <<drol defines>>
 <<drol input defines>>
+<<input process defines>>
+<<key handler ext>>
+<<pause handler>>
 <<game init>>
 <<game init padding>>
 <<title screen data>>
 <<game init remaining>>
 <<input dispatch>>
+<<input process>>
+<<display page flip>>
 <<main loop>>
 <<attract loop>>
-<<copy hgr1 to hgr2>>
+<<start attract>>
 @
 
 @ \appendix

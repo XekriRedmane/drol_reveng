@@ -226,8 +226,7 @@ LC_BANK1_ROROM  = $C080         ; LC bank 1: read-only ROM (write-protect RAM)
 ; Reset and NMI vectors.
 SOFTEV          = $03F2         ; Soft entry vector (reset handler)
 SOFTEV_CHK      = $03F4         ; Checksum for SOFTEV ($03F3 EOR #$A5)
-NMIVEC_LO       = $FFFC         ; NMI vector low byte (in language card)
-NMIVEC_HI       = $FFFD         ; NMI vector high byte
+NMIVEC          = $FFFC         ; NMI vector (2 bytes, in language card)
 
 ; Monitor ROM routines.
 MON_HOME        = $FC58         ; Clear screen
@@ -338,12 +337,12 @@ BOOT1_ENTRY:                    ; $0801
 ; Set NMI vector in language card to point to $BF00 (reset handler).
 
         LDA #$BF
-        STA NMIVEC_HI           ; NMI vector high = $BF
+        STA NMIVEC+1            ; NMI vector high = $BF
         STA SOFTEV+1            ; Reset vector high = $BF
         EOR #$A5
         STA SOFTEV_CHK          ; Reset checksum
         LDA #$00
-        STA NMIVEC_LO           ; NMI vector low = $00
+        STA NMIVEC              ; NMI vector low = $00
         STA SOFTEV              ; Reset vector low = $00
 
 ; Copy $5800-$59FF to $BE00-$BFFF (RWTS and reset handlers).
@@ -518,10 +517,8 @@ game code untouched.
 ;  Zero page locations
 ; =========================================================================
 
-ZP_PTR_LO       = $00          ; General pointer low byte
-ZP_PTR_HI       = $01          ; General pointer high byte
-ZP_DEST_LO      = $04          ; Sector data destination low
-ZP_DEST_HI      = $05          ; Sector data destination high
+ZP_PTR          = $00          ; General pointer (2 bytes)
+ZP_DEST         = $04          ; Sector data destination (2 bytes)
 ZP_TEMP_A       = $0B          ; Temporary (seek: saved half-track)
 ZP_TEMP_B       = $0C          ; Temporary (seek: accel index / addr checksum)
 ZP_CUR_HTRK     = $0D          ; Current half-track (seek) / current sector
@@ -534,10 +531,8 @@ ZP_ADDR_TRK     = $2D          ; Address field: track (also sector index)
 ZP_ADDR_SEC     = $2E          ; Address field: sector
 ZP_ADDR_CHK     = $2F          ; Address field: checksum
 ZP_JOY_FLAG     = $44          ; Bit 7: joystick present
-ZP_INPUT_LO_1   = $52          ; Input handler pointer 1 low
-ZP_INPUT_HI_1   = $53          ; Input handler pointer 1 high
-ZP_INPUT_LO_2   = $54          ; Input handler pointer 2 low
-ZP_INPUT_HI_2   = $55          ; Input handler pointer 2 high
+ZP_INPUT_1      = $52          ; Input handler pointer 1 (2 bytes)
+ZP_INPUT_2      = $54          ; Input handler pointer 2 (2 bytes)
 ZP_SEC_REMAIN   = $A0          ; Sectors remaining count
 ZP_NREAD_TEMP   = $A0          ; Nibble read temp (shared)
 
@@ -692,7 +687,7 @@ READ_DATA_FIELD:                ; $504D
         ;
         ; Inputs:
         ;   ZP_SLOT_X16 — slot * 16 for disk I/O
-        ;   ZP_DEST_LO/HI ($04/$05) — destination pointer
+        ;   ZP_DEST ($04/$05) — destination pointer
         ;
         ; Behavior:
         ;   Scans for D5 AA AD prologue, reads 86 auxiliary nibbles
@@ -702,7 +697,7 @@ READ_DATA_FIELD:                ; $504D
         ;
         ; Outputs:
         ;   Carry clear = success, carry set = error
-        ;   256 bytes written to (ZP_DEST_LO),Y
+        ;   256 bytes written to (ZP_DEST),Y
         ;
         ; Modifies:
         ;   NIBBLE_BUF_PRI ($5200), NIBBLE_BUF_AUX ($5300)
@@ -785,7 +780,7 @@ READ_DATA_FIELD:                ; $504D
         ROL                     ; Bit 0 from aux
         LSR NIBBLE_BUF_AUX,X
         ROL                     ; Bit 1 from aux
-        STA (ZP_DEST_LO),Y     ; Store decoded byte
+        STA (ZP_DEST),Y        ; Store decoded byte
         INY
         BNE .decode
         CLC                     ; Success
@@ -991,9 +986,9 @@ READ_SECTORS:                   ; $5148
         LDX ZP_ADDR_TRK        ; Sector number (used as table index)
         LDA ZP_SEC_TABLE,X     ; Look up destination page
         BEQ .retry              ; Already read or not needed: skip
-        STA ZP_DEST_HI          ; Set destination page
+        STA ZP_DEST+1           ; Set destination page
         LDA #$00
-        STA ZP_DEST_LO          ; Destination low = $00
+        STA ZP_DEST             ; Destination low = $00
         JSR READ_DATA_FIELD     ; Read and decode sector data
         BCS .retry              ; Error: retry
 
@@ -1293,11 +1288,11 @@ FIRST_BOOT:                     ; $5524
 
 ; No joystick: use keyboard input handlers.
         LDA #$19
-        STA ZP_INPUT_LO_1
-        STA ZP_INPUT_LO_2
+        STA ZP_INPUT_1
+        STA ZP_INPUT_2
         LDA #$62
-        STA ZP_INPUT_HI_1
-        STA ZP_INPUT_HI_2
+        STA ZP_INPUT_1+1
+        STA ZP_INPUT_2+1
         BNE .patch              ; Always taken
 
         BRK                    ; (dead byte, never reached)
@@ -1305,12 +1300,12 @@ FIRST_BOOT:                     ; $5524
 ; Joystick detected: point input handlers to hardware buttons.
 .joy_found:
         LDA #$61
-        STA ZP_INPUT_LO_1     ; ($52) = $C061 (paddle button 0)
+        STA ZP_INPUT_1          ; ($52) = $C061 (paddle button 0)
         LDA #$62
-        STA ZP_INPUT_LO_2     ; ($54) = $C062 (paddle button 1)
+        STA ZP_INPUT_2          ; ($54) = $C062 (paddle button 1)
         LDA #$C0
-        STA ZP_INPUT_HI_1
-        STA ZP_INPUT_HI_2
+        STA ZP_INPUT_1+1
+        STA ZP_INPUT_2+1
 
 ; --- Phase 4: Machine-specific patches ---
 .patch:
@@ -2055,10 +2050,8 @@ swappable level data area loaded from track~5.
 HGR1_BASE       = $2000         ; Hi-res graphics page 1 base address
 
 ; --- Zero page (game init) ---
-ZP_STREAM_LO    = $A0           ; Data stream pointer low
-ZP_STREAM_HI    = $A1           ; Data stream pointer high
-ZP_DEST_LO_G    = $A2           ; Unpack destination low
-ZP_DEST_HI_G    = $A3           ; Unpack destination high
+ZP_STREAM       = $A0           ; Data stream pointer (2 bytes)
+ZP_UNPACK_DEST  = $A2           ; Unpack destination pointer (2 bytes)
 ZP_SAVED_Y      = $A4           ; Saved Y during stream read
 
 ; --- Main loop subroutine stubs (not yet RE'd) ---
@@ -2138,21 +2131,21 @@ GAME_INIT_NOP:
 GAME_INIT:                      ; $4013
         LDY #<TITLE_SCREEN_DATA ; Stream pointer low ($00)
         LDA #>TITLE_SCREEN_DATA ; Stream pointer high ($41)
-        STY ZP_STREAM_LO
-        STA ZP_STREAM_HI
+        STY ZP_STREAM
+        STA ZP_STREAM+1
 .next_record:
         JSR .read_byte          ; Read destination low
         CMP #$FF                ; Terminator?
         BNE .store_lo
         RTS                     ; Done
 .store_lo:
-        STA ZP_DEST_LO_G       ; Destination low byte
+        STA ZP_UNPACK_DEST      ; Destination low byte
         JSR .read_byte
-        STA ZP_DEST_HI_G       ; Destination high byte
+        STA ZP_UNPACK_DEST+1   ; Destination high byte
         LDY #$27                ; 40 bytes per record
 .copy_byte:
         JSR .read_byte
-        STA (ZP_DEST_LO_G),Y   ; Store to destination
+        STA (ZP_UNPACK_DEST),Y  ; Store to destination
         DEY
         BPL .copy_byte
         BMI .next_record        ; Always taken — next record
@@ -2161,11 +2154,11 @@ GAME_INIT:                      ; $4013
 .read_byte:                     ; $4036
         STY ZP_SAVED_Y
         LDY #$00
-        LDA (ZP_STREAM_LO),Y   ; Read byte
+        LDA (ZP_STREAM),Y      ; Read byte
         LDY ZP_SAVED_Y         ; Restore Y
-        INC ZP_STREAM_LO       ; Advance pointer
+        INC ZP_STREAM           ; Advance pointer
         BNE .read_done
-        INC ZP_STREAM_HI
+        INC ZP_STREAM+1
 .read_done:
         RTS
 @ %def GAME_INIT_NOP GAME_INIT

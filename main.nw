@@ -2084,7 +2084,7 @@ ANIM_UPDATE     = $6B39         ; STUB — animation update
 ENTITY_PROCESS  = $6CFE         ; STUB — entity processing
 LEVEL_LOGIC     = $6F9C         ; STUB — level logic
 PROJECTILE_HANDLER = $0C98      ; STUB — projectile handling
-HAZARD_CHECK    = $0E5A         ; STUB — hazard checking
+; (HAZARD_CHECK has its own ORG chunk)
 PLAYER_STATE    = $1646         ; STUB — player state update
 PLAYER_RENDER   = $16AC         ; STUB — player rendering
 BG_RESTORE      = $13D6         ; STUB — background restore
@@ -2092,15 +2092,11 @@ SPRITE_DRAW_1   = $1423         ; STUB — sprite draw (part 1)
 SPRITE_DRAW_2   = $1536         ; STUB — sprite draw (part 2)
 SPRITE_DRAW_3   = $1591         ; STUB — sprite draw (part 3)
 PAGE_FLIP_PREP  = $130A         ; STUB — page flip preparation
-DISPLAY_UPDATE  = $10AB         ; STUB — display update
 PAGE_FLIP       = $683C         ; STUB — page flip
-POST_FRAME      = $10CF         ; STUB — post-frame cleanup
 GAME_OVER       = $BDA0         ; STUB — game over handler
 
 ; --- Attract-mode subroutine stubs ---
-ATTRACT_ANIM_1  = $17A6         ; STUB — attract animation 1
-ATTRACT_ANIM_2  = $17E1         ; STUB — attract animation 2
-ATTRACT_ANIM_4  = $1844         ; STUB — attract animation 4
+; (ATTRACT_ANIM_1, ATTRACT_ANIM_2, ATTRACT_ANIM_4 have their own ORG chunks)
 
 ; --- Movement subroutines (toggled via self-modifying JSR/BIT) ---
 ; The main loop has 4 slots that are either JSR (active) or BIT (inactive).
@@ -2657,6 +2653,277 @@ PAUSE_HANDLER:
         RTS
 @ %def PAUSE_HANDLER
 
+\section{Screen row copy}
+
+[[SCREEN\_ROW\_COPY]] at \$0100 copies all 192 rows of hi-res page~1 from
+a 40-byte buffer at \$024C. For each screen row~X (0--191), it loads the
+row's base address from a pair of tables (\$7380 for the low byte,
+\$72C0 for the high byte), stores it in ZP pointer~\$29/\$2A, then copies
+40~bytes from the buffer to that address. Between rows it calls the
+Monitor [[WAIT]] routine for a brief delay and [[SCREEN\_ROW\_HELPER]] to
+update game state (scrolling effect). The first call to
+[[DISPLAY\_PAGE\_FLIP]] is gated on ZP~\$00 being positive (every other
+frame).
+
+<<screen row copy defines>>=
+
+; --- Screen row tables (level data area) ---
+SCREEN_ROW_ADDR_LO = $7380      ; Screen row address table, low bytes (192 entries)
+SCREEN_ROW_ADDR_HI = $72C0      ; Screen row address table, high bytes (192 entries)
+
+; --- Data buffer ---
+ROW_COPY_BUFFER = $024C         ; 40-byte buffer holding row pixel data
+
+; --- Apple II ROM ---
+MON_WAIT        = $FCA8         ; Monitor WAIT: delay loop (A = duration)
+
+; --- Subroutine stubs (screen row copy) ---
+SCREEN_ROW_HELPER = $01B7       ; STUB — per-row helper during screen copy
+@
+
+<<screen row copy>>=
+
+        ORG $0100
+SCREEN_ROW_COPY:
+        SUBROUTINE
+        ; Screen row copy — copies buffer to all 192 hi-res rows.
+        ;
+        ; Behavior:
+        ;   Conditionally flips display page (if ZP $00 positive).
+        ;   For each row X = 0..191:
+        ;     Loads row address from tables, copies 40 bytes from buffer,
+        ;     calls WAIT and SCREEN_ROW_HELPER.
+        ;
+        ; Modifies:
+        ;   Hi-res page 1 ($2000-$3FFF), ZP $29/$2A
+        ; Clobbers: A, X, Y
+
+; --- Conditional page flip ---
+        LDA $00
+        BMI .skip_flip
+        JSR DISPLAY_PAGE_FLIP    ; Flip page if ZP $00 positive
+.skip_flip:
+
+; --- Row loop ---
+        LDX #$00
+.row_loop:
+        LDA SCREEN_ROW_ADDR_LO,X ; Row address low byte
+        STA ZP_HGR_SRC           ; Store in pointer low
+        LDA SCREEN_ROW_ADDR_HI,X ; Row address high byte
+        STA ZP_HGR_SRC+1         ; Store in pointer high
+        LDY #$27                  ; 40 bytes per row (0-$27)
+.copy_byte:
+        LDA ROW_COPY_BUFFER,Y    ; Read from buffer
+        STA (ZP_HGR_SRC),Y       ; Write to screen row
+        DEY
+        BPL .copy_byte            ; Next byte
+        LDA #$20
+        JSR MON_WAIT              ; Brief delay
+        JSR SCREEN_ROW_HELPER     ; Per-row helper
+        INX
+        CPX #$C0                  ; 192 rows
+        BNE .row_loop
+        RTS
+@ %def SCREEN_ROW_COPY
+
+\section{Projectile update}
+
+[[HAZARD\_CHECK]] at \$0E5A processes up to four active projectiles
+(indexed by \$31 down to~0). Each projectile has three state bytes:
+\begin{itemize}
+\item \$C5+X: direction flag (0~=~inactive, negative~=~moving left,
+  positive~=~moving right).
+\item \$C9+X: horizontal screen position.
+\item \$CD+X: vertical (Y) position.
+\end{itemize}
+
+Each frame the Y position increments by~2 (projectiles always fall).
+If Y reaches a floor boundary (\$6B, \$93, or~\$BB) the projectile
+deactivates. The horizontal position moves left or right by 4~pixels
+(or~6 when ZP~\$04 is positive and nonzero, representing faster
+difficulty). If the horizontal position exceeds \$91 the projectile is
+also deactivated.
+
+After drawing, a collision check tests whether the projectile overlaps
+the player. The player's horizontal position is taken as column range
+\$40--\$47 (from ZP~\$06), and the vertical overlap is checked against
+\$CD+X. A hit sets ZP~\$1E to \$FF and deactivates the projectile.
+
+Left-moving projectiles use sprite tables at \$AFD3/\$B053; right-moving
+ones use \$75F7/\$76F7. Screen column lookup is via \$1C34 indexed by
+\$C9+X, and sprite frame selection via \$1B8F.
+
+<<hazard check defines>>=
+
+; --- Zero-page (projectile) ---
+ZP_PROJ_MAX     = $31           ; Max active projectile slot index
+ZP_PROJ_DIR     = $C5           ; Projectile direction (4 bytes: $C5-$C8)
+ZP_PROJ_X       = $C9           ; Projectile horizontal position (4 bytes: $C9-$CC)
+ZP_PROJ_Y       = $CD           ; Projectile vertical position (4 bytes: $CD-$D0)
+ZP_FAST_FLAG    = $04           ; Difficulty speed flag (positive nonzero = fast)
+ZP_PLAYER_COL   = $06           ; Player screen column
+ZP_HIT_FLAG     = $1E           ; Hit detection flag ($FF = player hit)
+
+; --- Projectile lookup tables ---
+PROJ_SCREEN_COL = $1C34         ; Horizontal position → screen column
+PROJ_FRAME_IDX  = $1B8F         ; Horizontal position → sprite frame index
+PROJ_SPR_L_LO   = $AFD3         ; Left-moving projectile sprite table, low
+PROJ_SPR_L_HI   = $B053         ; Left-moving projectile sprite table, high
+PROJ_SPR_R_LO   = $75F7         ; Right-moving projectile sprite table, low
+PROJ_SPR_R_HI   = $76F7         ; Right-moving projectile sprite table, high
+
+@
+
+<<hazard check>>=
+
+        ORG $0E5A
+HAZARD_CHECK:
+        SUBROUTINE
+        ; Projectile update — moves, draws, and collision-checks projectiles.
+        ;
+        ; Inputs:
+        ;   $31 — max projectile slot index
+        ;   $C5-$D0 — projectile state arrays
+        ;
+        ; Modifies:
+        ;   $C5-$D0 (projectile state), sprite params, $1E (hit flag)
+        ; Clobbers: A, X, Y
+
+; --- Loop through projectile slots ---
+        LDX ZP_PROJ_MAX
+        BMI .done                 ; No projectiles if negative
+.check_slot:
+        LDA ZP_PROJ_DIR,X        ; Projectile direction
+        BEQ .next                 ; 0 = inactive
+        BMI .move_left            ; Negative = moving left
+        JMP .move_right           ; Positive = moving right
+.next:
+        DEX
+        BPL .check_slot
+.done:
+        RTS
+
+; ========== Moving left ==========
+.move_left:
+        LDA ZP_PROJ_Y,X          ; Current Y position
+        CLC
+        ADC #$02                  ; Fall down 2 pixels
+        CMP #$6B                  ; Floor 1?
+        BEQ .deactivate
+        CMP #$93                  ; Floor 2?
+        BEQ .deactivate
+        CMP #$BB                  ; Floor 3?
+        BEQ .deactivate
+        STA ZP_PROJ_Y,X          ; Update Y
+        STA ZP_SPRITE_Y
+
+        LDA ZP_PROJ_X,X          ; Current X position
+        SEC
+        SBC #$04                  ; Move left 4 pixels
+        BIT ZP_FAST_FLAG          ; Check speed flag
+        BEQ .store_left_x         ; Zero = normal speed
+        BMI .store_left_x         ; Negative = normal speed
+        SEC
+        SBC #$02                  ; Move left 2 more (total 6)
+.store_left_x:
+        STA ZP_PROJ_X,X
+        CMP #$92                  ; Off screen?
+        BCS .deactivate
+        TAY
+        JMP .draw_left
+
+.deactivate:
+        LDA #$00
+        STA ZP_PROJ_DIR,X        ; Deactivate projectile
+        JMP .next
+
+; --- Draw left-moving projectile ---
+.draw_left:
+        LDA #$02
+        STA ZP_SPRITE_W           ; Width = 2
+        LDA #$03
+        STA ZP_SPRITE_H           ; Height = 3
+        LDA PROJ_SCREEN_COL,Y     ; Screen column from position
+        STA ZP_SPRITE_X
+        LDA PROJ_FRAME_IDX,Y      ; Sprite frame index
+        TAY
+        LDA PROJ_SPR_L_LO,Y       ; Left sprite data low
+        STA SPRITE_PTR_LO
+        LDA PROJ_SPR_L_HI,Y       ; Left sprite data high
+        STA SPRITE_PTR_HI
+        STX ZP_SAVE_X
+        JSR SPRITE_DRAW_CALL      ; Draw projectile
+        LDX ZP_SAVE_X
+        JMP .collision_check
+
+; ========== Moving right ==========
+.move_right:
+        LDA ZP_PROJ_Y,X          ; Current Y position
+        CLC
+        ADC #$02                  ; Fall down 2 pixels
+        CMP #$6B                  ; Floor 1?
+        BEQ .deactivate
+        CMP #$93                  ; Floor 2?
+        BEQ .deactivate
+        CMP #$BB                  ; Floor 3?
+        BEQ .deactivate
+        STA ZP_PROJ_Y,X
+        STA ZP_SPRITE_Y
+
+        LDA ZP_PROJ_X,X          ; Current X position
+        CLC
+        ADC #$04                  ; Move right 4 pixels
+        BIT ZP_FAST_FLAG
+        BPL .store_right_x        ; Positive = normal speed
+        CLC
+        ADC #$02                  ; Move right 2 more (total 6)
+.store_right_x:
+        STA ZP_PROJ_X,X
+        CMP #$92                  ; Off screen?
+        BCS .deactivate
+        TAY
+
+; --- Draw right-moving projectile ---
+        LDA #$02
+        STA ZP_SPRITE_W           ; Width = 2
+        LDA #$03
+        STA ZP_SPRITE_H           ; Height = 3
+        LDA PROJ_SCREEN_COL,Y     ; Screen column from position
+        STA ZP_SPRITE_X
+        LDA PROJ_FRAME_IDX,Y      ; Sprite frame index
+        TAY
+        LDA PROJ_SPR_R_LO,Y       ; Right sprite data low
+        STA SPRITE_PTR_LO
+        LDA PROJ_SPR_R_HI,Y       ; Right sprite data high
+        STA SPRITE_PTR_HI
+        STX ZP_SAVE_X
+        JSR SPRITE_DRAW_CALL      ; Draw projectile
+        LDX ZP_SAVE_X
+
+; --- Player collision check ---
+.collision_check:
+        LDA ZP_PROJ_X,X          ; Projectile horizontal pos
+        CMP #$40                  ; Left edge of player zone
+        BCC .no_hit
+        CMP #$48                  ; Right edge of player zone
+        BCS .no_hit
+        LDA ZP_PLAYER_COL         ; Player column
+        SEC
+        SBC #$03
+        CMP ZP_PROJ_Y,X          ; Compare with projectile Y
+        BCS .no_hit
+        CLC
+        ADC #$15                  ; Player height extent
+        CMP ZP_PROJ_Y,X
+        BCC .no_hit
+        LDA #$FF
+        STA ZP_HIT_FLAG           ; Signal player hit
+        LDA #$00
+        STA ZP_PROJ_DIR,X        ; Deactivate projectile
+.no_hit:
+        JMP .next
+@ %def HAZARD_CHECK
+
 \section{Joystick input handler}
 
 [[JOYSTICK\_HANDLER]] at \$012B reads the Apple~II game-port buttons and
@@ -2995,6 +3262,488 @@ SMC_PAGE_SWITCH = *+1
         RTS
 @ %def DISPLAY_PAGE_FLIP SMC_PAGE_SWITCH
 
+\section{Pseudo-random number generator}
+
+[[PRNG]] at \$6674 generates an 8-bit pseudo-random value using a
+two-byte state in ZP~\$1F and~\$5F. The algorithm shifts \$1F right one
+bit, rotates the result into \$5F, XORs with the old \$1F, then swaps
+the two state bytes. The result is returned in~A.
+
+<<prng defines>>=
+
+; --- Zero-page (PRNG state) ---
+ZP_PRNG_A       = $5F           ; PRNG state byte A
+@
+
+<<prng>>=
+
+        ORG $6674
+PRNG:
+        SUBROUTINE
+        ; Pseudo-random number generator — 8-bit LFSR-style.
+        ;
+        ; Inputs:
+        ;   ZP $1F, $5F — PRNG state
+        ;
+        ; Outputs:
+        ;   A — pseudo-random value
+        ;
+        ; Modifies:
+        ;   ZP $1F, $5F
+        ; Clobbers: A, Y
+
+        LDA ZP_ANIM_COUNTER       ; State byte 1
+        LSR                       ; Shift right, bit 0 → carry
+        LDA ZP_PRNG_A             ; State byte 2
+        ROR                       ; Rotate carry in from left
+        EOR ZP_ANIM_COUNTER       ; XOR with original state 1
+        LDY ZP_PRNG_A             ; Save old state 2
+        STA ZP_PRNG_A             ; Store new state 2
+        STY ZP_ANIM_COUNTER       ; Swap: old state 2 → state 1
+        RTS
+@ %def PRNG
+
+\section{Timer display update}
+
+[[DISPLAY\_UPDATE]] at \$10AB draws an animated timer element on the status
+bar. It sets up a 1$\times$6 sprite at column~9, row~\$16, then indexes
+the animation counter (ZP~\$1F) into frame tables at \$6800 and \$6900 to
+select the current frame's tile data. The selected pair is stored at
+\$6662/\$6663 and drawn via [[BLIT\_TILE]] at \$662C.
+
+<<display update defines>>=
+
+; --- Timer display tables ---
+TIMER_FRAME_LO  = $6800         ; Timer animation frame table, low bytes
+TIMER_FRAME_HI  = $6900         ; Timer animation frame table, high bytes
+
+; --- Tile blit ---
+TILE_DATA_LO    = $6662         ; Current tile data pointer, low byte
+TILE_DATA_HI    = $6663         ; Current tile data pointer, high byte
+BLIT_TILE       = $662C         ; STUB — blit a tile to the screen
+
+; --- Digit tile tables ---
+DIGIT_TILE_LO   = $AFF6         ; Digit tile data table, low bytes (0-9)
+DIGIT_TILE_HI   = $B076         ; Digit tile data table, high bytes (0-9)
+@
+
+<<display update>>=
+
+        ORG $10AB
+DISPLAY_UPDATE:
+        SUBROUTINE
+        ; Timer display update — draws animated timer element.
+        ;
+        ; Inputs:
+        ;   ZP_ANIM_COUNTER ($1F) — animation frame index
+        ;
+        ; Modifies:
+        ;   $6662/$6663 (tile data pointer), sprite params
+        ; Clobbers: A, X
+
+; --- Set up sprite parameters ---
+        LDA #$09
+        STA ZP_SPRITE_X          ; Column = 9
+        LDA #$01
+        STA ZP_SPRITE_W          ; Width = 1
+        LDA #$06
+        STA ZP_SPRITE_H          ; Height = 6
+        LDA #$16
+        STA ZP_SPRITE_Y          ; Row = $16
+
+; --- Select animation frame ---
+        LDX ZP_ANIM_COUNTER      ; Current frame index
+        LDA TIMER_FRAME_HI,X     ; Frame data high byte
+        AND #$7F                  ; Strip high bit
+        STA TILE_DATA_HI
+        LDA TIMER_FRAME_LO,X     ; Frame data low byte
+        STA TILE_DATA_LO
+        JSR BLIT_TILE             ; Draw the tile
+        RTS
+@ %def DISPLAY_UPDATE
+
+\section{Score and status display}
+
+[[POST\_FRAME]] at \$10CF runs after each game frame to draw the score and
+status digits on the screen. It extracts BCD nibbles from ZP~\$D1,
+\$D2, and~\$D3, and draws each digit at a specific column position. The
+level-state flag (\$5E) is also drawn as two digits.
+
+Two helper sub-entries exist:
+\begin{itemize}
+\item \$1150 ([[DRAW\_DIGIT\_SHORT]]) sets width/height/row to 1/6/\$0C
+  before falling through.
+\item \$115C ([[DRAW\_DIGIT]]) looks up digit tile data from tables at
+  \$AFF6 (low) and \$B076 (high), stores it at \$6662/\$6663, and calls
+  [[BLIT\_TILE]].
+\end{itemize}
+
+The digit positions (column values stored in~\$5D) are:
+2, 4, 6, 8, and~10 for the five nibbles of D1--D3; columns~6 and~4
+for the level-state digits.
+
+<<post frame>>=
+
+        ORG $10CF
+POST_FRAME:
+        SUBROUTINE
+        ; Score and status display — draws BCD digits each frame.
+        ;
+        ; Inputs:
+        ;   ZP $D1, $D2, $D3 — BCD score/state
+        ;   ZP $5E — level state flag
+        ;
+        ; Modifies:
+        ;   Sprite parameters, $6662/$6663
+        ; Clobbers: A, X
+
+; --- Digit 1: low nibble of $D1, column 2 ---
+        LDA ZP_ENTITY_D1
+        AND #$0F
+        TAX
+        LDA #$02
+        STA ZP_SPRITE_X
+        JSR DRAW_DIGIT_SHORT
+
+; --- Digit 2: low nibble of $D2, column 6 ---
+        LDA ZP_ENTITY_D2
+        AND #$0F
+        TAX
+        LDA #$06
+        STA ZP_SPRITE_X
+        JSR DRAW_DIGIT_SHORT
+
+; --- Digit 3: high nibble of $D2, column 4 ---
+        LDA ZP_ENTITY_D2
+        AND #$F0
+        LSR
+        LSR
+        LSR
+        LSR
+        TAX
+        LDA #$04
+        STA ZP_SPRITE_X
+        JSR DRAW_DIGIT_SHORT
+
+; --- Digit 4: low nibble of $D3, column $0A ---
+        LDA ZP_ENTITY_D3
+        AND #$0F
+        TAX
+        LDA #$0A
+        STA ZP_SPRITE_X
+        JSR DRAW_DIGIT_SHORT
+
+; --- Digit 5: high nibble of $D3, column 8 ---
+        LDA ZP_ENTITY_D3
+        AND #$F0
+        LSR
+        LSR
+        LSR
+        LSR
+        TAX
+        LDA #$08
+        STA ZP_SPRITE_X
+        JSR DRAW_DIGIT_SHORT
+
+; --- Level state digit 1: low nibble of $5E, column 6 ---
+        LDA ZP_LEVEL_STATE
+        BPL .level_ok1
+        LDA #$00                  ; Clamp negative to 0
+.level_ok1:
+        AND #$0F
+        TAX
+        LDA #$01
+        STA ZP_SPRITE_W
+        LDA #$06
+        STA ZP_SPRITE_H
+        LDA #$16
+        STA ZP_SPRITE_Y
+        LDA #$06
+        STA ZP_SPRITE_X
+        JSR DRAW_DIGIT
+
+; --- Level state digit 2: high nibble of $5E, column 4 ---
+        LDA ZP_LEVEL_STATE
+        BPL .level_ok2
+        LDA #$00                  ; Clamp negative to 0
+.level_ok2:
+        AND #$F0
+        LSR
+        LSR
+        LSR
+        LSR
+        TAX
+        LDA #$01
+        STA ZP_SPRITE_W
+        LDA #$06
+        STA ZP_SPRITE_H
+        LDA #$16
+        STA ZP_SPRITE_Y
+        LDA #$04
+        STA ZP_SPRITE_X
+        JSR DRAW_DIGIT
+        RTS
+
+; --- Helper: draw digit with default sprite params ---
+DRAW_DIGIT_SHORT:
+        LDA #$01
+        STA ZP_SPRITE_W          ; Width = 1
+        LDA #$06
+        STA ZP_SPRITE_H          ; Height = 6
+        LDA #$0C
+        STA ZP_SPRITE_Y          ; Row = $0C
+; --- Draw digit from lookup table ---
+DRAW_DIGIT:
+        LDA DIGIT_TILE_LO,X      ; Digit tile data low
+        STA TILE_DATA_LO
+        LDA DIGIT_TILE_HI,X      ; Digit tile data high
+        STA TILE_DATA_HI
+        JSR BLIT_TILE             ; Draw the digit tile
+        RTS
+@ %def POST_FRAME DRAW_DIGIT_SHORT DRAW_DIGIT
+
+\section{High score check}
+
+[[LEVEL\_TRANSITION]] at \$116C is called during the level-complete
+sequence. It performs a 3-byte BCD comparison of the current score
+(\$D1/\$D2/\$D3) against the stored high score (\$20/\$21/\$22). If the
+current score does not exceed the high score, it returns immediately.
+
+When a new high score is detected, it copies the current score into the
+high-score slots, then copies six rows of the score display area from
+hi-res page~1 to page~2 (rows~\$0C--\$11). The source address comes from
+[[SCREEN\_ROW\_ADDR\_LO]]/[[SCREEN\_ROW\_ADDR\_HI]] offset by~1 (skipping
+the first byte of each row), and the destination uses a second high-byte
+table at \$7440 (page~2 addresses). This makes the high-score area
+visible on both display pages.
+
+<<level transition defines>>=
+
+; --- Zero-page (high score) ---
+ZP_HIGH_SCORE_0 = $20           ; High score byte 0 (highest BCD digits)
+ZP_HIGH_SCORE_1 = $21           ; High score byte 1
+ZP_HIGH_SCORE_2 = $22           ; High score byte 2
+
+; --- Screen row address table (page 2) ---
+SCREEN_ROW_ADDR_HI2 = $7440    ; Hi-res page 2 row address high bytes
+@
+
+<<level transition>>=
+
+        ORG $116C
+LEVEL_TRANSITION:
+        SUBROUTINE
+        ; High score check — updates high score and copies display rows.
+        ;
+        ; Inputs:
+        ;   $D1/$D2/$D3 — current score (BCD)
+        ;   $20/$21/$22 — stored high score (BCD)
+        ;
+        ; Modifies:
+        ;   $20-$22 (if new high score), hi-res page 2 rows
+        ; Clobbers: A, X, Y
+
+; --- BCD comparison: high score >= current score? ---
+        SED
+        SEC
+        LDA ZP_HIGH_SCORE_2      ; Compare byte 2 (low digits)
+        SBC ZP_ENTITY_D3
+        LDA ZP_HIGH_SCORE_1      ; Compare byte 1
+        SBC ZP_ENTITY_D2
+        LDA ZP_HIGH_SCORE_0      ; Compare byte 0 (high digits)
+        SBC ZP_ENTITY_D1
+        CLD
+        BCC .new_high_score       ; Carry clear = current > high
+        RTS                       ; No new high score
+
+; --- Update high score ---
+.new_high_score:
+        LDA ZP_ENTITY_D1
+        STA ZP_HIGH_SCORE_0
+        LDA ZP_ENTITY_D2
+        STA ZP_HIGH_SCORE_1
+        LDA ZP_ENTITY_D3
+        STA ZP_HIGH_SCORE_2
+
+; --- Copy score display rows from page 1 to page 2 ---
+        LDX #$0C                  ; Start at row $0C
+.copy_row:
+        LDA SCREEN_ROW_ADDR_HI,X ; Page 1 row address high
+        STA $24                   ; Dest pointer A high
+        STA $26                   ; Dest pointer B high
+        LDA SCREEN_ROW_ADDR_HI2,X ; Page 2 row address high
+        STA $28                   ; Source pointer high
+        LDA SCREEN_ROW_ADDR_LO,X ; Row address low
+        CLC
+        ADC #$01                  ; Skip first byte of row
+        STA $23                   ; Dest pointer A low
+        CLC
+        ADC #$1D                  ; Offset to second half
+        STA $25                   ; Dest pointer B low
+        STA $27                   ; Source pointer low
+        LDY #$09                  ; Copy 10 bytes per row
+.copy_byte:
+        LDA ($23),Y               ; Read from page 1
+        STA ($25),Y               ; Write to page 2 (half A)
+        STA ($27),Y               ; Write to page 2 (half B)
+        DEY
+        BPL .copy_byte
+        INX
+        CPX #$12                  ; Rows $0C through $11
+        BNE .copy_row
+        RTS
+@ %def LEVEL_TRANSITION
+
+\section{Level state initialization}
+
+[[INIT\_LEVEL\_STATE]] at \$11B8 restores game state from three buffer
+areas in page~2 memory, then zeros out entity slots and direction
+patches.
+
+Three block copies restore ZP regions from saved buffers:
+\begin{itemize}
+\item \$029C--\$02B4 $\to$ \$D4--\$EC (25~bytes, entity parameters)
+\item \$02E2--\$02FF $\to$ \$01--\$1E (30~bytes, input/direction state)
+\item \$02B5--\$02E1 $\to$ \$88--\$B4 (45~bytes, sprite/collision state)
+\end{itemize}
+
+After restoring state, it zeroes the entity activity table at
+\$03A8--\$03BB, the movement slots at \$C5--\$C8, ZP~\$04 (unknown
+flag), and the frame counter~\$FD. It also zeroes \$03FF, sets
+\$4B/\$4C~=~2, \$39~=~1, fills \$0237--\$023B with \$FF, and patches
+the four direction slots in the main loop to [[BIT]] (\$2C, inactive).
+Finally it loads two bytes from \$029A/\$029B into \$42/\$43.
+
+<<init level state>>=
+
+        ORG $11B8
+INIT_LEVEL_STATE:
+        SUBROUTINE
+        ; Level state initialization — restores game state from buffers.
+        ;
+        ; Modifies:
+        ;   ZP $01-$1E, $39, $42-$43, $4B-$4C, $88-$B4, $C5-$C8,
+        ;   $D4-$EC, $FD, $03A8-$03BB, $03FF, $0237-$023B,
+        ;   Main loop direction patches ($67D7-$67E0)
+        ; Clobbers: A, X
+
+; --- Restore entity parameters ($029C → $D4, 25 bytes) ---
+        LDX #$18
+.copy_entities:
+        LDA $029C,X
+        STA $D4,X
+        DEX
+        BPL .copy_entities
+
+; --- Restore input/direction state ($02E2 → $01, 30 bytes) ---
+        LDX #$1D
+.copy_input:
+        LDA $02E2,X
+        STA $01,X
+        DEX
+        BPL .copy_input
+
+; --- Restore sprite/collision state ($02B5 → $88, 45 bytes) ---
+        LDX #$2C
+.copy_sprites:
+        LDA $02B5,X
+        STA $88,X
+        DEX
+        BPL .copy_sprites
+
+; --- Zero entity activity table ($03A8-$03BB) ---
+        LDA #$00
+        LDX #$13
+.zero_entities:
+        STA $03A8,X
+        DEX
+        BPL .zero_entities
+
+; --- Zero movement slots ($C5-$C8) ---
+        LDX #$03
+.zero_movement:
+        STA $C5,X
+        DEX
+        BPL .zero_movement
+
+        STA $04                   ; Clear unknown flag
+        STA $FD                   ; Clear frame counter
+        STA $03FF                 ; Clear floor flag
+
+; --- Initialize game-state variables ---
+        LDX #$02
+        STX $4B                   ; Unknown state A
+        STX $4C                   ; Unknown state B
+        DEX
+        STX $39                   ; Set game-over flag to 1
+
+; --- Fill $0237-$023B with $FF ---
+        LDA #$FF
+        LDX #$04
+.fill_ff:
+        STA $0237,X
+        DEX
+        BPL .fill_ff
+
+; --- Disable all direction slots (BIT = inactive) ---
+        LDA #$2C                  ; BIT abs opcode
+        STA SMC_ASCEND            ; Disable ascend
+        STA SMC_DESCEND           ; Disable descend
+        STA SMC_MOVE_LEFT         ; Disable move left
+        STA SMC_MOVE_RIGHT        ; Disable move right
+
+; --- Load game parameters ---
+        LDA $029A
+        STA $42                   ; Unknown param A
+        LDA $029B
+        STA $43                   ; Unknown param B
+        RTS
+@ %def INIT_LEVEL_STATE
+
+\section{Score add}
+
+[[SCORE\_ADD]] at \$121A adds a BCD value to the 3-byte score. The
+addend's low byte is in ZP~\$1A and high byte in ZP~\$1B; these are added
+to \$D3 and \$D2 respectively, with carry propagating into \$D1. All
+arithmetic is performed in BCD mode.
+
+<<score add defines>>=
+
+; --- Zero-page (score add) ---
+ZP_SCORE_ADD_LO = $1A           ; Score addend low byte (BCD)
+ZP_SCORE_ADD_HI = $1B           ; Score addend high byte (BCD)
+@
+
+<<score add>>=
+
+        ORG $121A
+SCORE_ADD:
+        SUBROUTINE
+        ; Score add — adds BCD value to 3-byte score.
+        ;
+        ; Inputs:
+        ;   ZP $1A — addend low byte (BCD)
+        ;   ZP $1B — addend high byte (BCD)
+        ;
+        ; Modifies:
+        ;   ZP $D1/$D2/$D3 (score)
+        ; Clobbers: A
+
+        SED                       ; BCD mode
+        CLC
+        LDA ZP_ENTITY_D3          ; Score low byte
+        ADC ZP_SCORE_ADD_LO       ; Add low addend
+        STA ZP_ENTITY_D3
+        LDA ZP_ENTITY_D2          ; Score mid byte
+        ADC ZP_SCORE_ADD_HI       ; Add high addend + carry
+        STA ZP_ENTITY_D2
+        LDA ZP_ENTITY_D1          ; Score high byte
+        ADC #$00                  ; Propagate carry only
+        STA ZP_ENTITY_D1
+        CLD                       ; Exit BCD mode
+        RTS
+@ %def SCORE_ADD
+
 \section{Game start initialization}
 
 [[GAME\_START\_INIT]] at \$13A4 is called from the attract loop when the
@@ -3024,7 +3773,7 @@ ZP_ENTITY_D2    = $D2           ; Entity state 2
 ZP_ENTITY_D3    = $D3           ; Entity state 3
 
 ; --- Subroutine stubs (game start) ---
-INIT_LEVEL_STATE = $11B8        ; STUB — initialize level state tables
+; (INIT_LEVEL_STATE has its own ORG chunk)
 LOAD_LEVEL      = $6AA7         ; STUB — load level data
 @
 
@@ -3222,7 +3971,7 @@ re-enabled, and execution falls through into [[ATTRACT\_LOOP]].
 <<level complete defines>>=
 
 ; --- Subroutine stubs (level complete) ---
-LEVEL_TRANSITION = $116C        ; STUB — level transition effects
+; (LEVEL_TRANSITION has its own ORG chunk)
 SPRITE_DRAW_CALL = $656F        ; STUB — sprite draw subroutine
 SPRITE_PTR_LO   = $65B3         ; Sprite data pointer, low byte
 SPRITE_PTR_HI   = $65B4         ; Sprite data pointer, high byte
@@ -3314,6 +4063,145 @@ LEVEL_COMPLETE:
                                  ; Fall through to ATTRACT_LOOP
 @ %def LEVEL_COMPLETE
 
+\section{Attract entity movement}
+
+[[ATTRACT\_ANIM\_1]] at \$17A6 updates the vertical positions of up to four
+attract-mode entities (X~=~3 down to~0). Each entity has a direction flag
+in \$88+X: negative means moving down, positive means moving up, zero
+means inactive.
+
+When moving down, the Y position (\$E9+X) increments by~2 each frame
+until it reaches \$6A, at which point the direction reverses to~up.
+When moving up, the Y position decrements by~2 until it reaches \$52.
+At the top, a pseudo-random check (via [[PRNG]] at \$6674) determines
+whether to reverse; if the random value is less than~5 the entity keeps
+pausing, otherwise it reverses to move down again.
+
+<<attract anim 1 defines>>=
+
+; --- Zero-page (attract entity movement) ---
+ZP_ATTRACT_ENT_DIR = $88        ; Entity direction flags (4 bytes: $88-$8B)
+ZP_ATTRACT_ENT_Y   = $E9       ; Entity Y positions (4 bytes: $E9-$EC)
+ZP_ATTRACT_ENT_X   = $E5       ; Entity X columns (4 bytes: $E5-$E8)
+ZP_ATTRACT_ENT_W   = $ED       ; Entity widths (4 bytes: $ED-$F0)
+
+; (PRNG has its own ORG chunk)
+@
+
+<<attract anim 1>>=
+
+        ORG $17A6
+ATTRACT_ANIM_1:
+        SUBROUTINE
+        ; Attract entity movement — updates Y positions of 4 entities.
+        ;
+        ; Inputs:
+        ;   $88+X — direction (negative=down, positive=up, zero=skip)
+        ;   $E9+X — Y position
+        ;
+        ; Modifies:
+        ;   $88+X (direction), $E9+X (Y position)
+        ; Clobbers: A, X
+
+        LDX #$03
+.check_entity:
+        LDA ZP_ATTRACT_ENT_DIR,X ; Direction flag
+        BMI .moving_down          ; Negative → moving down
+        BNE .moving_up            ; Positive → moving up
+.next_entity:
+        DEX
+        BPL .check_entity
+        RTS
+
+; --- Moving down: increment Y toward $6A ---
+.moving_down:
+        LDA ZP_ATTRACT_ENT_Y,X
+        CMP #$6A                  ; Reached bottom?
+        BNE .step_down
+        LDA #$01                  ; Reverse: now moving up
+        STA ZP_ATTRACT_ENT_DIR,X
+        BPL .next_entity          ; Always taken
+.step_down:
+        CLC
+        ADC #$02                  ; Move down 2 pixels
+        STA ZP_ATTRACT_ENT_Y,X
+        JMP .next_entity
+
+; --- Moving up: decrement Y toward $52 ---
+.moving_up:
+        LDA ZP_ATTRACT_ENT_Y,X
+        CMP #$52                  ; Reached top?
+        BNE .step_up
+        JSR PRNG                  ; Random check at top
+        CMP #$05                  ; Random < 5?
+        BCS .next_entity          ; Yes → keep pausing
+        LDA #$FF                  ; Reverse: now moving down
+        STA ZP_ATTRACT_ENT_DIR,X
+        BMI .next_entity          ; Always taken
+.step_up:
+        SEC
+        SBC #$02                  ; Move up 2 pixels
+        STA ZP_ATTRACT_ENT_Y,X
+        JMP .next_entity
+@ %def ATTRACT_ANIM_1
+
+\section{Attract entity draw}
+
+[[ATTRACT\_ANIM\_2]] at \$17E1 draws the four attract-mode entities. For
+each entity (X~=~3 down to~0), it loads the X column from \$E5+X, width
+from \$ED+X, and Y position from \$E9+X. The sprite height is computed as
+\$6B minus the Y position, clamped to a maximum of~\$0E (14~pixels).
+Sprite data pointers come from tables at \$B002 and \$B082.
+
+<<attract anim 2 defines>>=
+
+; --- Attract sprite tables (secondary) ---
+ATTRACT_SPR2_LO = $B002         ; Attract sprite pointer table 2, low bytes
+ATTRACT_SPR2_HI = $B082         ; Attract sprite pointer table 2, high bytes
+@
+
+<<attract anim 2>>=
+
+        ORG $17E1
+ATTRACT_ANIM_2:
+        SUBROUTINE
+        ; Attract entity draw — renders 4 attract-mode entities.
+        ;
+        ; Inputs:
+        ;   $E5+X — X column, $ED+X — width, $E9+X — Y position
+        ;
+        ; Modifies:
+        ;   Sprite parameters ($56, $57, $5B, $5D, $65B3, $65B4)
+        ; Clobbers: A, X
+
+        LDX #$03
+.draw_entity:
+        LDA ZP_ATTRACT_ENT_X,X   ; Entity X column
+        STA ZP_SPRITE_X
+        LDA ZP_ATTRACT_ENT_W,X   ; Entity width
+        STA ZP_SPRITE_W
+        LDA ZP_ATTRACT_ENT_Y,X   ; Entity Y position
+        STA ZP_SPRITE_Y
+        LDA #$6B                  ; Bottom boundary
+        SEC
+        SBC ZP_ATTRACT_ENT_Y,X   ; Distance from Y to bottom
+        CMP #$0F                  ; > 14?
+        BCC .height_ok
+        LDA #$0E                  ; Clamp to 14
+.height_ok:
+        STA ZP_SPRITE_H
+        LDA ATTRACT_SPR2_LO,X    ; Sprite data pointer low
+        STA SPRITE_PTR_LO
+        LDA ATTRACT_SPR2_HI,X    ; Sprite data pointer high
+        STA SPRITE_PTR_HI
+        STX ZP_SAVE_X             ; Save loop index
+        JSR SPRITE_DRAW_CALL      ; Draw entity
+        LDX ZP_SAVE_X             ; Restore loop index
+        DEX
+        BPL .draw_entity
+        RTS
+@ %def ATTRACT_ANIM_2
+
 \section{Attract elevator animation}
 
 [[ATTRACT\_ANIM\_3]] at \$1813 controls the vertical oscillation of an
@@ -3390,6 +4278,84 @@ ATTRACT_ANIM_3:
         STA ZP_ELEV_DIR
         RTS
 @ %def ATTRACT_ANIM_3
+
+\section{Attract sprite draw}
+
+[[ATTRACT\_ANIM\_4]] at \$1844 draws the attract-mode sprites each frame.
+It loops over two entity slots (X~=~1 down to X~=~0), reading each
+entity's X column from ZP~\$F2/\$F1, Y position from ZP~\$F4/\$F3,
+and width from ZP~\$F6/\$F5. Sprite data pointers are fetched from
+tables at \$B006 and \$B086. Each entity is drawn with height~8 via
+[[SPRITE\_DRAW\_CALL]].
+
+After the entity loop, it draws a fixed ``logo'' sprite at column~\$1D,
+row~\$A5, dimensions \$12$\times$\$08, with sprite data at \$BCF1.
+
+<<attract anim 4 defines>>=
+
+; --- Zero-page (attract sprites) ---
+ZP_ATTRACT_X    = $F1           ; Attract entity X columns (2 bytes: F1, F2)
+ZP_ATTRACT_Y    = $F3           ; Attract entity Y positions (2 bytes: F3, F4)
+ZP_ATTRACT_W    = $F5           ; Attract entity widths (2 bytes: F5, F6)
+ZP_SAVE_X       = $5C           ; Saved X index during draw
+
+; --- Attract sprite tables ---
+ATTRACT_SPR_LO  = $B006         ; Attract sprite pointer table, low bytes
+ATTRACT_SPR_HI  = $B086         ; Attract sprite pointer table, high bytes
+@
+
+<<attract anim 4>>=
+
+        ORG $1844
+ATTRACT_ANIM_4:
+        SUBROUTINE
+        ; Attract sprite draw — renders attract-mode entities and logo.
+        ;
+        ; Behavior:
+        ;   Loops X = 1..0, drawing each entity from ZP arrays.
+        ;   Then draws a fixed logo sprite.
+        ;
+        ; Modifies:
+        ;   Sprite parameters ($56, $57, $5B, $5D, $65B3, $65B4)
+        ; Clobbers: A, X
+
+; --- Entity draw loop (X = 1 down to 0) ---
+        LDX #$01
+.draw_entity:
+        LDA ZP_ATTRACT_X,X      ; Entity X column
+        STA ZP_SPRITE_X
+        LDA ZP_ATTRACT_Y,X      ; Entity Y position
+        STA ZP_SPRITE_Y
+        LDA ZP_ATTRACT_W,X      ; Entity width
+        STA ZP_SPRITE_W
+        LDA #$08
+        STA ZP_SPRITE_H          ; Height = 8 for all entities
+        STX ZP_SAVE_X            ; Save loop index
+        LDA ATTRACT_SPR_LO,X    ; Sprite data pointer low
+        STA SPRITE_PTR_LO
+        LDA ATTRACT_SPR_HI,X    ; Sprite data pointer high
+        STA SPRITE_PTR_HI
+        JSR SPRITE_DRAW_CALL     ; Draw this entity
+        LDX ZP_SAVE_X            ; Restore loop index
+        DEX
+        BPL .draw_entity         ; Next entity (1 → 0)
+
+; --- Draw fixed logo sprite ---
+        LDA #$12
+        STA ZP_SPRITE_W          ; Width = $12
+        LDA #$08
+        STA ZP_SPRITE_H          ; Height = $08
+        LDA #$A5
+        STA ZP_SPRITE_Y          ; Y = $A5
+        LDA #$1D
+        STA ZP_SPRITE_X          ; X column = $1D
+        LDA #$BC
+        STA SPRITE_PTR_HI        ; Sprite data high = $BC
+        LDA #$F1
+        STA SPRITE_PTR_LO        ; Sprite data low = $F1
+        JSR SPRITE_DRAW_CALL     ; Draw logo sprite
+        RTS
+@ %def ATTRACT_ANIM_4
 
 \section{Title screen and attract}
 
@@ -3503,12 +4469,31 @@ START_ATTRACT:
 <<input process defines>>
 <<game start init defines>>
 <<level complete defines>>
+<<attract anim 1 defines>>
+<<attract anim 2 defines>>
 <<attract anim 3 defines>>
+<<attract anim 4 defines>>
+<<screen row copy defines>>
+<<display update defines>>
+<<level transition defines>>
+<<score add defines>>
+<<prng defines>>
+<<hazard check defines>>
+<<screen row copy>>
 <<joystick handler>>
 <<key handler ext>>
 <<pause handler>>
+<<hazard check>>
+<<display update>>
+<<post frame>>
+<<level transition>>
+<<init level state>>
+<<score add>>
 <<game start init>>
+<<attract anim 1>>
+<<attract anim 2>>
 <<attract anim 3>>
+<<attract anim 4>>
 <<game init>>
 <<game init padding>>
 <<title screen data>>
@@ -3516,6 +4501,7 @@ START_ATTRACT:
 <<input dispatch>>
 <<input process>>
 <<display page flip>>
+<<prng>>
 <<main loop>>
 <<scroll camera>>
 <<level complete>>

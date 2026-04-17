@@ -258,7 +258,7 @@ TEXT_SCREEN      = $0400         ; First line of text screen
         ;   X -- slot number * 16 (from PROM)
         ;
         ; Behavior:
-        ;   Phase 1 (DEST_PAGE=$09): switches to hi-res graphics, patches
+        ;   Phase 1 (DEST_PAGE <- #$09): switches to hi-res graphics, patches
         ;     re-entry JMP and reset vector, redirects loading to RWTS_ENTRY.
         ;   Phase 2 (DEST_PAGE<$5A): returns to PROM to read next sector.
         ;   Phase 3 (DEST_PAGE>=$5A): copies ROM to language card, relocates
@@ -276,7 +276,7 @@ BOOT1_SECTORS:
 
 BOOT1_ENTRY:
         LDA DEST_PAGE           ; Current destination page
-        CMP #$09                ; First entry? (boot0 sets DEST_PAGE=$09)
+        CMP #$09                ; First entry? (boot0 sets DEST_PAGE <- #$09)
         BNE .check_done         ; No, check if loading is complete
 
 ; --- Phase 1: first entry after boot0 ---
@@ -2935,8 +2935,8 @@ KEY_CTRL_V      = $96           ; Ctrl-V (speaker click)
 ; $36/$37 form an indirect pointer used by SFX_TONE as a
 ; speaker-click address.  $37 = $C0 (set during boot and never changed),
 ; so the effective target is $C0xx.  Bit 4 of ZP_SFX_CLICK selects between:
-;   $36 = $30 -> points (SW_SPEAKER) -- clicks the speaker
-;   $36 = $20 -> points at $C020 (cassette output, unused) -- silent
+;   ZP_SFX_CLICK <- #$30 -> points (SW_SPEAKER) -- clicks the speaker
+;   ZP_SFX_CLICK <- #$20 -> points at $C020 (cassette output, unused) -- silent
 ; Ctrl-S flips bit 4 to mute/unmute without touching the rest of the byte.
 ; $38 is a preserved copy used across game/attract transitions (ATTRACT_LOOP
 ; saves $36 into ZP_SFX_CLICK_SAVED on no-more-lives; restores $38 into ZP_SFX_CLICK on game start).
@@ -3467,8 +3467,8 @@ KEY_HANDLER_EXT:
         ;   A -- key code from keyboard
         ;
         ; Behavior:
-        ;   Ctrl-J: set $48=$FF (joystick mode).
-        ;   Ctrl-K: set $48=$01 (keyboard mode).
+        ;   Ctrl-J: set ZP_INPUT_MODE <- #$FF (joystick mode).
+        ;   Ctrl-K: set ZP_INPUT_MODE <- #$01 (keyboard mode).
         ;   Ctrl-V: toggle speaker.
         ;   Other: clear strobe and return.
         ;
@@ -6617,7 +6617,7 @@ RESCUE_DRAW:
         ; from ZP_COMPANION_OFF down through the slots, draws each active body
         ; sprite, and runs three collision/spawn checks: floor-enemy
         ; overlap (kill both, +35 BCD), player pickup (centre-band
-        ; X + Y window, +35 BCD, $1E := $FF, no life-loss), and
+        ; X + Y window, +35 BCD, ZP_HIT_FLAG <- #$FF, no life-loss), and
         ; hostile projectile-spawn (entity on player floor + odd row
         ; + free $C5/ZP_PROJ_X/ZP_PROJ_Y slot; throw a projectile in walking
         ; direction).  See section Rescue-child draw, collision, and
@@ -6729,7 +6729,7 @@ RESCUE_DRAW:
 ; +dir mid-step (anim 1..6, not 7).
 .draw_pos_mid:
         LDA #$1C
-        STA ZP_SPRITE_H                    ; $57 = $1C
+        STA ZP_SPRITE_H                    ; ZP_SPRITE_H <- #$1C
         LDA RESCUE_SPR_POS_MID_LO,X
         STA SMC_DS_SRC_LO
         LDA RESCUE_SPR_POS_MID_HI,X
@@ -6741,7 +6741,7 @@ RESCUE_DRAW:
 
 .draw_pos_end:
         LDA #$1A
-        STA ZP_SPRITE_H                    ; $57 = $1A
+        STA ZP_SPRITE_H                    ; ZP_SPRITE_H <- #$1A
         LDA RESCUE_SPR_POS_END_LO,X
         STA SMC_DS_SRC_LO
         LDA RESCUE_SPR_POS_END_HI,X
@@ -7343,7 +7343,7 @@ BEAM_TRACER_SPAWN:
         ;   FLOOR_THRESH ($83,X)      --- per-floor Y threshold.
         ;
         ; Behavior:
-        ;   On a successful spawn, TRACER_STATE := $22 (initial lifetime
+        ;   On a successful spawn, TRACER_STATE <- #$22 (initial lifetime
         ;   and X-column), TRACER_ROW := BEAM_Y, and a click sound is
         ;   played.
         ; Clobbers: A, X, Y
@@ -7547,7 +7547,7 @@ ENEMY_A_ADVANCE:
         BPL .promote_done               ; bit 7 clear (steady): leave state
         STA ZP_ENEMY_A_STATE            ; bit 7 set (drift): promote to ZP_LAST_DIR
 .promote_done:
-        STA ZP_ENEMY_C_STATE            ; Wake companion slot ($D4 <- $01)
+        STA ZP_ENEMY_C_STATE            ; Wake companion slot (ZP_ENEMY_C_STATE <- #$01)
         LDA #$03
         STA ZP_ENEMY_A_POS+1            ; Reload hi to ZP_PLAYER_STANCE
         LDA #$61
@@ -7752,7 +7752,7 @@ ENEMY_A_DRAW:
         ;   2. Clip: compute screen-relative X into ZP_CLIP_X_LO/HI;
         ;      exit if high byte non-zero or low byte >= $9A.
         ;   3. Set up common sprite params: $5D = screen col,
-        ;      $56 = 3, $57 = $13 (body dims).
+        ;      $56 = 3, ZP_SPRITE_H <- #$13 (body dims).
         ;   4. State-polarity dispatch: positive -> .walk_phase
         ;      (animation scan); negative -> fall through to .stance.
         ;   5. .stance (also reached when walk_phase = 0 or 2):
@@ -8083,7 +8083,7 @@ ENEMY_B_ADVANCE:
         ;   3. ADD SMC_ENEMY_B_ADD to ZP_ENEMY_B_POS (16-bit).
         ;   4. If new hi byte >= $03, try rearm at .rearm_attempt.
         ;   5. Otherwise gate on ZP_ANIM_COUNTER: if $1F < $04 and
-        ;      $1F not in {0, 2}, patch SMC_ENEMY_B_ADD := $1F.
+        ;      $1F not in {0, 2}, patch SMC_ENEMY_B_ADD <- #$1F.
         ;
         ; Modifies:
         ;   ZP_ENEMY_B_SND_CTR, ZP_ENEMY_B_STATE, ZP_ENEMY_B_POS,
@@ -8333,7 +8333,7 @@ ENEMY_B_DRAW:
         ;   1. State gate: $00 exits; negative jumps to .drift_draw.
         ;   2. Clip: compute screen-relative X into ZP_CLIP_X_LO/HI;
         ;      exit if high byte non-zero or low byte >= $9C.
-        ;   3. Set sprite params ($5D = screen col, $56 = 5, $57 = $11,
+        ;   3. Set sprite params ($5D = screen col, $56 = 5, ZP_SPRITE_H <- #$11,
         ;      $5B = ZP_ENEMY_B_ROW), patch DRAW_SPRITE src to
         ;      SPRITE_TABLE_B_{LO,HI}[PROJ_FRAME_IDX], JSR DRAW_SPRITE.
         ;   4. Player-overlap test: ZP_CLIP_X_LO in [$42,$55) AND
@@ -8587,7 +8587,7 @@ ENEMY_C_ADVANCE:
         ;      based on FD bit~4; then SBC ZP_ADVANCE_RATE on the
         ;      16-bit counter; rearm only if $D5 < $3C and $D6 == 0.
         ;   4. Rearm: reload counter to $0352, pick X = (PRNG_A&3)
-        ;      if non-zero else 1, set ROW := $84,X - $0A, write $00
+        ;      if non-zero else 1, set ROW <- #$84,X - $0A, write $00
         ;      to state.
         ;
         ; Modifies:
@@ -8852,7 +8852,7 @@ ENEMY_C_DRAW:
         ;   2. Clip: compute screen-relative X into ZP_CLIP_X_LO/HI;
         ;      exit if high byte non-zero or low byte >= $94.
         ;   3. Main draw: set sprite params ($5D = col, $56 = 2,
-        ;      $57 = $0B, $5B = ZP_ENEMY_C_ROW), patch DRAW_SPRITE
+        ;      ZP_SPRITE_H <- #$0B, $5B = ZP_ENEMY_C_ROW), patch DRAW_SPRITE
         ;      src to SPRITE_TABLE_C_{LO,HI}[PROJ_FRAME_IDX],
         ;      JSR DRAW_SPRITE.
         ;   4. Tail draw: decrement clip_X by 1 (exit if it underflows);
@@ -9794,7 +9794,7 @@ REFRESH_LEFT_WALL:
         ; Behavior:
         ;   Compute delta = $11 - ZP_PLAYER_Y.  If delta < 0, RTS.
         ;   Otherwise store delta as ZP_BLIT_X_START, seed
-        ;   ZP_SCORE_0 = $00 and ZP_SCORE_1 = $FF (restore terminator
+        ;   ZP_SCORE_0 <- #$00 and ZP_SCORE_1 <- #$FF (restore terminator
         ;   past playable area), then dispatch on delta:
         ;     delta == $00           ->  .delta_zero (1-col wide)
         ;     delta == $01 (via BEQ) ->  .delta_one
@@ -11685,7 +11685,7 @@ LEVEL_INTRO_TICK:
         ;   $1E < 0: one-shot init --- disable input / movement / render
         ;     SMC slots; clear state; save $06 into ZP_INTRO_Y; point
         ;     DRAW_PLAYER at ZP_INTRO_Y (SMC_SR_YSRC); set
-        ;     ZP_INTRO_COUNTDOWN=$12, ZP_INTRO_TIMEOUT=$40; $1E=0.
+        ;     ZP_INTRO_COUNTDOWN <- #$12, ZP_INTRO_TIMEOUT <- #$40; $1E=0.
         ;     Falls through into the tick phase.
         ;   Tick phase (while ZP_INTRO_COUNTDOWN > 0): on odd frames
         ;     decrement the counter, decrement SMC_SR_HEIGHT and bump
@@ -11699,7 +11699,7 @@ LEVEL_INTRO_TICK:
         ;     Otherwise clear entity-active table ENTITY_HIT_STATE..$8D+$41,
         ;     poll keyboard / input-handler MSBs / timeout; on trigger
         ;     activate (set $1E=1, restore main-loop JSR slots, reset
-        ;     SMC_SR_YSRC=$06, SMC_SR_HEIGHT=$13).  Otherwise draw the
+        ;     SMC_SR_YSRC <- #$06, SMC_SR_HEIGHT <- #$13).  Otherwise draw the
         ;     "ready" prompt sprite (sprite-table id 1) at a row
         ;     that dips by 2 on every other frame once $19 >= $F0.
         ;
@@ -12417,7 +12417,7 @@ SPECIAL_DRAW:
         BNE .dispatch_body              ; HP != 0: skip defeat + catch
 ; Defeat edge: enter drift, arm defeat jingle, bump row
         LDA #$FF
-        STA ZP_SPECIAL_STATE            ; $AB = $FF -> drift mode
+        STA ZP_SPECIAL_STATE            ; ZP_SPECIAL_A <- #$FF -> drift mode
         LDA #$06
         STA ZP_SPECIAL_SND_CTR          ; Arm ascending-tone jingle
         LDA ZP_SPECIAL_ROW

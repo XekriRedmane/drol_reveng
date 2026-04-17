@@ -5,3 +5,5 @@
 - [Drol beam subsystem](drol-beam-subsystem.md) — BEAM_UPDATE at $130A; $03FE/$03FF beam state, $0237/$023C tracer slots, $9B/$9F/$A3 enemies
 - [Drol entity-slot tick+draw pattern](drol-entity-slot-pattern.md) — 3 parallel enemy slots (A/B/C at $DC/$E0/$D4), all 6 tick+draw routines RE'd; A and B hit player, C hits floor-enemies
 - [Drol DRAW_PLAYER at $64DF](drol-draw-player.md) — main-loop player draw; NOT DRAW_ENTITIES phase-2 (which is perspective-grid sprite); gates on $02/$03, SMC patched by intro/complete
+- [Drol movement dispatch](drol-move-dispatch.md) — $04=ZP_MOVE_DIR (0/+/-); PLAYER_MOVE_TICK at $64CB routes to three tick handlers still inside game engine A HEX
+- [Drol GAME_START_INIT corrections](drol-game-start-init.md) — $6AA7 is SMC-resume not LOAD_LEVEL; $5E is lives-BCD not level-state; $65AB/$65A7 are column bounds; $2E is clear-col loop idx

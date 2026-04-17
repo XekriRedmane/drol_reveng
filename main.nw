@@ -3672,7 +3672,7 @@ POST_FRAME:
         ;
         ; Inputs:
         ;   ZP_SCORE_HI/MID/LO ($D1/$D2/$D3) — BCD score
-        ;   ZP_LEVEL_STATE ($5E) — level state flag
+        ;   ZP_LIVES_BCD ($5E) — BCD lives counter drawn as two HUD digits
         ;
         ; Modifies:
         ;   Sprite parameters, SMC_TILE_SRC_LO/HI
@@ -3726,11 +3726,11 @@ POST_FRAME:
         STA ZP_SPRITE_X
         JSR DRAW_DIGIT_SHORT
 
-; --- Level state digit 1: low nibble of $5E, column 6 ---
-        LDA ZP_LEVEL_STATE
-        BPL .level_ok1
-        LDA #$00                  ; Clamp negative to 0
-.level_ok1:
+; --- Lives digit 1: low nibble of $5E, column 6 ---
+        LDA ZP_LIVES_BCD
+        BPL .lives_ok1
+        LDA #$00                  ; Clamp negative to 0 (post-game-over frames)
+.lives_ok1:
         AND #$0F
         TAX
         LDA #$01
@@ -3743,11 +3743,11 @@ POST_FRAME:
         STA ZP_SPRITE_X
         JSR DRAW_DIGIT
 
-; --- Level state digit 2: high nibble of $5E, column 4 ---
-        LDA ZP_LEVEL_STATE
-        BPL .level_ok2
+; --- Lives digit 2: high nibble of $5E, column 4 ---
+        LDA ZP_LIVES_BCD
+        BPL .lives_ok2
         LDA #$00                  ; Clamp negative to 0
-.level_ok2:
+.lives_ok2:
         AND #$F0
         LSR
         LSR
@@ -4027,35 +4027,108 @@ SCORE_ADD:
 
 \section{Game start initialization}
 
-[[GAME_START_INIT]] at \$13A4 is called from the attract loop when the
-player presses a key or button. It resets the player position to the
-starting Y-coordinate (\$6B), zeros the three score digits (\$2B--\$2D),
-sets the initial lives count, calls two initialization subroutines
-([[DIFFICULTY_RESET]] and [[INIT_LEVEL_STATE]]), and then tail-calls
-[[LOAD_LEVEL]] to load the first level.
+[[GAME_START_INIT]] at \$13A4 is called on the attract-to-game
+transition and on in-game restart paths.  It resets the BCD-score
+triple, BCD lives counter, HUD column bounds, and other top-of-game
+state, then tail-calls [[RESUME_GAMEPLAY_SMC]] at \$6AA7 to re-arm the
+three main-loop SMC slots ([[SMC_SR_YSRC]], [[SMC_INPUT]],
+[[SMC_RENDER]], [[SMC_SR_HEIGHT]]) so the engine starts running the
+input and draw subsystems.
+
+\paragraph{Callers.}  Three direct [[JSR]] sites exist:
+\begin{itemize}
+\item \$6121 (key handler) --- fires when the start key is pressed in
+  attract mode.
+\item \$7255, \$7299 --- restart paths inside the game-over / high-score
+  code region at \$7200-\$72A4 (still in the game-engine HEX blob).
+\end{itemize}
+
+\paragraph{Second entry point.}  [[GAME_RESTART]] at \$13C2 is the
+skip-past-init sub-entry invoked from \$5ECB (another restart path)
+via [[JSR GAME_RESTART]].  It only resets the BCD lives counter, the
+score triple, \$46, and the restart flag \$44 before jumping into
+[[RESUME_GAMEPLAY_SMC]].
+
+\paragraph{What \$6AA7 actually does.}  Despite its address landing
+inside the \$6ABA-\$719C game-engine HEX blob, [[RESUME_GAMEPLAY_SMC]]
+is a short 13-byte routine that re-patches main-loop self-modifying
+bytes: [[SMC_SR_YSRC]] (\$64FA) \gets \$06 (i.e.\ the operand of
+[[LDA ZP_PLAYER_COL]]), [[SMC_INPUT]] (\$67D1) \gets \$20 (JSR opcode),
+[[SMC_RENDER]] (\$67EF) \gets \$20, and [[SMC_SR_HEIGHT]] (\$64F6)
+\gets \$13 (default sprite height).  These are the exact three/four
+SMC slots [[LEVEL_INTRO_TICK]] inlines the stores to when it flips
+from intro to gameplay; the only difference is that
+[[RESUME_GAMEPLAY_SMC]] is a callable entry used by cold-start and
+restart paths instead of being inlined.
+
+\paragraph{Initial values written (in order).}
+
+\begin{center}
+\begin{tabular}{l|l|l}
+Addr & Name & Initial value \\
+\hline
+\$4A     & [[ZP_PLAYER_Y]]       & \$6B (starting perspective-table Y) \\
+\$2B     & [[ZP_SCORE_0]]        & \$00 \\
+\$2C     & [[ZP_SCORE_1]]        & \$00 \\
+\$2D     & [[ZP_SCORE_2]]        & \$00 \\
+\$65AB   & [[HUD_SCORE_COL]]     & \$00 (score-HUD right edge; left edge of playfield) \\
+\$2E     & [[ZP_CLEAR_COL]]      & \$27 (playfield-clear column counter, col 39) \\
+\$65A7   & [[HUD_LIVES_COL]]     & \$28 (lives-HUD left edge; right edge of playfield) \\
+\$D1     & [[ZP_SCORE_HI]]       & \$00 \\
+\$D2     & [[ZP_SCORE_MID]]      & \$00 \\
+\$D3     & [[ZP_SCORE_LO]]       & \$00 \\
+\$5E     & [[ZP_LIVES_BCD]]      & \$04 (four lives, BCD-decremented on death) \\
+\$46     & \$46 (write-only)     & \$00 (never read --- likely dead store) \\
+\$44     & [[ZP_RESTART_FLAG]]   & \$FF (cold-start flag, tested at \$5EC5) \\
+\end{tabular}
+\end{center}
+
+In addition two subsystem resets are called: [[DIFFICULTY_RESET]]
+installs the minimum-tier preset, and [[INIT_LEVEL_STATE]] restores
+the 100-byte ZP bank from the page-2 master buffers and clears the
+entity-active table.
+
+\paragraph{HUD column bounds.}  The pair \$65AB / \$65A7 are not HUD
+``values'' but the left / right column bounds of the playable strip:
+[[BEAM_UPDATE]] gates its tracer pixel-draw on
+[[HUD_SCORE_COL]]~$\le$~col~$<$~[[HUD_LIVES_COL]] (see the
+``skip-draw'' pair at \$5615/\$5617).  Initializing them to 0 and \$28
+opens the full 40-column strip; the routine at \$6200 later adjusts
+them (together with [[ZP_CLEAR_COL]]) as the lives count changes so
+the HUD numerals paint to the right of the playfield.
+
+\paragraph{\$5E is the on-screen lives counter.}
+[[POST_FRAME]] draws the two BCD nibbles of \$5E as sprite digits at
+HUD columns 4 and 6 every frame.  \$5E is BCD-decremented at \$6A1E
+and \$6A22 (under [[SED]]) when the player dies, and at \$9397 by
+[[LEVEL_INTRO_TICK]]'s wait-phase tick.  When it goes negative the
+game-over path at \$7208 takes over (\$682B) --- this is the "lose"
+exit, not a level-timer.  The previous naming [[ZP_LEVEL_STATE]] was a
+guess that pre-dated understanding [[POST_FRAME]] / \$6A1E;
+[[ZP_LIVES_BCD]] is the correct label.
 
 <<game start init defines>>=
 
 ; --- Zero-page (game start) ---
-ZP_PLAYER_Y     = $4A           ; Player Y position
-ZP_SCORE_0      = $2B           ; Score digit 0 (ones)
-ZP_SCORE_1      = $2C           ; Score digit 1 (tens)
-ZP_SCORE_2      = $2D           ; Score digit 2 (hundreds)
-ZP_LIVES        = $2E           ; Lives remaining
-ZP_LEVEL_STATE  = $5E           ; Level state flag
-ZP_LEVEL_NUM    = $46           ; Current level number
-ZP_HIGH_SCORE_FLAG = $44        ; High score flag ($FF = no high score)
+ZP_PLAYER_Y     = $4A           ; Player Y (perspective-table index)
+ZP_SCORE_0      = $2B           ; Score HUD digit 0 (runtime sprite slot)
+ZP_SCORE_1      = $2C           ; Score HUD digit 1
+ZP_SCORE_2      = $2D           ; Score HUD digit 2
+ZP_CLEAR_COL    = $2E           ; Playfield-clear column counter / right edge
+ZP_LIVES_BCD    = $5E           ; BCD lives counter (shown in HUD; <0 = game over)
+ZP_RESTART_FLAG = $44           ; Restart dispatch flag ($FF = cold start)
 
-; --- Game state ---
-SCORE_DISPLAY_VAL = $65AB       ; Score display value
-LIVES_DISPLAY_VAL = $65A7       ; Lives display value
+; --- Playfield-column HUD bounds (read by BEAM_UPDATE, written here) ---
+HUD_SCORE_COL   = $65AB         ; Score-HUD right edge / playfield left bound
+HUD_LIVES_COL   = $65A7         ; Lives-HUD left edge / playfield right bound
+
+; --- Score (declared here; $D1/$D2/$D3 are the BCD score triple) ---
 ZP_SCORE_HI     = $D1           ; BCD score, high byte (ten-thousands / hundred-thousands)
 ZP_SCORE_MID    = $D2           ; BCD score, middle byte (thousands / hundreds)
 ZP_SCORE_LO     = $D3           ; BCD score, low byte (tens / ones)
 
-; --- Subroutine stubs (game start) ---
-; (INIT_LEVEL_STATE has its own ORG chunk)
-LOAD_LEVEL      = $6AA7         ; Load level data (in game engine hex data)
+; --- Tail-call target (in game-engine B hex blob) ---
+RESUME_GAMEPLAY_SMC = $6AA7     ; Re-patches MAIN_LOOP SMC slots to enable input/render
 @
 
 <<game start init>>=
@@ -4063,55 +4136,65 @@ LOAD_LEVEL      = $6AA7         ; Load level data (in game engine hex data)
         ORG $13A4
 GAME_START_INIT:
         SUBROUTINE
-        ; Game start initialization — reset player and game state.
+        ; Game start initialization — reset BCD score, lives, HUD
+        ; column bounds, then resume main-loop subsystems.
         ;
         ; Behavior:
-        ;   Sets player Y to starting position ($6B).
-        ;   Zeros score digits. Sets initial lives ($27).
-        ;   Calls entity and level initialization.
-        ;   Tail-calls LOAD_LEVEL to begin first level.
+        ;   Seeds ZP_PLAYER_Y to starting position ($6B).
+        ;   Zeros the three on-screen score digits and the score BCD
+        ;     triple.  Sets the two HUD column bounds that clip the
+        ;     beam-tracer draw to the playfield.
+        ;   Sets lives counter to $04 (BCD).  Sets restart flag to $FF.
+        ;   Calls DIFFICULTY_RESET (minimum tier preset) and
+        ;     INIT_LEVEL_STATE (restore ZP from master buffers).
+        ;   Tail-calls RESUME_GAMEPLAY_SMC ($6AA7) to re-enable input
+        ;     and sprite-render main-loop slots.
         ;
         ; Modifies:
-        ;   ZP_SCORE_0..2, ZP_LIVES, ZP_HIGH_SCORE_FLAG, ZP_LEVEL_NUM,
-        ;   ZP_PLAYER_Y, ZP_LEVEL_STATE, ZP_SCORE_HI/MID/LO,
-        ;   SCORE_DISPLAY_VAL, LIVES_DISPLAY_VAL
+        ;   ZP_PLAYER_Y, ZP_SCORE_0..2, ZP_CLEAR_COL, ZP_LIVES_BCD,
+        ;   ZP_SCORE_HI/MID/LO, ZP_RESTART_FLAG, $46,
+        ;   HUD_SCORE_COL, HUD_LIVES_COL
         ; Clobbers: A, X
 
 ; --- Player start position ---
         LDA #$6B
-        STA ZP_PLAYER_Y         ; Starting Y position
+        STA ZP_PLAYER_Y          ; Starting Y (perspective-table index)
 
-; --- Clear score ---
+; --- Clear on-screen score digits + score-HUD left column ---
         LDA #$00
-        STA ZP_SCORE_0           ; Score digit 0
-        STA ZP_SCORE_1           ; Score digit 1
-        STA ZP_SCORE_2           ; Score digit 2
-        STA SCORE_DISPLAY_VAL    ; Clear score display
+        STA ZP_SCORE_0           ; HUD score sprite slot 0
+        STA ZP_SCORE_1           ; HUD score sprite slot 1
+        STA ZP_SCORE_2           ; HUD score sprite slot 2
+        STA HUD_SCORE_COL        ; Playfield left bound = col 0
 
-; --- Set initial lives ---
+; --- Set playfield column bounds (full 40-column strip) ---
         LDA #$27
-        STA ZP_LIVES             ; Initial lives count
+        STA ZP_CLEAR_COL         ; Clear-loop max column = 39
         LDA #$28
-        STA LIVES_DISPLAY_VAL    ; Initial lives display value
+        STA HUD_LIVES_COL        ; Playfield right bound = col 40
 
-; --- Initialize subsystems ---
-        JSR DIFFICULTY_RESET     ; Set minimum difficulty preset
-        JSR INIT_LEVEL_STATE     ; Reset level state tables
+; --- Subsystem resets ---
+        JSR DIFFICULTY_RESET     ; Minimum-tier preset
+        JSR INIT_LEVEL_STATE     ; Restore ZP from master buffers
 
-; --- Set level state ---
+GAME_RESTART:
+        ; Sub-entry: called from $5ECB to reset lives/score/flags
+        ; without re-seeding player position or HUD columns.
+
+; --- Reset lives / score / flags ---
         LDA #$04
-        STA ZP_LEVEL_STATE       ; Initial level state
+        STA ZP_LIVES_BCD         ; Four lives (BCD)
         LDX #$00
-        STX ZP_SCORE_HI          ; Clear score high byte
-        STX ZP_SCORE_MID         ; Clear score mid byte
-        STX ZP_SCORE_LO          ; Clear score low byte
-        STX ZP_LEVEL_NUM         ; Start at level 0
+        STX ZP_SCORE_HI          ; Clear BCD score triple
+        STX ZP_SCORE_MID
+        STX ZP_SCORE_LO
+        STX $46                  ; Write-only byte (never read)
         DEX
-        STX ZP_HIGH_SCORE_FLAG   ; No high score yet ($FF)
+        STX ZP_RESTART_FLAG      ; $FF = cold start (tested at $5EC5)
 
-; --- Load first level ---
-        JMP LOAD_LEVEL           ; Tail-call: load level data
-@ %def GAME_START_INIT
+; --- Tail-call: resume main-loop input/render ---
+        JMP RESUME_GAMEPLAY_SMC  ; Re-patches SMC slots in MAIN_LOOP
+@ %def GAME_START_INIT GAME_RESTART
 
 \section{Difficulty update}
 
@@ -5469,8 +5552,10 @@ for [[TRACER_ROW]],Y using the [[SCREEN_ROW_ADDR_LO]] /
 [[ZP_PAGE_FLAG]] is negative, targeting hi-res page~2) and stores the
 constant byte \$7F at screen[row][col~=~new state].  The HUD/playfield
 bounds are enforced by comparing the column against
-[[LIVES_DISPLAY_VAL]] (\$65A7) and [[SCORE_DISPLAY_VAL]] (\$65AB): the
+[[HUD_LIVES_COL]] (\$65A7) and [[HUD_SCORE_COL]] (\$65AB): the
 draw is suppressed whenever the column would overlap the HUD.
+(These column bounds are seeded by [[GAME_START_INIT]] and updated
+by the HUD layout code at \$6200 as the lives count changes.)
 
 [[BEAM_TRACER_SPAWN]] at \$1376 scans the same five slots for the
 first inactive one.  On every other frame ([[ZP_FRAME_COUNTER]] bit 0
@@ -5612,9 +5697,9 @@ BEAM_UPDATE:
         DC.B $8D                        ; STA abs opcode (force 3 bytes)
         DC.W SMC_TRACER_ADDR_HI         ; Patch operand at $135A
         LDX ZP_DRAW_LOOP_IDX            ; New state = screen column
-        CPX LIVES_DISPLAY_VAL            ; Skip if col >= lives HUD start
+        CPX HUD_LIVES_COL                ; Skip if col >= playfield right bound
         BCS .skip_draw
-        CPX SCORE_DISPLAY_VAL            ; Skip if col < score HUD end
+        CPX HUD_SCORE_COL                ; Skip if col < playfield left bound
         BCC .skip_draw
         LDA #$7F                        ; Single horizontal-line pixel byte
         DC.B $9D                        ; STA abs,X opcode (force 3 bytes)
@@ -9206,9 +9291,10 @@ between level transitions:
   the sprite flickers with the frame counter.
 \item When the countdown reaches zero, the routine switches into a
   wait-for-start phase.  A software timer advances in [[$06]] and
-  when it rolls over, the BCD level timer at [[ZP_LEVEL_STATE]]
-  (\$5E) is decremented.  If the level timer goes negative the routine
-  returns and the main-loop exit check at \$7208 takes over.
+  when it rolls over, the BCD lives counter [[ZP_LIVES_BCD]]
+  (\$5E) is decremented.  If it goes negative the routine
+  returns and the main-loop exit check at \$7208 takes over
+  (game-over path).
 \item While waiting, the routine reads the keyboard, the two input
   handler slots ([[ZP_INPUT_1]] / [[ZP_INPUT_2]]) and the auto-start
   timeout counter [[$19]]; if any of those trip, the gameplay is
@@ -9272,7 +9358,7 @@ LEVEL_INTRO_TICK:
         ;   ZP_INTRO_TIMEOUT ($19)    --- auto-start timeout.
         ;   ZP_INTRO_Y ($17)          --- saved intro sprite Y row.
         ;   $FD                       --- frame counter (flicker / parity).
-        ;   ZP_LEVEL_STATE ($5E)      --- BCD level timer (goes negative = done).
+        ;   ZP_LIVES_BCD ($5E)        --- BCD lives counter (goes negative = game over).
         ;   ZP_PLAYER_COL ($06)       --- saved on init; software timer
         ;                               during wait phase.
         ;   $02, $05, $0A..$0E, $1D, $8C --- game-state scratch cleared
@@ -9299,8 +9385,8 @@ LEVEL_INTRO_TICK:
         ;     via DRAW_PLAYER, restore BIT opcode, then pulse
         ;     SFX_TONE with the level-data byte at LEVEL_DATA_BASE,$18.
         ;   Wait phase (ZP_INTRO_COUNTDOWN == 0): software timer in
-        ;     $06 BCD-decrements ZP_LEVEL_STATE when it wraps.  If
-        ;     ZP_LEVEL_STATE goes negative, RTS (level-complete path).
+        ;     $06 BCD-decrements ZP_LIVES_BCD when it wraps.  If
+        ;     ZP_LIVES_BCD goes negative, RTS (game-over path).
         ;     Otherwise clear entity-active table $8D..$8D+$41,
         ;     poll keyboard / input-handler MSBs / timeout; on trigger
         ;     activate (set $1E=1, restore main-loop JSR slots, reset
@@ -9311,7 +9397,7 @@ LEVEL_INTRO_TICK:
         ; Modifies:
         ;   $1E, $17, $18, $19, $02, $04, $05, $06, $0A, $0B, $0C,
         ;   $0D, $0E, $1D, $8C, $8D..$8D+$41 (entity-active table),
-        ;   ZP_LEVEL_STATE ($5E, BCD decrement),
+        ;   ZP_LIVES_BCD ($5E, BCD decrement),
         ;   SMC slots in MAIN_LOOP: SMC_INPUT ($67D1), SMC_ASCEND
         ;   ($67D7), SMC_DESCEND ($67DA), SMC_MOVE_LEFT ($67DD),
         ;   SMC_MOVE_RIGHT ($67E0), SMC_RENDER ($67EF),
@@ -9394,18 +9480,18 @@ LEVEL_INTRO_TICK:
         BIT KBDSTROBE                   ; Rollover: clear keystrobe
         SED
         SEC
-        LDA ZP_LEVEL_STATE
+        LDA ZP_LIVES_BCD
         SBC #$01
-        STA ZP_LEVEL_STATE              ; BCD decrement
+        STA ZP_LIVES_BCD                ; BCD decrement of on-screen lives
         CLD
 .done:
         RTS
 
-; --- Check level timer, then wait for input or timeout ---
+; --- Check lives counter, then wait for input or timeout ---
 .check_level:
-        LDA ZP_LEVEL_STATE
-        BPL .wait_input                 ; Positive: keep waiting
-        RTS                             ; Negative: level-complete path
+        LDA ZP_LIVES_BCD
+        BPL .wait_input                 ; Positive: lives remaining --- keep waiting
+        RTS                             ; Negative: game-over path
 
 .wait_input:
         LDX #$01

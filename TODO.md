@@ -9,18 +9,18 @@ routines and all three enemy draw routines are byte-perfect RE'd
 With the triplet, `BEAM_UPDATE` ($130A), `DRAW_ENTITIES` ($683C),
 `DISPLAY_UPDATE` ($10AB), `DIFFICULTY_UPDATE` ($719D),
 `LEVEL_INTRO_TICK` ($699C), `SFX_TONE` ($67C1), `INPUT_DISPATCH`
-($6000), `DRAW_PLAYER` ($64DF), `PLAYER_MOVE_TICK` ($64CB), and the
-three blitters (`DRAW_SPRITE`, `DRAW_SPRITE_PLAYFIELD`,
-`DRAW_SPRITE_OPAQUE`) all documented, the MAIN_LOOP dispatch is now
-fully named --- every `JSR` target in the main loop either has its
-own ORG chunk or sits inside one of the named hex blobs awaiting
-further carve-out.  The remaining high-priority work is:
-`GAME_START_INIT` ($13A4), the large `$6ABA-$719C` "game engine B
-tail" blob (sound/animation/entity processing/level logic, 1763
-bytes still as HEX), and the remaining hex tail of
-`<<game engine A>>` at $614B-$64CA (player movement-tick handlers
-and the DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT input
-handlers called via SMC from MAIN_LOOP).
+($6000), `DRAW_PLAYER` ($64DF), `PLAYER_MOVE_TICK` ($64CB),
+`GAME_START_INIT` ($13A4), and the three blitters (`DRAW_SPRITE`,
+`DRAW_SPRITE_PLAYFIELD`, `DRAW_SPRITE_OPAQUE`) all documented, the
+MAIN_LOOP dispatch is now fully named --- every `JSR` target in the
+main loop either has its own ORG chunk or sits inside one of the
+named hex blobs awaiting further carve-out.  The remaining
+high-priority work is: the large `$6ABA-$719C` "game engine B tail"
+blob (sound/animation/entity processing/level logic, 1763 bytes
+still as HEX), and the remaining hex tail of `<<game engine A>>` at
+$614B-$64CA (player movement-tick handlers and the
+DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT input handlers
+called via SMC from MAIN_LOOP).
 
 ## Immediate: apply new code chunk rules
 
@@ -357,9 +357,33 @@ Individual TODO entries:
 
 ### Game flow routines
 
-- [ ] `$7208` — Level complete handler (jumped to when $5E < 0)
+- [ ] `$7208` — Game-over handler (jumped to when `ZP_LIVES_BCD` $5E goes negative)
 - [ ] `$BDA0` — Game over handler (jumped to when $39 < 0)
-- [ ] `$13A4` — Game start initialization (called on attract→game transition)
+- [x] `$13A4` — `GAME_START_INIT`: resets BCD score triple, BCD lives
+      counter ($5E=$04), HUD column bounds ($65AB/$65A7), restart flag
+      ($44=$FF), player Y ($4A=$6B), and the two-entry sub-routine chain
+      (DIFFICULTY_RESET + INIT_LEVEL_STATE).  Tail-calls
+      `RESUME_GAMEPLAY_SMC` at $6AA7 to re-patch the main-loop SMC
+      slots (SMC_SR_YSRC=$06, SMC_INPUT/SMC_RENDER=JSR, SMC_SR_HEIGHT=$13)
+      that flip the engine from attract to game mode.  Exposes a
+      sub-entry `GAME_RESTART` at $13C2 used by $5ECB that skips the
+      player-position + HUD-column reseed.  **Key corrections:**
+      (1) `$6AA7` was previously stubbed as `LOAD_LEVEL` --- it is
+      actually `RESUME_GAMEPLAY_SMC`, a 13-byte SMC-patch routine,
+      not a level loader.  (2) `$5E` was previously named
+      `ZP_LEVEL_STATE` --- it is actually `ZP_LIVES_BCD`, the BCD
+      on-screen lives counter drawn by POST_FRAME at HUD cols 4/6.
+      (3) `$65AB`/`$65A7` were previously `SCORE_DISPLAY_VAL` /
+      `LIVES_DISPLAY_VAL` --- they are actually `HUD_SCORE_COL` /
+      `HUD_LIVES_COL`, the left/right playfield column bounds that
+      gate the beam-tracer draw in BEAM_UPDATE.  (4) `$2E` was
+      previously `ZP_LIVES` --- it is actually `ZP_CLEAR_COL`, the
+      screen-clear loop counter / playfield right-edge column.
+      (5) `$44` was previously `ZP_HIGH_SCORE_FLAG` --- it is a
+      cold-start / restart dispatch flag tested at $5EC5 (value
+      $FF=cold path, 0/negative select alternative restart paths).
+      (6) `$46` is write-only in the game code --- likely a dead
+      store or a signal to a not-yet-RE'd routine.
 
 ### Attract-mode subroutines
 

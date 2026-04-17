@@ -39,9 +39,9 @@ Review existing chunks for violations:
       `ENTITY_ACTIVE` table at $03A8 with parallel tables
       `ENTITY_FLOOR_COL` ($0358), `ENTITY_XOFF_IDX` ($036C),
       `ENTITY_FLOOR_POS` ($0380).  All four draw phases set sprite
-      params ($56/$57/$5B/$5D) and JSR `DRAW_SPRITE_CLIPPED` ($65D5,
-      still a stub), patching the sprite-data source operands at
-      `SMC_PFB_SRC_LO/HI` ($6615/$6616).  Introduced lookup-table
+      params ($56/$57/$5B/$5D) and JSR `DRAW_SPRITE_PLAYFIELD`
+      ($65D5, now disassembled), patching the sprite-data source
+      operands at `SMC_PFB_SRC_LO/HI` ($6615/$6616).  Introduced lookup-table
       labels: `FLOOR_TO_ROW` ($1D40), `FLOOR_SPRITE_IDX` ($1E00),
       `FLOOR_SCREEN_COL` ($1F00), `FLOOR_BASE_ROW` ($188F).
 - [x] `$67C1` — `SFX_TONE`: speaker-click tone / delay generator.
@@ -52,7 +52,15 @@ Review existing chunks for violations:
       `ZP_SOUND_A`/`_B` to `ZP_SFX_CLICK` / `ZP_SFX_CLICK_SAVED`.
 - [ ] `$10AB` — Display update
 - [ ] `$130A` — Page flip preparation
-- [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page. Sibling variants at `$65D5` (narrow column range, OR blit) and `$662C` (`BLIT_TILE`, opaque STA blit) still to do.
+- [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page.
+- [x] `$65D5` — `DRAW_SPRITE_PLAYFIELD`: sibling of DRAW_SPRITE.
+      Identical structure, but inner-loop column check rejects col
+      `$0B` (left playfield wall) and cols `>= $1C` (right HISCORE HUD
+      panel + offscreen), confining gameplay sprites to the
+      playfield region.  No flicker SMC slot, no dead-code tail.
+      Sole callers are the four JSR sites inside DRAW_ENTITIES
+      (player / special / companion / entity list).  Sibling
+      `$662C` (`BLIT_TILE`, opaque STA blit) still to do.
 
 ### Game flow routines
 

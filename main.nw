@@ -6205,39 +6205,185 @@ SMC_STA_HI = *+2                  ; High of STA abs,X operand --- patched
         JMP .dead_tail
 @ %def DRAW_SPRITE SPRITE_PTR_LO SPRITE_PTR_HI
 
-<<game engine A tail>>=
+\section{Sprite draw (playfield, HUD-clipped)}
+
+[[DRAW_SPRITE_PLAYFIELD]] at \$65D5 is a sibling of [[DRAW_SPRITE]]
+(\$656F) that performs an identical transparent OR-blit onto the
+hidden hi-res page, but with a \emph{narrower} column-acceptance
+window.  It is called only from [[DRAW_ENTITIES]] --- its four sites
+draw the player, the ``special'' sprite, the two companion slots and
+the 20-slot entity list --- so every gameplay sprite that moves over
+the playfield goes through this routine rather than through
+[[DRAW_SPRITE]].
+
+The two routines share almost every byte: the same row-high-table
+selection based on [[ZP_PAGE_FLAG]], the same outer row loop, the
+same self-modifying [[ORA]]/[[STA]] operands on the inner write, the
+same sprite-parameter quartet ([[ZP_SPRITE_W]]/[[\_H]]/[[\_Y]]/[[\_X]]
+at \$56/\$57/\$5B/\$5D).  They differ only in the inner-loop column
+check and in what tail code they carry.
+
+\paragraph{Column clip window.}  Where [[DRAW_SPRITE]] accepts every
+column $0 \le X < 40$ (reject $X \ge \$28$), this routine rejects
+\emph{three} sets of columns:
+
+\begin{itemize}
+\item $X = \$0B$ --- the left playfield wall column.  A
+  [[CPX #\$0B / BEQ]] explicitly singles it out.
+\item $X \ge \$1C$ --- any column to the right of the playfield.
+  Columns \$1C--\$27 are the right-hand HUD strip (the HISCORE panel
+  and digits); the implicit wrap also covers columns $\ge \$28$ (off
+  the right edge of the screen).
+\item Zero source byte --- same transparency rule as [[DRAW_SPRITE]].
+\end{itemize}
+
+The accepted window is therefore cols \$00--\$0A and \$0C--\$1B
+(27~columns), which is exactly the gameplay region of the screen.
+See the HUD frame image: the [[SCORE]] panel (cols \$00--\$09) is
+\emph{inside} the accepted window --- so score digits drawn through
+regular HUD code land there, but gameplay sprites momentarily passing
+through the same columns will also draw on top of the score panel.
+Only col~\$0B (the left vertical wall of the top playfield strip) and
+the entire right HISCORE region are protected.
+
+\paragraph{No flicker SMC slot.}  [[DRAW_SPRITE]] has a live
+self-modifying [[BIT $00]] slot at \$65B7 (patched to [[AND \#imm]]
+by [[LEVEL_INTRO_TICK]] for intro flicker frames).  This routine does
+\emph{not} --- the inner OR is unconditional.  The intro flicker
+mechanism only applies to the intro sprite drawn via [[DRAW_SPRITE]]
+from [[LEVEL_INTRO_TICK]], not to playfield entities.
+
+\paragraph{No dead tail.}  [[DRAW_SPRITE]] has an unreachable 9-byte
+[[INY / JMP]] tail at \$65CC--\$65D4 left over from an earlier draft.
+This routine has no such tail --- it is 87~bytes of live code
+(\$65D5--\$662B).
+
+\paragraph{Source-pointer SMC.}  The [[LDA \$9000,Y]] at \$6614 is
+patched by [[DRAW_ENTITIES]] with the per-sprite source-data address
+before each call.  The operand bytes are named [[SMC_PFB_SRC_LO]]
+(\$6615) and [[SMC_PFB_SRC_HI]] (\$6616), exported for the callers.
+Disk-image initial value is \$9000 --- a harmless pattern outside the
+game's memory map, overwritten before the first execution.
+
+<<draw sprite playfield>>=
 
         ORG $65D5
+DRAW_SPRITE_PLAYFIELD:
         SUBROUTINE
-        ; Game engine tail (\$65D5-\$6673) --- not yet disassembled.
-        ; Two further sprite-draw variants:
-        ;   \$65D5: OR-blit restricted to a narrow column range
-        ;     ($0B..$1B) --- likely the score/status strip.
-        ;   \$662C: opaque (STA) tile blit --- already aliased as
-        ;     [[BLIT_TILE]] and used by [[DISPLAY_UPDATE]] and
-        ;     [[POST_FRAME]] for digit/tile rendering.
-        ; Raw data --- 159 bytes.
+        ; Transparent (OR) blit with HUD-column clipping.
+        ; Sibling of DRAW_SPRITE ($656F): identical structure, but the
+        ; inner column check rejects col $0B (left playfield wall) and
+        ; cols >=$1C (right HISCORE HUD panel + offscreen) instead of
+        ; the simple >=$28 offscreen check.  There is no flicker SMC
+        ; slot and no dead-code tail.
+        ;
+        ; Inputs:
+        ;   ZP_SPRITE_W ($56)      --- width in bytes per row
+        ;   ZP_SPRITE_H ($57)      --- height in rows
+        ;   ZP_SPRITE_Y ($5B)      --- starting screen row (0..191)
+        ;   ZP_SPRITE_X ($5D)      --- starting column (right edge)
+        ;   SMC_PFB_SRC_LO/HI      --- source pointer (self-mod operand
+        ;                              of the LDA abs,Y at $6614),
+        ;                              patched by DRAW_ENTITIES.
+        ;   ZP_PAGE_FLAG ($00) b7  --- selects page 1 (clear) or page 2
+        ;                              (set) as the draw target.
+        ;
+        ; Behavior:
+        ;   Outer loop walks ZP_SPRITE_H rows.  For each row, patches
+        ;   the ORA/STA operands with the row's base screen address
+        ;   (high byte from $72C0 or $7440 via the row-high SMC operand,
+        ;   low byte from SCREEN_ROW_ADDR_LO).  Inner loop walks
+        ;   ZP_SPRITE_W bytes from the right edge leftward: rejects
+        ;   col $0B, rejects cols >=$1C, rejects zero source bytes;
+        ;   otherwise OR's the sprite byte into screen RAM.
+        ;
+        ; Modifies:
+        ;   Self (operands at SMC_PFB_ROW_HI_LO/HI, SMC_PFB_ORA_LO/HI,
+        ;   SMC_PFB_STA_LO/HI), ZP_SPRITE_ROW_REMAIN ($5A),
+        ;   ZP_SPRITE_Y (post-increment).
+        ; Clobbers: A, X, Y
 
-        HEX 24 00 30 0D A9 C0 8D F9
-        HEX 65 A9 72 8D FA 65 4C F0
-        HEX 65 A9 40 8D F9 65 A9 74
-        HEX 8D FA 65 A0 00 A5 56 85
-        HEX 5A A6 5B BD 00 90 8D 1B
-        HEX 66 8D 1E 66 BD 80 73 8D
-        HEX 1A 66 8D 1D 66 A6 5D E0
-        HEX 0B F0 0F E0 1C B0 0B B9
-        HEX 00 90 F0 06 1D 00 90 9D
-        HEX 00 90 C8 CA C6 5A 10 E7
-        HEX E6 5B C6 57 D0 C7 60 24
-        HEX 00 30 0D A9 C0 8D 50 66
-        HEX A9 72 8D 51 66 4C 47 66
-        HEX A9 40 8D 50 66 A9 74 8D
-        HEX 51 66 A0 00 A5 56 85 5A
-        HEX A6 5B BD 00 90 8D 66 66
-        HEX BD 80 73 8D 65 66 A6 5D
-        HEX E0 28 B0 06 B9 00 90 9D
-        HEX 00 90 C8 CA C6 5A 10 F0
-        HEX E6 5B C6 57 D0 D6 60
+; --- Select row-high table based on ZP_PAGE_FLAG ---
+        BIT ZP_PAGE_FLAG
+        BMI .page2
+        LDA #<SCREEN_ROW_ADDR_HI  ; $C0 --- low of $72C0 (page 1)
+        STA SMC_PFB_ROW_HI_LO
+        LDA #>SCREEN_ROW_ADDR_HI  ; $72
+        STA SMC_PFB_ROW_HI_HI
+        JMP .outer_entry
+.page2:
+        LDA #<SCREEN_ROW_ADDR_HI2 ; $40 --- low of $7440 (page 2)
+        STA SMC_PFB_ROW_HI_LO
+        LDA #>SCREEN_ROW_ADDR_HI2 ; $74
+        STA SMC_PFB_ROW_HI_HI
+
+; --- Entry into the draw loop: initialise sprite-data index ---
+.outer_entry:
+        LDY #$00
+
+; --- Outer loop: one iteration per sprite row ---
+.next_row:
+        LDA ZP_SPRITE_W
+        STA ZP_SPRITE_ROW_REMAIN  ; Inner-loop byte counter
+        LDX ZP_SPRITE_Y           ; Current screen row (0..191)
+SMC_PFB_ROW_HI_LO = *+1           ; Low of LDA abs,X operand --- patched
+SMC_PFB_ROW_HI_HI = *+2           ; High of LDA abs,X operand --- patched
+        LDA SPRITE_SMC_INIT,X     ; Runtime: LDA $72C0,X or LDA $7440,X
+        STA SMC_PFB_ORA_HI        ; Patch ORA operand (high byte)
+        STA SMC_PFB_STA_HI        ; Patch STA operand (high byte)
+        LDA SCREEN_ROW_ADDR_LO,X  ; Row-low (fixed $7380 table)
+        STA SMC_PFB_ORA_LO        ; Patch ORA operand (low byte)
+        STA SMC_PFB_STA_LO        ; Patch STA operand (low byte)
+
+; --- Inner loop: one iteration per sprite byte on this row ---
+        LDX ZP_SPRITE_X           ; Destination column
+.col_loop:
+        CPX #$0B                  ; Left playfield wall column?
+        BEQ .col_skip             ;   yes --- transparent
+        CPX #$1C                  ; HISCORE HUD panel or offscreen right?
+        BCS .col_skip             ;   yes --- transparent
+SMC_PFB_SRC_LO = *+1              ; Low of LDA abs,Y operand --- caller sets
+SMC_PFB_SRC_HI = *+2              ; High of LDA abs,Y operand --- caller sets
+        LDA SPRITE_SMC_INIT,Y     ; Runtime: LDA (sprite_ptr),Y
+        BEQ .col_skip             ; Zero pixel --- transparent
+SMC_PFB_ORA_LO = *+1              ; Low of ORA abs,X operand --- patched
+SMC_PFB_ORA_HI = *+2              ; High of ORA abs,X operand --- patched
+        ORA SPRITE_SMC_INIT,X     ; OR with screen byte (SMC operand)
+SMC_PFB_STA_LO = *+1              ; Low of STA abs,X operand --- patched
+SMC_PFB_STA_HI = *+2              ; High of STA abs,X operand --- patched
+        STA SPRITE_SMC_INIT,X     ; Store back (SMC operand)
+.col_skip:
+        INY                       ; Next sprite byte
+        DEX                       ; Move left one column
+        DEC ZP_SPRITE_ROW_REMAIN
+        BPL .col_loop             ; More bytes on this row?
+
+; --- Advance to next row ---
+        INC ZP_SPRITE_Y           ; Next screen row
+        DEC ZP_SPRITE_H           ; Rows remaining?
+        BNE .next_row
+        RTS
+@ %def DRAW_SPRITE_PLAYFIELD SMC_PFB_SRC_LO SMC_PFB_SRC_HI
+
+<<game engine A tail>>=
+
+        ORG $662C
+        SUBROUTINE
+        ; Game engine tail (\$662C-\$6673) --- not yet disassembled.
+        ; \$662C: opaque (STA) tile blit --- already aliased as
+        ;   [[BLIT_TILE]] and used by [[DISPLAY_UPDATE]] and
+        ;   [[POST_FRAME]] for digit/tile rendering.
+        ; Raw data --- 72 bytes.
+
+        HEX 24 00 30 0D A9 C0 8D 50
+        HEX 66 A9 72 8D 51 66 4C 47
+        HEX 66 A9 40 8D 50 66 A9 74
+        HEX 8D 51 66 A0 00 A5 56 85
+        HEX 5A A6 5B BD 00 90 8D 66
+        HEX 66 BD 80 73 8D 65 66 A6
+        HEX 5D E0 28 B0 06 B9 00 90
+        HEX 9D 00 90 C8 CA C6 5A 10
+        HEX F0 E6 5B C6 57 D0 D6 60
 
 <<entity process code>>=
 
@@ -6382,7 +6528,7 @@ each with its own state table:
   screen column.  Frame-counter bit~2 ([[$FD]]) selects between two
   sprite-data address tables (offsets \$7542/\$7642 and \$7552/\$7652)
   whose entries are copied into the SMC operand slot inside the
-  playfield sprite blitter at [[DRAW_SPRITE_CLIPPED]] (\$65D5,
+  playfield sprite blitter at [[DRAW_SPRITE_PLAYFIELD]] (\$65D5,
   operand bytes at [[SMC_PFB_SRC_LO]] / [[SMC_PFB_SRC_HI]] = \$6615 /
   \$6616).  The sprite row is [[FLOOR_TO_ROW]] (\$1D40) indexed either
   by [[ZP_INTRO_Y]] (\$17) during the intro/wait phase or by
@@ -6413,12 +6559,13 @@ each with its own state table:
 
 Phases~2--5 each set up ZP sprite parameters ([[ZP_SPRITE_W]]/[[\_H]]
 at \$56/\$57, [[ZP_SPRITE_Y]] at \$5B, [[ZP_SPRITE_X]] at \$5D) and
-then [[JSR DRAW_SPRITE_CLIPPED]] --- the playfield variant of
-[[DRAW_SPRITE]] at \$65D5 whose inner loop skips columns \$0B and
-\$$\ge$1C so enemy sprites can't overwrite the left-side HUD or right
-border.  They all patch the \emph{same} SMC operand bytes
-(\$6615/\$6616) inside that blitter with sprite-specific source
-addresses before calling it.
+then [[JSR DRAW_SPRITE_PLAYFIELD]] --- the playfield variant of
+[[DRAW_SPRITE]] at \$65D5 whose inner loop rejects column~\$0B (the
+left playfield wall) and every column \$$\ge$~\$1C (the right-side
+HISCORE HUD panel), so gameplay sprites can't overwrite those fixed
+screen regions.  They all patch the \emph{same} SMC operand bytes
+(\$6615/\$6616 = [[SMC_PFB_SRC_LO]] / [[SMC_PFB_SRC_HI]]) inside that
+blitter with sprite-specific source addresses before calling it.
 
 The widths, heights and column indices per phase are:
 
@@ -6449,8 +6596,8 @@ that [[LEVEL_INTRO_TICK]] patches.  That was incorrect --- this
 routine does \emph{not} touch those operands.  The two SMC slots
 [[DRAW_ENTITIES]] patches are [[SMC_PFB_SRC_LO]] (\$6615) and
 [[SMC_PFB_SRC_HI]] (\$6616), which are the source-address operand
-bytes of the [[LDA $9000,Y]] at the top of [[DRAW_SPRITE_CLIPPED]]
-(\$65D5).
+bytes of the sprite-data fetch inside [[DRAW_SPRITE_PLAYFIELD]]
+(\$65D5) at \$6614.
 
 <<draw entities defines>>=
 
@@ -6487,15 +6634,11 @@ FLOOR_SPRITE_IDX = $1E00         ; Floor position -> sprite-frame index
 FLOOR_SCREEN_COL = $1F00         ; Floor position -> sprite X column
 FLOOR_BASE_ROW  = $188F          ; Floor-column -> base row (phase 3/4/5)
 
-; --- Self-modifying operand aliases inside DRAW_SPRITE_CLIPPED ($65D5) ---
-; The LDA $9000,Y at $6614 is patched per-sprite with a sprite-data
-; source address before each JSR DRAW_SPRITE_CLIPPED.  Disk-image
-; initial value is $9000 (harmless, overwritten before first use).
-SMC_PFB_SRC_LO  = $6615         ; Low byte of sprite-data source
-SMC_PFB_SRC_HI  = $6616         ; High byte of sprite-data source
-
-; --- Playfield sprite blitter (sibling of DRAW_SPRITE, narrow column clip) ---
-DRAW_SPRITE_CLIPPED = $65D5     ; Playfield OR-blit: skips columns $0B and >=$1C
+; --- DRAW_SPRITE_PLAYFIELD SMC aliases ---
+; SMC_PFB_SRC_LO / SMC_PFB_SRC_HI are declared inline in the
+; DRAW_SPRITE_PLAYFIELD chunk as "= *+1" / "= *+2" labels on the
+; sprite-data LDA at $6614.  Each caller here patches them with the
+; sprite-specific source address before JSR DRAW_SPRITE_PLAYFIELD.
 
 @
 
@@ -6538,7 +6681,7 @@ DRAW_ENTITIES:
         ;   page flag is negative) and HIT_BG_LO.  Falls through.
         ;   Phases 2--5 each set sprite dimensions / position, patch
         ;   SMC_PFB_SRC_LO/HI with a sprite-data source address, load
-        ;   FLOOR_TO_ROW into ZP_SPRITE_Y and JSR DRAW_SPRITE_CLIPPED.
+        ;   FLOOR_TO_ROW into ZP_SPRITE_Y and JSR DRAW_SPRITE_PLAYFIELD.
         ;
         ; Modifies:
         ;   SMC_PFB_SRC_LO / SMC_PFB_SRC_HI ($6615/$6616),
@@ -6612,7 +6755,7 @@ DRAW_ENTITIES:
 .player_row:
         LDA FLOOR_TO_ROW,X
         STA ZP_SPRITE_Y
-        JSR DRAW_SPRITE_CLIPPED
+        JSR DRAW_SPRITE_PLAYFIELD
 
 ; --- Phase 3: special sprite (moon-ball / attract actor) ---
 .draw_special:
@@ -6655,7 +6798,7 @@ DRAW_ENTITIES:
         TAX
         LDA FLOOR_TO_ROW,X
         STA ZP_SPRITE_Y
-        JSR DRAW_SPRITE_CLIPPED
+        JSR DRAW_SPRITE_PLAYFIELD
 
 ; --- Phase 4: two companion-slot sprites ---
 .draw_companions:
@@ -6693,7 +6836,7 @@ DRAW_ENTITIES:
         TAX
         LDA FLOOR_TO_ROW,X
         STA ZP_SPRITE_Y
-        JSR DRAW_SPRITE_CLIPPED
+        JSR DRAW_SPRITE_PLAYFIELD
         LDX ZP_DRAW_LOOP_IDX
         DEX
         BPL .companion_loop
@@ -6734,7 +6877,7 @@ DRAW_ENTITIES:
         LDA FLOOR_TO_ROW,X
         STA ZP_SPRITE_Y
         STY ZP_DRAW_LOOP_IDX
-        JSR DRAW_SPRITE_CLIPPED
+        JSR DRAW_SPRITE_PLAYFIELD
         LDY ZP_DRAW_LOOP_IDX
 .entity_step:
         DEY
@@ -8195,7 +8338,9 @@ LEVEL_INTRO_TICK:
 <<game engine A>>
 ; --- ORG $656F: Draw sprite ---
 <<draw sprite>>
-; --- ORG $65D5: Game engine A tail ---
+; --- ORG $65D5: Draw sprite (playfield, HUD-clipped) ---
+<<draw sprite playfield>>
+; --- ORG $662C: Game engine A tail (BLIT_TILE blob) ---
 <<game engine A tail>>
 ; --- ORG $6674: PRNG ---
 <<prng>>

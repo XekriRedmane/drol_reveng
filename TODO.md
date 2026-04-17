@@ -32,13 +32,18 @@ With the triplet, `BEAM_UPDATE` ($130A), `DRAW_ENTITIES` ($683C),
 `DRAW_SPRITE_PLAYFIELD`, `DRAW_SPRITE_OPAQUE`) all documented, the
 MAIN_LOOP dispatch is now fully named --- every `JSR` target in the
 main loop either has its own ORG chunk or sits inside one of the
-named hex blobs awaiting further carve-out.  The remaining
-high-priority work is: the large `$6ABA-$719C` "game engine B tail"
-blob (sound/animation/entity processing/level logic, 1763 bytes
-still as HEX), and the remaining hex tail of `<<game engine A>>` at
-$614B-$64CA (player movement-tick handlers and the
-DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT input handlers
-called via SMC from MAIN_LOOP).
+named hex blobs awaiting further carve-out.  This session carved
+`SPECIAL_TICK` ($6ABA, 127 bytes) out of the head of
+`<<game engine B tail>>`, retiring the `SOUND_UPDATE` EQU stub ---
+the slot is the ``special'' bonus creature that walks across the
+playfield killing floor-enemies for four hits, then explodes into a
+puff the player can catch for +500 BCD (the DRAW_ENTITIES phase-3
+companion).  The remaining high-priority work is: the `$6B39-$719C`
+tail (1636 bytes HEX, starting with `SPECIAL_DRAW` --- the tick's
+direct partner, the obvious next target), and the remaining hex
+tail of `<<game engine A>>` at $614B-$64CA (player movement-tick
+handlers and the DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT
+input handlers called via SMC from MAIN_LOOP).
 
 ### State-machine topology
 
@@ -514,11 +519,43 @@ Individual TODO entries:
       `$5C00-$5EC4` (709 bytes) and `$5ED4-$5FFF` (300 bytes).
 - [x] `$683C-$699B` — Game engine B head: now documented as `DRAW_ENTITIES`
       (see above).  No longer a HEX blob.
-- [ ] `$6ABA-$719C` — Game engine B tail (sound, animation, entity processing,
-      level logic, HEX — 1763 bytes).  Unchanged this session (the
-      `$6AA7` RESUME_GAMEPLAY_SMC carve-out landed in LEVEL_INTRO_TICK's
-      `.activate` block inside `<<level intro tick>>`, not in this
-      blob).
+- [x] `$6ABA` — `SPECIAL_TICK`: per-frame tick for the ``special''
+      bonus-creature slot drawn by DRAW_ENTITIES phase 3 (retires the
+      `SOUND_UPDATE` EQU stub --- misnomer: it emits only one of four
+      parallel per-frame sound channels, not a dedicated sound
+      subsystem).  Three-way state machine on `ZP_SPECIAL_STATE`
+      ($AB): $00 inactive (8-bit timer increment on $AC; wrap falls
+      into rearm); positive active (add $0002 to 16-bit
+      `ZP_SPECIAL_POS` ($AC/$AD) per frame, rearm when hi=$03 &
+      lo>=$5A); negative drift (fall 2 rows per frame, but at the
+      four ``ladder'' rows $34/$5C/$84/$AC, 94% of frames return
+      early and 6% climb one rung up via PRNG gate).  Sound emitted
+      via `SND_DELAY_UP` ($109E) duration $0A, pitch from new
+      `SND_PITCH_TBL_SPECIAL` ($0218, 12 entries), indexed by new
+      `ZP_SPECIAL_SND_CTR` ($B5); only armed to $06 by
+      `SPECIAL_DRAW`'s defeat edge (a short descending ``defeat
+      jingle''), not on rearm.  Rearm sub-entry `SPECIAL_REARM`
+      ($6B14) reseeds position to $003E, picks row anchor
+      from `ENEMY_C_ROW_TBL[PRNG&3]-$0B`, arms new `ZP_SPECIAL_HP`
+      ($08) to 4 (the number of floor-enemies this creature kills
+      before exploding), and activates.  Introduces ZPs
+      `ZP_SPECIAL_STATE`/`ZP_SPECIAL_POS`/`ZP_SPECIAL_SND_CTR`/`ZP_SPECIAL_HP`
+      and data EQU `SND_PITCH_TBL_SPECIAL`.  Carved 127 bytes out of
+      `<<game engine B tail>>` which now starts at $6B39 (1636
+      bytes remaining).
+- [ ] `$6B39-$719C` — Game engine B tail (SPECIAL_DRAW, entity
+      processing, level logic, HEX --- 1636 bytes).  `SPECIAL_DRAW`
+      at $6B39 is the most likely next target: pairs with
+      SPECIAL_TICK and has its ZP state already documented
+      ($AB/$AC/$AD/$AE/$08/$B6).  Trades sound slot $B6 +
+      pitch-table $021F for $B5/$0218, uses `SFX_TONE` ($67C1)
+      instead of `SND_DELAY_UP`, and is gated on $AB == 0 (jumps to
+      $6CDB which is a single-sprite draw helper for the inactive
+      phase).  Drift-mode subroutine at $6BEB draws the puff,
+      player-catch at $6C1C awards +$0500 BCD via SCORE_ADD,
+      ladder-step handlers at $6C49..$6CDA rewrite the SMC target
+      inside the puff-draw (operand at $6BE9/$6BEA) to a per-ladder
+      sprite source (7 table pairs at $7578..$758D).
 - [ ] `$72A0-$72A2` — 3 bytes between attract loop exit and copy routine (JMP $67CB at $72A0)
 
 ## Fix reference binary build process

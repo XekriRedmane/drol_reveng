@@ -2194,8 +2194,11 @@ PAUSE_HANDLER   = $0E51         ; Wait for keypress (pause handler ORG)
 ; (PLAYER_MOVE_TICK has its own ORG chunk at $64CB; formerly stubbed as COLLISION_DETECT.)
 ; (DRAW_PLAYER is the label at ORG $64DF, formerly stubbed as SPRITE_RENDER.)
 SCORE_DISPLAY   = $673B         ; Score / status display (entity process hex)
-SOUND_UPDATE    = $6ABA         ; Sound effects (game engine B hex)
-ANIM_UPDATE     = $6B39         ; Animation update (game engine B hex)
+; (SPECIAL_TICK is the label at ORG $6ABA, formerly stubbed as SOUND_UPDATE ---
+;  misnomer: it ticks the ``special'' sprite slot whose draw lives in phase 3
+;  of DRAW_ENTITIES, playing only one sound channel among many.)
+SPECIAL_DRAW    = $6B39         ; Special sprite draw + hit logic (game engine B hex)
+                                ; (formerly stubbed as ANIM_UPDATE; pairs with SPECIAL_TICK)
 ENTITY_PROCESS  = $6CFE         ; Entity processing (game engine B hex)
 LEVEL_LOGIC     = $6F9C         ; Level logic (game engine B hex)
 ; (HAZARD_CHECK has its own ORG chunk)
@@ -3481,8 +3484,8 @@ SMC_RENDER = *
         JSR DRAW_PLAYER         ; Draw player sprite (BIT during attract)
         JSR SCREEN_EFFECTS      ; Screen effects
         JSR SCORE_DISPLAY       ; Score / status display
-        JSR SOUND_UPDATE        ; Sound effects
-        JSR ANIM_UPDATE         ; Animation update
+        JSR SPECIAL_TICK        ; Special sprite slot: sound + position + rearm
+        JSR SPECIAL_DRAW        ; Special sprite draw + hit/catch logic
         JSR ENTITY_PROCESS      ; Entity processing
         JSR LEVEL_LOGIC         ; Level logic
         JSR PROJECTILE_HANDLER  ; Projectile handling
@@ -9690,31 +9693,239 @@ RESUME_GAMEPLAY_SMC:
         RTS
 @ %def LEVEL_INTRO_TICK RESUME_GAMEPLAY_SMC
 
-<<game engine B tail>>=
+\section{Special sprite: per-frame tick}
+
+[[SPECIAL_TICK]] at \$6ABA is the tick routine for the ``special''
+sprite slot drawn by [[DRAW_ENTITIES]] phase~3 (see the
+entity-draw-dispatcher section above).  It pairs with [[SPECIAL_DRAW]] at
+\$6B39 the same way the three enemy slots pair their
+\texttt{advance}/\texttt{draw} routines.  Both are called
+unconditionally from [[MAIN_LOOP]], immediately after the HUD tile
+update.
+
+\paragraph{What the slot represents.}  The ``special'' sprite is a
+bonus creature that walks horizontally across the playfield, colliding
+with (and killing) floor-enemies in the four-slot [[$9B]] table that
+[[ENEMY_C_DRAW]] and the beam subsystem target.  After four kills the
+creature explodes into a fall/drift animation handled by the
+[[SPECIAL_DRAW]] companion.  If the player's sprite overlaps the
+drifting puff, the score is awarded \$0500 BCD via [[SCORE_ADD]] ---
+five hundred points, the classic arcade ``catch a bonus'' payoff ---
+and the slot returns to its inactive countdown.
+
+\paragraph{Slot state machine.}  [[ZP_SPECIAL_STATE]] (\$AB) is the
+one-byte state:
+
+\begin{itemize}
+\item \$00 --- inactive: an 8-bit timer in [[ZP_SPECIAL_POS]] (\$AC) is
+  incremented each frame, and its wrap ($0\to1$ roll-over of the low
+  byte) reseeds the slot by falling into the \emph{rearm} block at
+  \$6B14.
+\item \$01 (any positive value) --- active: advance the 16-bit
+  position [[ZP_SPECIAL_POS]] (\$AC/\$AD) by \$0002 per frame, and
+  once it reaches \$035A rearm the slot.  Set by the rearm block.
+\item \$FF (any negative value) --- drift: the sprite is
+  falling/climbing after a 4-kill defeat; row \$AE is moved down by 2
+  per frame, but at the four ``ladder'' rows (\$34, \$5C, \$84, \$AC)
+  \mbox{94\,\%} of frames return early with no motion and the
+  remaining \mbox{$\sim$6\,\%} (gated on [[ZP_PRNG_A]] \$5F $<$ \$0F)
+  move the sprite \emph{up} by 2 rows before advancing~X.  Set by
+  [[SPECIAL_DRAW]]'s collision handler after the fourth floor-enemy
+  kill; cleared by the player-catch path inside [[SPECIAL_DRAW]] when
+  the puff is collected.
+\end{itemize}
+
+\paragraph{Sound slot.}  [[ZP_SPECIAL_SND_CTR]] (\$B5) is a
+twelve-step ascending-tone counter that plays one click per frame
+through [[SND_DELAY_UP]] (\$109E, duration~\$0A) as it decrements
+from~\$0B down to~\$00, then idles at \$FF (negative $\Rightarrow$
+skip).  The pitch bytes live in the page-2 table
+[[SND_PITCH_TBL_SPECIAL]] (\$0218, 12 entries).  The counter is armed
+to~\$06 by [[SPECIAL_DRAW]] on the four-kill defeat edge --- a short
+descending ``defeat jingle'' --- but is \emph{not} rearmed on the
+normal per-cycle rearm at \$6B14, which is silent.  Cold start leaves
+\$B5 at its zero-page residual; the BMI gate keeps the first
+invocations silent until [[SPECIAL_DRAW]] arms it.
+
+\paragraph{Rearm block (\$6B14).}  Reached from the inactive-timer
+wrap (\texttt{INC \$AC $\Rightarrow$ 0}) and from the end-of-transit
+edge (\$AC hits \$5A with \$AD=\$03).  Resets [[ZP_SPECIAL_POS]] to
+\$003E (just past the rearm threshold so the next frame starts a fresh
+traversal), picks a floor-row anchor from
+[[ENEMY_C_ROW_TBL]]$[\hbox{PRNG}\bmod 4]$ (one of the three defined
+entries at \$85/\$86/\$87; index 0 reads the \$84 base byte which is
+the same shared table as the enemy-C row reload), subtracts \$0B to
+place the sprite above the floor, arms [[ZP_SPECIAL_HP]] (\$08) to~4
+``hit points'' (the number of floor-enemies the sprite will kill
+before exploding), and writes \$01 to [[ZP_SPECIAL_STATE]].
+
+\paragraph{Why this was called ``SOUND\_UPDATE''.}  The previous EQU
+stub name came from the prominent \texttt{JSR SND\_DELAY\_UP} at
+\$6AC3.  In fact every per-frame entity tick in Drol emits a
+speaker-click via one of the three sound routines
+([[SFX_TONE]]/[[SND_DELAY_DOWN]]/[[SND_DELAY_UP]]), and the tone here
+is one of four simultaneous channels, not a dedicated sound
+subsystem.  Renaming to [[SPECIAL_TICK]] aligns with the three other
+``tick'' routines ([[ENEMY_A_ADVANCE]], [[ENEMY_B_ADVANCE]],
+[[ENEMY_C_ADVANCE]]) and exposes the drift/rearm state machine that
+was hidden by the old name.
+
+<<special tick defines>>=
+
+; --- Zero-page (special sprite slot) ---
+; ZP_SPECIAL_STATE is the same byte aliased as ZP_SPECIAL_A in the
+; draw-entities defines chunk.  Keep both names: the tick uses the
+; state-machine reading, the draw uses the phase-3 activity gate.
+ZP_SPECIAL_STATE = $AB          ; $00 inactive / positive active / negative drift
+ZP_SPECIAL_POS   = $AC          ; 16-bit position ($AC/$AD); aliases ZP_SPECIAL_X/Y
+; ZP_SPECIAL_ROW = $AE is declared in draw-entities defines (phase 3).
+ZP_SPECIAL_SND_CTR = $B5        ; 12-step ascending-tone counter ($FF = idle)
+ZP_SPECIAL_HP    = $08          ; Remaining floor-enemies to kill before defeat
+
+; --- Page-2 sound pitch table ---
+SND_PITCH_TBL_SPECIAL = $0218   ; 12 pitch bytes indexed by ZP_SPECIAL_SND_CTR
+@
+
+<<special tick>>=
 
         ORG $6ABA
+SPECIAL_TICK:
         SUBROUTINE
-        ; Game engine tail (\$6ABA-\$719C): sound, animation, entity
-        ; processing, level logic --- not yet disassembled.
-        ; Raw data --- 1763 bytes
+        ; Per-frame tick for the ``special'' bonus-creature slot drawn
+        ; by DRAW_ENTITIES phase 3 (cf. SPECIAL_DRAW at $6B39).  Emits
+        ; one ascending-tone click, then dispatches on state:
+        ; inactive, active (advance X), or drift (fall with ladder
+        ; pauses).  On transit end, falls into the rearm sub-entry.
+        ;
+        ; Inputs:
+        ;   ZP_SPECIAL_SND_CTR  --- click-pitch index (BMI = idle).
+        ;   ZP_SPECIAL_STATE    --- $00 inactive / +active / -drift.
+        ;   ZP_SPECIAL_POS      --- 16-bit horizontal position.
+        ;   ZP_SPECIAL_ROW      --- screen row (drift path only).
+        ;   ZP_PRNG_A           --- 6%/94% split at drift-mode ladder
+        ;                           rows; also reseed row anchor index
+        ;                           on rearm.
+        ;   ENEMY_C_ROW_TBL     --- 4-entry row table $84..$87 (same
+        ;                           shared table enemy-C reloads from).
+        ;
+        ; Behavior:
+        ;   1. Emit a click from SND_PITCH_TBL_SPECIAL[$B5] via
+        ;      SND_DELAY_UP (duration $0A); skip when the counter is
+        ;      negative.
+        ;   2. State dispatch:
+        ;      $00: jump to inactive-timer block at $6B32.
+        ;      -  : drift path --- at ladder rows $34/$5C/$84/$AC the
+        ;           PRNG gates a $-$2 row move (6%) vs. RTS (94%);
+        ;           otherwise $+$2 row and fall into the X-advance.
+        ;      +  : active path --- advance only (no row change).
+        ;   3. X-advance: add $0002 to $AC/$AD.  If $AC $\ge$ $5A and
+        ;      $AD $=$ $03, fall into the rearm block; else RTS.
+        ;   4. Rearm ($6B14): reset $AC/$AD to $003E, pick a row
+        ;      anchor from $84,[PRNG&3] minus $0B, arm HP to 4, set
+        ;      state to $01, RTS.
+        ;
+        ; Modifies:
+        ;   ZP_SPECIAL_SND_CTR, ZP_SPECIAL_POS, ZP_SPECIAL_ROW,
+        ;   ZP_SPECIAL_HP, ZP_SPECIAL_STATE, ZP_PRNG_A (via PRNG).
+        ; Clobbers: A, X, Y
 
-        HEX A6 B5
-        HEX 30 0A BD 18 02 A2 0A 20
-        HEX 9E 10 C6 B5 A5 AB F0 04
-        HEX 30 05 10 2A 4C 32 6B A5
-        HEX AE C9 34 F0 14 C9 5C F0
-        HEX 10 C9 84 F0 0C C9 AC F0
-        HEX 08 18 69 02 85 AE 4C FA
-        HEX 6A A5 5F C9 0F B0 1A A5
-        HEX AE 38 E9 02 85 AE A5 AC
-        HEX 18 69 02 85 AC A5 AD 69
-        HEX 00 85 AD A5 AC C9 5A B0
-        HEX 01 60 A5 AD C9 03 D0 F9
-        HEX A9 3E 85 AC A9 00 85 AD
-        HEX 20 74 66 29 03 AA B5 84
-        HEX 38 E9 0B 85 AE A9 04 85
-        HEX 08 A9 01 85 AB 60 E6 AC
-        HEX D0 FB 4C 14 6B A6 B6 30
+; --- Emit ascending-tone click ---
+        LDX ZP_SPECIAL_SND_CTR
+        BMI .after_click                ; Negative = idle
+        LDA SND_PITCH_TBL_SPECIAL,X     ; Pitch byte
+        LDX #$0A                        ; Duration = 10 clicks
+        JSR SND_DELAY_UP                ; Ascending tone
+        DEC ZP_SPECIAL_SND_CTR
+.after_click:
+
+; --- State dispatch ---
+        LDA ZP_SPECIAL_STATE
+        BEQ .inactive_hop               ; $00 = inactive -> timer jump
+        BMI .drift                      ; $80+ = drift/dying
+        BPL .advance                    ; $01..$7F = active
+.inactive_hop:
+        JMP .inactive_timer             ; (out-of-reach relative branch)
+
+; --- Drift: fall with ladder-row pauses ---
+.drift:
+        LDA ZP_SPECIAL_ROW              ; $AE
+        CMP #$34
+        BEQ .at_ladder
+        CMP #$5C
+        BEQ .at_ladder
+        CMP #$84
+        BEQ .at_ladder
+        CMP #$AC
+        BEQ .at_ladder
+        CLC
+        ADC #$02                        ; Not at ladder: row += 2 (fall)
+        STA ZP_SPECIAL_ROW
+        JMP .advance
+.at_ladder:
+        LDA ZP_PRNG_A
+        CMP #$0F
+        BCS .exit                       ; ~94%: stay put at ladder
+        LDA ZP_SPECIAL_ROW
+        SEC
+        SBC #$02                        ; ~6%: climb up one rung
+        STA ZP_SPECIAL_ROW
+
+; --- Advance 16-bit X position by $0002 ---
+.advance:
+        LDA ZP_SPECIAL_POS
+        CLC
+        ADC #$02
+        STA ZP_SPECIAL_POS
+        LDA ZP_SPECIAL_POS+1
+        ADC #$00
+        STA ZP_SPECIAL_POS+1
+        LDA ZP_SPECIAL_POS
+        CMP #$5A
+        BCS .check_end                  ; Low >= $5A: maybe end of transit
+.exit:
+        RTS
+.check_end:
+        LDA ZP_SPECIAL_POS+1
+        CMP #$03
+        BNE .exit                       ; High != 3: keep going
+
+; --- Rearm slot (entered via fall-through or JMP from timer wrap) ---
+SPECIAL_REARM:
+        LDA #$3E
+        STA ZP_SPECIAL_POS              ; Reset position to $003E
+        LDA #$00
+        STA ZP_SPECIAL_POS+1
+        JSR PRNG                        ; Random row-anchor index
+        AND #$03
+        TAX
+        LDA ENEMY_C_ROW_TBL,X           ; $84/$85/$86/$87
+        SEC
+        SBC #$0B                        ; Rise above floor
+        STA ZP_SPECIAL_ROW
+        LDA #$04
+        STA ZP_SPECIAL_HP               ; 4 HP (kills before defeat)
+        LDA #$01
+        STA ZP_SPECIAL_STATE            ; Activate
+.rearm_rts:
+        RTS
+
+; --- Inactive timer: increment $AC; wrap triggers rearm ---
+; Reuses .rearm_rts above as its not-yet-wrapped return.
+.inactive_timer:
+        INC ZP_SPECIAL_POS
+        BNE .rearm_rts                  ; Not yet wrapped: return
+        JMP SPECIAL_REARM               ; Wrap: rearm slot
+@ %def SPECIAL_TICK SPECIAL_REARM ZP_SPECIAL_STATE ZP_SPECIAL_POS ZP_SPECIAL_SND_CTR ZP_SPECIAL_HP SND_PITCH_TBL_SPECIAL
+
+<<game engine B tail>>=
+
+        ORG $6B39
+        SUBROUTINE
+        ; Game engine tail (\$6B39-\$719C): SPECIAL_DRAW, entity
+        ; processing, level logic --- not yet disassembled.
+        ; Raw data --- 1636 bytes
+
+        HEX A6 B6 30
         HEX 0A BD 1F 02 A2 08 20 C1
         HEX 67 C6 B6 A5 AB D0 03 4C
         HEX DB 6C A6 4A BD 8F 1A 38
@@ -10764,6 +10975,7 @@ RESUME_GAMEPLAY_SMC:
 <<hazard check defines>>
 <<draw entities defines>>
 <<level intro defines>>
+<<special tick defines>>
 <<difficulty update defines>>
 ; --- ORG $0100: Screen row copy ---
 <<screen row copy>>
@@ -10888,7 +11100,9 @@ RESUME_GAMEPLAY_SMC:
 <<draw entities>>
 ; --- ORG $699C: Level intro tick ---
 <<level intro tick>>
-; --- ORG $6ABA: Game engine B tail ---
+; --- ORG $6ABA: Special sprite tick ---
+<<special tick>>
+; --- ORG $6B39: Game engine B tail ---
 <<game engine B tail>>
 ; --- ORG $719D: Difficulty update ---
 <<difficulty update>>

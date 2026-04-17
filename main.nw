@@ -2189,7 +2189,7 @@ ZP_HGR_SRC      = $29           ; Hi-res copy source pointer (2 bytes)
 ZP_HGR_DST      = $2F           ; Hi-res copy destination pointer (2 bytes)
 
 ; --- Main loop subroutines (in hex data blocks, not yet disassembled) ---
-RENDER_SETUP    = $699C         ; Rendering setup (game engine B hex)
+; (LEVEL_INTRO_TICK has its own ORG chunk at $699C)
 PAUSE_HANDLER   = $0E51         ; Wait for keypress (pause handler ORG)
 COLLISION_DETECT = $64CB        ; Collision detection (game engine A hex)
 SPRITE_RENDER   = $64DF         ; Sprite rendering (game engine A hex)
@@ -3439,7 +3439,7 @@ MAIN_LOOP:
         ; Clobbers: A, X, Y
 
 ; --- Per-frame subroutine calls ---
-        JSR RENDER_SETUP        ; Rendering setup
+        JSR LEVEL_INTRO_TICK    ; Level intro / countdown state tick
         JSR SCROLL_CAMERA       ; Scroll / camera
 SMC_INPUT = *
         JSR INPUT_DISPATCH      ; Input handler (BIT during attract)
@@ -6250,13 +6250,14 @@ SCREEN_EFFECTS:
         HEX D0 FD D1 36 CA D0 F7 60
 @ %def SCREEN_EFFECTS
 
-<<game engine B>>=
+<<game engine B head>>=
 
         ORG $683C
 PAGE_FLIP:
         SUBROUTINE
-        ; Game engine (\$683C-\$719C): page flip, sound, animation, entities
-        ; Raw data --- 2401 bytes
+        ; Game engine head (\$683C-\$699B): page flip, entity/attract draw
+        ; dispatchers --- not yet disassembled.
+        ; Raw data --- 352 bytes
 
         HEX A6 41 B5 8D 10 05 CA 10
         HEX F9 30 1E BD 28 03 24 00
@@ -6302,42 +6303,324 @@ PAGE_FLIP:
         HEX 76 8D 16 66 B9 80 03 AA
         HEX BD 40 1D 85 5B 84 5C 20
         HEX D5 65 A4 5C 88 10 B5 60
-        HEX A5 1E 30 03 F0 3A 60 A9
-        HEX FF 85 0E A9 2C 8D D1 67
-        HEX 8D D7 67 8D DA 67 8D DD
-        HEX 67 8D E0 67 8D EF 67 A5
-        HEX 06 85 17 A9 17 8D FA 64
-        HEX A9 00 85 05 85 1E 85 04
-        HEX 85 0C A9 D0 85 06 85 8C
-        HEX A9 40 85 19 A9 12 85 18
-        HEX A6 18 F0 31 A5 FD 29 01
-        HEX F0 0C CA 86 18 A5 02 D0
-        HEX 05 CE F6 64 E6 17 A9 29
-        HEX 8D B7 65 A5 FD 09 80 8D
-        HEX B8 65 20 DF 64 A9 24 8D
-        HEX B7 65 A4 18 B9 00 02 A2
-        HEX 0A 20 C1 67 60 A5 06 F0
-        HEX 11 E6 06 D0 0C 2C 10 C0
-        HEX F8 38 A5 5E E9 01 85 5E
-        HEX D8 60 A5 5E 10 01 60 A2
-        HEX 01 86 0E 86 0A B5 83 85
-        HEX 17 A9 00 85 02 A9 FF 85
-        HEX 1D A6 41 95 8D CA 10 FB
-        HEX A9 06 85 03 A9 00 85 01
-        HEX AD 00 C0 30 44 A0 00 B1
-        HEX 52 30 3E B1 54 30 3A E6
-        HEX 19 F0 36 A5 19 C9 F0 90
-        HEX 10 A5 FD 29 01 F0 0A A5
-        HEX 17 38 E9 02 85 5B 4C 79
-        HEX 6A A5 17 85 5B A9 03 85
-        HEX 56 A9 0F 85 57 A9 14 85
-        HEX 5D AD 01 B0 8D B3 65 AD
-        HEX 81 B0 8D B4 65 20 6F 65
-        HEX 60 A5 17 85 06 A5 0A 85
-        HEX 09 85 0C 85 0B A9 01 85
-        HEX 1E 85 0D A9 06 8D FA 64
-        HEX A9 20 8D D1 67 8D EF 67
-        HEX A9 13 8D F6 64 60 A6 B5
+@ %def PAGE_FLIP
+
+\section{Level intro / countdown tick}
+
+[[LEVEL_INTRO_TICK]] at \$699C is the first subroutine called by
+[[MAIN_LOOP]] each frame.  It implements the state machine that runs
+between level transitions:
+
+\begin{itemize}
+\item When [[$1E]] is positive, the game is already running and this
+  routine simply returns --- main-loop work proceeds normally.
+\item When [[$1E]] is negative (\$FF --- just after game start or a
+  level transition), one-shot initialisation kicks in: the four
+  movement slots, the input dispatcher slot and the sprite-render slot
+  in the main loop are all patched to [[BIT]] (\$2C) so that player
+  control and sprite output are suspended during the intro.  Various
+  state bytes are cleared; the countdown counter [[$18]] is set to
+  \$12 (18 frames) and the auto-start timeout [[$19]] is set to \$40.
+\item Once initialised ([[$1E == 0]]), the routine animates a
+  countdown on every frame.  While [[$18 > 0]] it decrements $18 on
+  odd frames and plays a tone/delay pulse through [[SFX_TONE]] with
+  an amplitude fetched from the level-data byte [[$0200,$18]]; it also
+  refreshes a sprite with a frame-dependent mask by patching the
+  [[BIT]] slot at \$65B7 in [[DRAW_SPRITE]] into an [[AND #imm]] so
+  the sprite flickers with the frame counter.
+\item When the countdown reaches zero, the routine switches into a
+  wait-for-start phase.  A software timer advances in [[$06]] and
+  when it rolls over, the BCD level timer at [[ZP_LEVEL_STATE]]
+  (\$5E) is decremented.  If the level timer goes negative the routine
+  returns and the main-loop exit check at \$7208 takes over.
+\item While waiting, the routine reads the keyboard, the two input
+  handler slots ([[ZP_INPUT_1]] / [[ZP_INPUT_2]]) and the auto-start
+  timeout counter [[$19]]; if any of those trip, the gameplay is
+  activated: all entity-active slots in [[$8D]] are cleared, the
+  main-loop input and sprite-render slots are restored to [[JSR]]
+  opcodes, and [[$1E]] is set to \$01.  Otherwise a prompt sprite
+  is drawn at a frame-dependent Y using sprite-table entry 1
+  ([[SPRITE_TABLE_LO+1]] / [[SPRITE_TABLE_HI+1]]).
+\end{itemize}
+
+The routine also patches two ZP-aliased self-modifying operands in the
+preceding game-engine chunks: the sprite-height immediate at
+[[SMC_SR_HEIGHT]] (\$64F6, inside [[SPRITE_RENDER]]) and the Y-source
+ZP operand at [[SMC_SR_YSRC]] (\$64FA, same routine).  On init it
+re-points [[SPRITE_RENDER]] at the intro row in [[ZP_INTRO_Y]]; on
+activation it restores the default $06 source and resets the
+height immediate to \$13.
+
+<<level intro defines>>=
+
+; --- Zero-page (level-intro state) ---
+ZP_INTRO_Y        = $17         ; Intro sprite Y row (also SPRITE_RENDER source during intro)
+ZP_INTRO_COUNTDOWN = $18        ; Intro countdown frames remaining (starts at $12)
+ZP_INTRO_TIMEOUT  = $19         ; Auto-start timeout counter (wraps through $00 to trigger)
+
+; --- Level-data table consumed by the intro tick ---
+LEVEL_DATA_BASE = $0200         ; Level data (ticks indexed 0..$12 via ZP_INTRO_COUNTDOWN)
+
+; --- Main sprite pointer table (populated at runtime, indexed by sprite id) ---
+SPRITE_TABLE_LO = $B000         ; Low bytes of sprite pointers ($B000-$B07F)
+SPRITE_TABLE_HI = $B080         ; High bytes of sprite pointers ($B080-$B0FF)
+
+; --- Self-modifying operand aliases inside SPRITE_RENDER ($64DF) ---
+SMC_SR_HEIGHT   = $64F6         ; Immediate operand of "LDA #$13" — sprite height
+SMC_SR_YSRC     = $64FA         ; ZP operand of "LDA $06" — sprite Y source address
+
+; --- Self-modifying operand aliases inside DRAW_SPRITE ($656F) ---
+; The bytes at $65B7/$65B8 form a "BIT $00" placeholder that the intro
+; tick patches into "AND #imm" to flicker the displayed sprite with
+; the frame counter.  After the flicker draw the opcode is restored.
+SMC_SPRITE_MASK_OP  = $65B7     ; Opcode byte ($24 = BIT zp, $29 = AND imm)
+SMC_SPRITE_MASK_ARG = $65B8     ; Operand byte (harmless ZP / AND immediate)
+
+; --- Sound / delay stub (called from many places; not yet RE'd) ---
+SFX_TONE        = $67C1         ; Nested-delay loop that reads ($36),Y — likely
+                                ; a sound/tone routine; STUB — not yet disassembled
+
+@
+
+<<level intro tick>>=
+
+        ORG $699C
+LEVEL_INTRO_TICK:
+        SUBROUTINE
+        ; Per-frame state machine for the level-start intro: countdown
+        ; animation, tone pulses, wait-for-start, and activation.
+        ;
+        ; Inputs:
+        ;   $1E                       --- state word
+        ;                               $FF = needs init, $00 = intro running,
+        ;                               $01 = gameplay active (fast RTS).
+        ;   ZP_INTRO_COUNTDOWN ($18)  --- countdown frames remaining.
+        ;   ZP_INTRO_TIMEOUT ($19)    --- auto-start timeout.
+        ;   ZP_INTRO_Y ($17)          --- saved intro sprite Y row.
+        ;   $FD                       --- frame counter (flicker / parity).
+        ;   ZP_LEVEL_STATE ($5E)      --- BCD level timer (goes negative = done).
+        ;   ZP_PLAYER_COL ($06)       --- saved on init; software timer
+        ;                               during wait phase.
+        ;   $02, $05, $0A..$0E, $1D, $8C --- game-state scratch cleared
+        ;                               or seeded on init/activation.
+        ;   $41                       --- entity-slot count (cleared on wait).
+        ;   $83,X ($84 with X=1)      --- per-level initial Y column.
+        ;   ZP_INPUT_1 ($52) / ZP_INPUT_2 ($54) --- handler pointers
+        ;                               whose MSB can trigger activation.
+        ;   LEVEL_DATA_BASE,$18       --- tone amplitude for countdown step.
+        ;   SPRITE_TABLE_LO+1 /
+        ;   SPRITE_TABLE_HI+1         --- "ready" prompt sprite (id 1).
+        ;
+        ; Behavior:
+        ;   $1E > 0: RTS (fast path during gameplay).
+        ;   $1E < 0: one-shot init --- disable input / movement / render
+        ;     SMC slots; clear state; save $06 into ZP_INTRO_Y; point
+        ;     SPRITE_RENDER at ZP_INTRO_Y (SMC_SR_YSRC); set
+        ;     ZP_INTRO_COUNTDOWN=$12, ZP_INTRO_TIMEOUT=$40; $1E=0.
+        ;     Falls through into the tick phase.
+        ;   Tick phase (while ZP_INTRO_COUNTDOWN > 0): on odd frames
+        ;     decrement the counter, decrement SMC_SR_HEIGHT and bump
+        ;     ZP_INTRO_Y (unless $02 suppresses).  Patch the sprite
+        ;     mask SMC to AND #<FD|$80> for flicker, draw the sprite
+        ;     via SPRITE_RENDER, restore BIT opcode, then pulse
+        ;     SFX_TONE with the level-data byte at LEVEL_DATA_BASE,$18.
+        ;   Wait phase (ZP_INTRO_COUNTDOWN == 0): software timer in
+        ;     $06 BCD-decrements ZP_LEVEL_STATE when it wraps.  If
+        ;     ZP_LEVEL_STATE goes negative, RTS (level-complete path).
+        ;     Otherwise clear entity-active table $8D..$8D+$41,
+        ;     poll keyboard / input-handler MSBs / timeout; on trigger
+        ;     activate (set $1E=1, restore main-loop JSR slots, reset
+        ;     SMC_SR_YSRC=$06, SMC_SR_HEIGHT=$13).  Otherwise draw the
+        ;     "ready" prompt sprite (sprite-table id 1) at a row
+        ;     that dips by 2 on every other frame once $19 >= $F0.
+        ;
+        ; Modifies:
+        ;   $1E, $17, $18, $19, $02, $04, $05, $06, $0A, $0B, $0C,
+        ;   $0D, $0E, $1D, $8C, $8D..$8D+$41 (entity-active table),
+        ;   ZP_LEVEL_STATE ($5E, BCD decrement),
+        ;   SMC slots in MAIN_LOOP: SMC_INPUT ($67D1), SMC_ASCEND
+        ;   ($67D7), SMC_DESCEND ($67DA), SMC_MOVE_LEFT ($67DD),
+        ;   SMC_MOVE_RIGHT ($67E0), SMC_RENDER ($67EF),
+        ;   SMC_SR_HEIGHT ($64F6), SMC_SR_YSRC ($64FA),
+        ;   SMC_SPRITE_MASK_OP ($65B7), SMC_SPRITE_MASK_ARG ($65B8),
+        ;   SPRITE_PTR_LO ($65B3), SPRITE_PTR_HI ($65B4),
+        ;   sprite-draw params ZP_SPRITE_W/H/Y/X, $5B, $5D, $56, $57.
+        ; Clobbers: A, X, Y
+
+; --- Fast path: gameplay active ---
+        LDA $1E                         ; State word
+        BMI .init                       ;   $FF = needs init
+        BEQ .tick                       ;   $00 = intro running
+        RTS                             ;   else (> 0) gameplay --- return
+
+; --- One-shot initialisation ---
+.init:
+        LDA #$FF
+        STA $0E                         ; Arm state byte
+        LDA #$2C                        ; BIT opcode
+        STA SMC_INPUT                   ; Disable input dispatch slot
+        STA SMC_ASCEND                  ; Disable ascend slot
+        STA SMC_DESCEND                 ; Disable descend slot
+        STA SMC_MOVE_LEFT               ; Disable left slot
+        STA SMC_MOVE_RIGHT              ; Disable right slot
+        STA SMC_RENDER                  ; Disable sprite render slot
+        LDA ZP_PLAYER_COL               ; Save current player column
+        STA ZP_INTRO_Y                  ;   into intro Y
+        LDA #$17
+        STA SMC_SR_YSRC                 ; Re-point SPRITE_RENDER at ZP_INTRO_Y
+        LDA #$00
+        STA $05                         ; Clear scratch
+        STA $1E                         ; State $00 = intro running
+        STA $04                         ; Clear fast-flag / state
+        STA $0C                         ; Clear scratch
+        LDA #$D0
+        STA ZP_PLAYER_COL               ; Seed player column
+        STA $8C                         ; Seed paired state byte
+        LDA #$40
+        STA ZP_INTRO_TIMEOUT            ; $40 frames before auto-start
+        LDA #$12
+        STA ZP_INTRO_COUNTDOWN          ; 18 countdown frames
+;       fall through into .tick
+
+; --- Countdown / wait dispatch ---
+.tick:
+        LDX ZP_INTRO_COUNTDOWN
+        BEQ .wait                       ; Countdown done --- wait-for-start
+        LDA $FD
+        AND #$01
+        BEQ .flicker_draw               ; Even frame: only draw
+        DEX
+        STX ZP_INTRO_COUNTDOWN          ; Odd frame: decrement counter
+        LDA $02                         ; Suppress row bump?
+        BNE .flicker_draw
+        DEC SMC_SR_HEIGHT               ; Shrink SPRITE_RENDER sprite height
+        INC ZP_INTRO_Y                  ;   and nudge Y down one row
+.flicker_draw:
+; --- Draw flickering intro sprite via SPRITE_RENDER ---
+        LDA #$29                        ; AND #imm opcode
+        STA SMC_SPRITE_MASK_OP          ;   patched into DRAW_SPRITE BIT slot
+        LDA $FD
+        ORA #$80                        ; Force bit 7 of flicker mask
+        STA SMC_SPRITE_MASK_ARG
+        JSR SPRITE_RENDER               ; Draw the intro sprite
+        LDA #$24                        ; BIT zp opcode
+        STA SMC_SPRITE_MASK_OP          ; Restore DRAW_SPRITE BIT slot
+        LDY ZP_INTRO_COUNTDOWN
+        LDA LEVEL_DATA_BASE,Y           ; Tone amplitude for this tick
+        LDX #$0A
+        JSR SFX_TONE                    ; Pulse the speaker / delay
+        RTS
+
+; --- Wait-for-start phase: BCD-decrement level timer ---
+.wait:
+        LDA ZP_PLAYER_COL
+        BEQ .check_level                ; $06 == 0: skip timer roll
+        INC ZP_PLAYER_COL
+        BNE .done                       ; No rollover --- just return
+        BIT KBDSTROBE                   ; Rollover: clear keystrobe
+        SED
+        SEC
+        LDA ZP_LEVEL_STATE
+        SBC #$01
+        STA ZP_LEVEL_STATE              ; BCD decrement
+        CLD
+.done:
+        RTS
+
+; --- Check level timer, then wait for input or timeout ---
+.check_level:
+        LDA ZP_LEVEL_STATE
+        BPL .wait_input                 ; Positive: keep waiting
+        RTS                             ; Negative: level-complete path
+
+.wait_input:
+        LDX #$01
+        STX $0E
+        STX $0A
+        LDA $83,X                       ; $84 --- per-level intro Y seed
+        STA ZP_INTRO_Y
+        LDA #$00
+        STA $02                         ; Clear action flag
+        LDA #$FF
+        STA $1D
+        LDX $41                         ; Entity-slot count
+.clear_entities:
+        STA $8D,X                       ; Mark slot inactive
+        DEX
+        BPL .clear_entities
+        LDA #$06
+        STA $03
+        LDA #$00
+        STA $01
+        LDA KEYBOARD
+        BMI .activate                   ; Key pressed --- start game
+        LDY #$00
+        LDA (ZP_INPUT_1),Y
+        BMI .activate                   ; Input handler 1 asserts start
+        LDA (ZP_INPUT_2),Y
+        BMI .activate                   ; Input handler 2 asserts start
+        INC ZP_INTRO_TIMEOUT
+        BEQ .activate                   ; Timeout overflow --- auto-start
+
+; --- Draw "ready" prompt sprite while waiting ---
+        LDA ZP_INTRO_TIMEOUT
+        CMP #$F0
+        BCC .prompt_draw
+        LDA $FD
+        AND #$01
+        BEQ .prompt_draw
+        LDA ZP_INTRO_Y
+        SEC
+        SBC #$02
+        STA ZP_SPRITE_Y                 ; Dip two rows on alternating late frames
+        JMP .prompt_params
+.prompt_draw:
+        LDA ZP_INTRO_Y
+        STA ZP_SPRITE_Y
+.prompt_params:
+        LDA #$03
+        STA ZP_SPRITE_W
+        LDA #$0F
+        STA ZP_SPRITE_H
+        LDA #$14
+        STA ZP_SPRITE_X                 ; X column 20
+        LDA SPRITE_TABLE_LO+1           ; Sprite id 1 --- low
+        STA SPRITE_PTR_LO
+        LDA SPRITE_TABLE_HI+1           ; Sprite id 1 --- high
+        STA SPRITE_PTR_HI
+        JSR DRAW_SPRITE
+        RTS
+
+; --- Activation: restore main-loop slots and flip state to "running" ---
+.activate:
+        LDA ZP_INTRO_Y
+        STA ZP_PLAYER_COL               ; Restore player column
+        LDA $0A
+        STA $09
+        STA $0C
+        STA $0B                         ; Seed $09, $0B, $0C from $0A
+        LDA #$01
+        STA $1E                         ; State = gameplay active
+        STA $0D
+        LDA #$06
+        STA SMC_SR_YSRC                 ; SPRITE_RENDER reads ZP_PLAYER_COL again
+        LDA #$20                        ; JSR opcode
+        STA SMC_INPUT                   ; Re-enable input dispatch
+        STA SMC_RENDER                  ; Re-enable sprite render
+        LDA #$13
+        STA SMC_SR_HEIGHT               ; Restore default sprite height
+        RTS
+@ %def LEVEL_INTRO_TICK
+
+<<game engine B tail>>=
+
+        ORG $6ABA
+        SUBROUTINE
+        ; Game engine tail (\$6ABA-\$719C): sound, animation, entity
+        ; processing, level logic --- not yet disassembled.
+        ; Raw data --- 1763 bytes
+
+        HEX A6 B5
         HEX 30 0A BD 18 02 A2 0A 20
         HEX 9E 10 C6 B5 A5 AB F0 04
         HEX 30 05 10 2A 4C 32 6B A5
@@ -6559,7 +6842,6 @@ PAGE_FLIP:
         HEX 08 4C BE 70 A9 01 99 94
         HEX 03 A9 08 99 BC 03 4C A8
         HEX 6F
-@ %def PAGE_FLIP
 
 <<screen data tables>>=
 
@@ -7402,6 +7684,7 @@ PAGE_FLIP:
 <<prng defines>>
 <<draw sprite defines>>
 <<hazard check defines>>
+<<level intro defines>>
 ; --- ORG $0100: Screen row copy ---
 <<screen row copy>>
 ; --- ORG $012B: Joystick handler ---
@@ -7486,8 +7769,12 @@ PAGE_FLIP:
 <<entity process code>>
 ; --- ORG $67CB: Main loop ---
 <<main loop>>
-; --- ORG $683C: Game engine B ---
-<<game engine B>>
+; --- ORG $683C: Game engine B head ---
+<<game engine B head>>
+; --- ORG $699C: Level intro tick ---
+<<level intro tick>>
+; --- ORG $6ABA: Game engine B tail ---
+<<game engine B tail>>
 ; --- ORG $719D: Scroll camera ---
 <<scroll camera>>
 ; --- ORG $7208: Level complete ---

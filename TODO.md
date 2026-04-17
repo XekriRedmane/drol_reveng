@@ -16,9 +16,20 @@ Review existing chunks for violations:
 ### High-priority routines (called from main loop)
 
 - [ ] `$6000` — Input dispatcher (keyboard/joystick handler)
-- [ ] `$699C` — Rendering setup (first call each frame)
+- [x] `$699C` — `LEVEL_INTRO_TICK`: per-frame level-start state machine. Init
+      (disables input/render SMC slots, clears state, $18=$12, $19=$40),
+      countdown (odd-frame tick + flickering sprite draw + SFX_TONE pulse),
+      wait-for-start (BCD-decrement $5E, poll keyboard / input-handler MSBs /
+      timeout, then activate by restoring JSR opcodes + setting $1E=1).
+      Introduced ZPs: ZP_INTRO_Y ($17), ZP_INTRO_COUNTDOWN ($18),
+      ZP_INTRO_TIMEOUT ($19); SMC aliases SMC_SR_HEIGHT ($64F6),
+      SMC_SR_YSRC ($64FA), SMC_SPRITE_MASK_OP/ARG ($65B7/$65B8); tables
+      LEVEL_DATA_BASE ($0200), SPRITE_TABLE_LO/HI ($B000/$B080); stub
+      SFX_TONE ($67C1).
 - [ ] `$719D` — Scroll / camera
 - [ ] `$683C` — Page flip routine
+- [ ] `$67C1` — `SFX_TONE` stub: nested delay loop with CMP ($36),Y —
+      needs RE once $36 pointer/flag role is nailed down
 - [ ] `$10AB` — Display update
 - [ ] `$130A` — Page flip preparation
 - [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page. Sibling variants at `$65D5` (narrow column range, OR blit) and `$662C` (`BLIT_TILE`, opaque STA blit) still to do.
@@ -38,7 +49,9 @@ Review existing chunks for violations:
 
 - [ ] `$4713-$47FF` — Screen init routines (currently HEX blob, has code at $471C+)
 - [ ] `$4800-$67CA` — Large gap between game init and main loop (sprites, tables, game code)
-- [ ] `$683C-$7262` — Gap between main loop and attract loop
+- [ ] `$683C-$699B` — Game engine B head (page-flip / attract-draw dispatchers, HEX)
+- [ ] `$6ABA-$719C` — Game engine B tail (sound, animation, entity processing,
+      level logic, HEX — 1763 bytes)
 - [ ] `$72A0-$72A2` — 3 bytes between attract loop exit and copy routine (JMP $67CB at $72A0)
 
 ## Fix reference binary build process

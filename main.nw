@@ -9642,14 +9642,14 @@ REFRESH_RIGHT_WALL:
         ;   or delta >= $2C, RTS.  Otherwise store delta as the blit
         ;   rightmost paint column (ZP_BLIT_X_START), seed
         ;   ZP_SCORE_0/ZP_SCORE_1 both to DEST_PAGE (restore no-op), then:
-        ;     delta == $2B      ->  narrow-strip case ($623B branch)
-        ;     delta == $2A      ->  edge-case ($620B branch)
-        ;     else               ->  general case ($6217 branch)
+        ;     delta == $2B      ->  .edge_2B (narrow-strip case)
+        ;     delta == $2A      ->  fall-through (edge case, narrow edge)
+        ;     else               ->  .general
         ;   Each case writes HUD_LIVES_COL, ZP_CLEAR_COL, ZP_BLIT_X_END,
-        ;   and (sometimes) ZP_SCORE_1, then falls through to the
-        ;   shared tail at $624C.
+        ;   and (sometimes) ZP_SCORE_1, then falls through to
+        ;   .shared_tail.
         ;
-        ;   Shared tail ($624C-$6269): LDY $4C; load sprite pointer
+        ;   .shared_tail: LDY ZP_SPRITE_XREF; load sprite pointer
         ;   from WALL_SPR_LO/WALL_SPR_HI into ZP_BLIT_SRC; BIT ZP_PAGE_FLAG; if
         ;   positive, JSR INTERLACE_RESTORE_P1 + JSR INTERLACE_BLIT_P1;
         ;   if negative, JSR INTERLACE_RESTORE_P2 + JSR INTERLACE_BLIT_P2.
@@ -9796,17 +9796,17 @@ REFRESH_LEFT_WALL:
         ;   Otherwise store delta as ZP_BLIT_X_START, seed
         ;   ZP_SCORE_0 = $00 and ZP_SCORE_1 = $FF (restore terminator
         ;   past playable area), then dispatch on delta:
-        ;     delta == $00           ->  $629E branch (1-col wide)
-        ;     delta == $01 (via BEQ) ->  $6296 branch
-        ;     else                    ->  general branch
+        ;     delta == $00           ->  .delta_zero (1-col wide)
+        ;     delta == $01 (via BEQ) ->  .delta_one
+        ;     else                    ->  general fall-through
         ;   Each case writes HUD_SCORE_COL, ZP_SCORE_2, ZP_BLIT_X_END,
-        ;   and (sometimes) ZP_SCORE_0, then falls through to the
-        ;   shared tail at $62AC.
+        ;   and (sometimes) ZP_SCORE_0, then falls through to
+        ;   .shared_tail.
         ;
-        ;   Shared tail ($62AC-$62C9): same shape as REFRESH_RIGHT_WALL,
-        ;   but the sprite pointer is loaded from WALL_L_SPR_LO/WALL_L_SPR_HI (indexed
-        ;   by ZP_SPRITE_XREF), and the paired RESTORE/BLIT is selected on
-        ;   ZP_PAGE_FLAG.
+        ;   .shared_tail: same shape as REFRESH_RIGHT_WALL, but the
+        ;   sprite pointer is loaded from WALL_L_SPR_LO/WALL_L_SPR_HI
+        ;   (indexed by ZP_SPRITE_XREF), and the paired RESTORE/BLIT
+        ;   is selected on ZP_PAGE_FLAG.
         ;
         ; Modifies:
         ;   ZP_BLIT_X_START, ZP_BLIT_X_END,

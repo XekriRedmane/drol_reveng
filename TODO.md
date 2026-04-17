@@ -32,18 +32,23 @@ With the triplet, `BEAM_UPDATE` ($130A), `DRAW_ENTITIES` ($683C),
 `DRAW_SPRITE_PLAYFIELD`, `DRAW_SPRITE_OPAQUE`) all documented, the
 MAIN_LOOP dispatch is now fully named --- every `JSR` target in the
 main loop either has its own ORG chunk or sits inside one of the
-named hex blobs awaiting further carve-out.  This session carved
+named hex blobs awaiting further carve-out.  Prior sessions carved
 `SPECIAL_TICK` ($6ABA, 127 bytes) out of the head of
-`<<game engine B tail>>`, retiring the `SOUND_UPDATE` EQU stub ---
-the slot is the ``special'' bonus creature that walks across the
-playfield killing floor-enemies for four hits, then explodes into a
-puff the player can catch for +500 BCD (the DRAW_ENTITIES phase-3
-companion).  The remaining high-priority work is: the `$6B39-$719C`
-tail (1636 bytes HEX, starting with `SPECIAL_DRAW` --- the tick's
-direct partner, the obvious next target), and the remaining hex
-tail of `<<game engine A>>` at $614B-$64CA (player movement-tick
-handlers and the DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT
-input handlers called via SMC from MAIN_LOOP).
+`<<game engine B tail>>`, retiring the `SOUND_UPDATE` EQU stub.
+This session carved `SPECIAL_DRAW` ($6B39, 262 bytes),
+`SPECIAL_BODY_STEP1..6` ($6C3F, 156 bytes) and
+`SPECIAL_INACTIVE_DRAW` ($6CDB, 35 bytes) --- 453 bytes total ---
+out of the same hex blob, retiring the `SPECIAL_DRAW = $6B39` EQU
+stub and documenting the six-step SMC-chained palindromic walk cycle
+and the perspective-transformed body/puff/peek draws.  The
+`<<game engine B tail>>` now starts at $6CFE (1183 bytes remaining).
+The remaining high-priority work is: the `$6CFE-$719C` tail
+(1183 bytes HEX, likely containing companion-slot tick+draw,
+projectile handler, entity-list processing, and level-transition
+logic), and the remaining hex tail of `<<game engine A>>` at
+$614B-$64CA (player movement-tick handlers and the
+DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT input handlers
+called via SMC from MAIN_LOOP).
 
 ### State-machine topology
 
@@ -543,19 +548,52 @@ Individual TODO entries:
       and data EQU `SND_PITCH_TBL_SPECIAL`.  Carved 127 bytes out of
       `<<game engine B tail>>` which now starts at $6B39 (1636
       bytes remaining).
-- [ ] `$6B39-$719C` — Game engine B tail (SPECIAL_DRAW, entity
-      processing, level logic, HEX --- 1636 bytes).  `SPECIAL_DRAW`
-      at $6B39 is the most likely next target: pairs with
-      SPECIAL_TICK and has its ZP state already documented
-      ($AB/$AC/$AD/$AE/$08/$B6).  Trades sound slot $B6 +
-      pitch-table $021F for $B5/$0218, uses `SFX_TONE` ($67C1)
-      instead of `SND_DELAY_UP`, and is gated on $AB == 0 (jumps to
-      $6CDB which is a single-sprite draw helper for the inactive
-      phase).  Drift-mode subroutine at $6BEB draws the puff,
-      player-catch at $6C1C awards +$0500 BCD via SCORE_ADD,
-      ladder-step handlers at $6C49..$6CDA rewrite the SMC target
-      inside the puff-draw (operand at $6BE9/$6BEA) to a per-ladder
-      sprite source (7 table pairs at $7578..$758D).
+- [x] `$6B39` — `SPECIAL_DRAW`: per-frame draw + collision partner of
+      SPECIAL_TICK (retires the `SPECIAL_DRAW = $6B39` EQU stub ---
+      previously misnamed `ANIM_UPDATE`, which was only a superficial
+      reading of the SMC-chained dispatch as an ``animation update'').
+      Three visual phases gated on `ZP_SPECIAL_STATE`:
+      \emph{inactive} ($00) --- tail-JMP to `SPECIAL_INACTIVE_DRAW` at
+      $6CDB, a 29-byte \$02x\$06 ``peek'' marker drawn from per-level
+      pointer at $755B/$765B (new `SPECIAL_PEEK_LO/HI`);
+      \emph{active} ($01..$7F) --- perspective-transform $AC/$AD
+      against player world-X, 4-slot floor-enemy kill-box
+      ($9B/$9F/$A3), 6-pose body-walk via SMC-chained dispatch to
+      six 26-byte step handlers at $6C3F--$6CDA (new
+      `SPECIAL_BODY_STEP1..6`), player-catch box sets hit-flag $1E;
+      \emph{drift} ($80+) --- \$04x\$0F puff draw from new
+      `SPECIAL_PUFF_LO/HI` ($AFDA/$B05A, indexed by
+      perspective-frame Y), player-catch box awards +\$0500 BCD via
+      `SCORE_ADD` and resets slot.  The six body-step handlers form
+      a \emph{palindromic} walk cycle ($\{0, 7, 14, 21, 14, 7\}$
+      byte offsets into four level-data sprite-pointer pairs at
+      $7578..$758D/$7678..$768D); each handler rewrites new
+      `SMC_SPECIAL_BODY_LO/HI` ($6BE9/$6BEA), the operand bytes of
+      the `JMP` at $6BE8, to point to the next step.  The cycle is
+      \emph{not} reset by `SPECIAL_REARM` --- animation phase
+      persists across activations.  Uses `DRAW_SPRITE` (not
+      `DRAW_SPRITE_PLAYFIELD`); SMC source-pointer goes to
+      `SMC_DS_SRC_LO/HI` ($65B3/$65B4).  Second sound slot
+      `ZP_SPECIAL_SND_CTR_B` ($B6) with new
+      `SND_PITCH_TBL_SPECIAL_B` ($021F) clicks via `SFX_TONE`
+      duration $08, armed to 4 on player-catch for a four-click
+      pickup tone.  New ZPs: `ZP_SPECIAL_SND_CTR_B` ($B6),
+      `ZP_SCREEN_X` ($AF), `ZP_SCREEN_X_HI` ($B0).
+      **Correction to prior docs**: the SMC table was called
+      ``7 ladder-step handlers'' in the pre-session peek, but is
+      actually \emph{6} handlers (not 7), and they implement a
+      walk-cycle animation, not ladder-row dispatch (ladder-row
+      semantics live in `SPECIAL_TICK`'s drift-mode code, not in
+      the draw).  Carved 453 bytes out of `<<game engine B tail>>`
+      which now starts at $6CFE (1183 bytes remaining).
+- [ ] `$6CFE-$719C` — Game engine B tail (entity processing, level
+      logic, HEX --- 1183 bytes).  Begins with what looks like a
+      sibling draw gated on `ZP_COMPANION_GATE` ($33) at $6CFE
+      (LDA $33 / BPL / RTS / LDX #$01 / LDA $B3,X ...) — probably
+      the companion-slot tick+draw pair referenced by
+      `DRAW_ENTITIES` phase 4.  Other likely contents: projectile
+      tick, entity-list processing ($6F24+), level-transition
+      state machine, score-display routines.
 - [ ] `$72A0-$72A2` — 3 bytes between attract loop exit and copy routine (JMP $67CB at $72A0)
 
 ## Fix reference binary build process

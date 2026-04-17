@@ -2197,8 +2197,9 @@ SCORE_DISPLAY   = $673B         ; Score / status display (entity process hex)
 ; (SPECIAL_TICK is the label at ORG $6ABA, formerly stubbed as SOUND_UPDATE ---
 ;  misnomer: it ticks the ``special'' sprite slot whose draw lives in phase 3
 ;  of DRAW_ENTITIES, playing only one sound channel among many.)
-SPECIAL_DRAW    = $6B39         ; Special sprite draw + hit logic (game engine B hex)
-                                ; (formerly stubbed as ANIM_UPDATE; pairs with SPECIAL_TICK)
+; (SPECIAL_DRAW is the label at ORG $6B39 --- formerly stubbed as ANIM_UPDATE ---
+;  draws the ``special'' sprite body/puff/inactive-preview and handles its
+;  collisions; pairs with SPECIAL_TICK.)
 ENTITY_PROCESS  = $6CFE         ; Entity processing (game engine B hex)
 LEVEL_LOGIC     = $6F9C         ; Level logic (game engine B hex)
 ; (HAZARD_CHECK has its own ORG chunk)
@@ -9917,72 +9918,512 @@ SPECIAL_REARM:
         JMP SPECIAL_REARM               ; Wrap: rearm slot
 @ %def SPECIAL_TICK SPECIAL_REARM ZP_SPECIAL_STATE ZP_SPECIAL_POS ZP_SPECIAL_SND_CTR ZP_SPECIAL_HP SND_PITCH_TBL_SPECIAL
 
-<<game engine B tail>>=
+\section{Special sprite: per-frame draw}
+
+[[SPECIAL_DRAW]] at \$6B39 is the direct draw partner of
+[[SPECIAL_TICK]].  Both are invoked unconditionally from [[MAIN_LOOP]]
+each frame; [[SPECIAL_TICK]] updates the slot's timer/state and
+[[SPECIAL_DRAW]] renders the sprite and handles both of its collision
+tests (four-kill body-collision with the floor-enemy table, and the
+drift-puff player-catch).
+
+\paragraph{Three visual phases.}  The routine gates on
+[[ZP_SPECIAL_STATE]] (\$AB) just like the tick:
+
+\begin{itemize}
+\item \$00 (\textbf{inactive}) --- fall through to [[SPECIAL_INACTIVE_DRAW]]
+  at \$6CDB, a 29-byte helper that draws a small \$02$\times$\$06 marker
+  sprite from the level-data pointer pair at \$755B/\$765B at a
+  fixed screen position derived from the slot's row anchor (\$AE).
+  Conceptually the ``peek'' of the creature waiting off-screen.
+\item positive (\textbf{active}) --- perspective-transform the 16-bit
+  position [[ZP_SPECIAL_POS]] against the player's world-X, draw a
+  \$06$\times$\$14 body sprite, and run a hit test against the
+  four-slot floor-enemy table at \$9B/\$9F/\$A3 (the same slots
+  targeted by [[ENEMY_C_DRAW]] and the beam subsystem).  On a floor-enemy
+  overlap: clear that slot ($\$00 \to \$9B[X]$), decrement
+  [[ZP_SPECIAL_HP]] (\$08), and on the fourth kill (HP $=0$) set
+  drift mode and arm the defeat-jingle sound counter.
+\item negative (\textbf{drift}) --- draw a \$04$\times$\$0F puff
+  sprite from the per-perspective-frame pointer table
+  [[SPECIAL_PUFF_LO]]/[[SPECIAL_PUFF_HI]] (\$AFDA/\$B05A, indexed by
+  the same perspective-frame-index Y the body path uses), then test
+  whether the player's sprite overlaps the puff.  On a catch: award
+  \$0500 BCD via [[SCORE_ADD]], clear [[ZP_SPECIAL_STATE]], arm
+  [[ZP_SPECIAL_SND_CTR_B]] (\$B6) to~4 for a short catch tone, and
+  bump the position so the slot immediately falls into its inactive
+  countdown.
+\end{itemize}
+
+\paragraph{SMC-chained walk-cycle body draw.}  Unlike the three enemy
+slots --- which index a per-frame sprite table directly from
+[[ZP_FRAME_COUNTER]] bits --- [[SPECIAL_DRAW]]'s body path uses a
+\emph{self-modifying dispatch}: a [[JMP]] at \$6BE8 whose operand bytes
+[[SMC_SPECIAL_BODY_LO]]/[[SMC_SPECIAL_BODY_HI]] (\$6BE9/\$6BEA) point
+to one of six small handlers at \$6C3F--\$6CC0.  Each handler rewrites
+the operand bytes to the \emph{next} handler in a ring, then patches
+[[SMC_DS_SRC_LO]]/[[SMC_DS_SRC_HI]] with its own sprite source pointer
+and calls [[DRAW_SPRITE]].  The six handlers select from a four-entry
+per-level sprite-pointer table at \$7578/\$7678--\$758D/\$768D using
+offsets $\{0, 7, 14, 21, 14, 7\}$ --- a \emph{palindromic} walk cycle
+(poses 0, 1, 2, 3, 2, 1) that gives the creature a bidirectional
+walk-in-place look without storing a frame index in RAM.  The initial
+operand \$6C3F on disk starts the cycle at handler~1.
+
+\paragraph{Which [[DRAW_SPRITE]] variant.}  All four sub-draws
+([[SPECIAL_INACTIVE_DRAW]], the six body steps, the drift-puff, and
+the defeat transition) call [[DRAW_SPRITE]] at \$656F --- not
+[[DRAW_SPRITE_PLAYFIELD]] at \$65D5.  This is the same transparent-OR
+blit used by the three enemy slots (and distinct from the playfield
+blit used by [[DRAW_ENTITIES]]).  SMC source pointers go to
+[[SMC_DS_SRC_LO]]/[[SMC_DS_SRC_HI]] (\$65B3/\$65B4), the
+[[DRAW_SPRITE]] operand bytes, not the playfield variant.
+
+\paragraph{Sound slot.}  [[SPECIAL_DRAW]] drives a \emph{second} sound
+counter [[ZP_SPECIAL_SND_CTR_B]] (\$B6) with a companion pitch table
+[[SND_PITCH_TBL_SPECIAL_B]] at \$021F.  Unlike the ascending-tone
+counter the tick uses, this one clicks through [[SFX_TONE]] at
+duration \$08 --- a shorter, higher click.  It is armed to~\$04 on
+the player-catches-puff edge, producing a four-click ``pickup'' tone.
+\$B6 also idles at negative (BMI skips the click).
+
+\paragraph{Player-overlap boxes.}
+
+\begin{itemize}
+\item \textbf{Body-phase catch at \$6BCA} (fires on the same frame as
+  the fourth-kill defeat, i.e.\ when the creature explodes under the
+  player): X-box [\$40, \$56) on the transformed screen-X
+  [[$AF]]; Y-box [[$06-$13, $06+$12]] on [[$AE]].  Wins set the
+  hit-flag [[$1E]] = \$FF.
+\item \textbf{Drift-phase catch at \$6C02}: X-box [\$40, \$53), Y-box
+  [[$06-$0E, $06+$12]] on [[$AE]].  Wins award +\$0500 BCD and reset
+  the slot.
+\end{itemize}
+
+\paragraph{Perspective transform} (same shape as the enemy draws).
+[[ZP_PLAYER_Y]] (\$4A) indexes
+[[PERSPECTIVE_XOFF_LO]]/[[PERSPECTIVE_XOFF_HI]] (\$1A8F/\$198F) minus
+[[ZP_SPRITE_XREF]] (\$4C) to produce the player's world-X; subtracting
+that from the creature's 16-bit [[ZP_SPECIAL_POS]] yields the
+transformed screen-X in [[$AF]].  An off-screen test (high byte $\ne 0$
+or low byte $\ge \$A0$) short-circuits the draw with an RTS.  [[$AF]]
+is then used as the index into [[PROJ_SCREEN_COL]] (\$1C34, the
+horizontal-to-screen-column table) and [[PROJ_FRAME_IDX]] (\$1B8F,
+horizontal-to-sprite-frame-index).
+
+\paragraph{Why the previous ``ANIM\_UPDATE'' stub was wrong.}  The old
+name described a superficial reading: the SMC-chained dispatch writes
+bytes during execution, which resembles an animation update.  In fact
+the SMC is an optimisation for a single sprite-slot \emph{draw} ---
+the routine is the draw partner of [[SPECIAL_TICK]], emitting the
+sprite, running two collision tests, awarding score, and managing the
+defeat/catch state transitions.
+
+<<special draw defines>>=
+
+; --- Zero-page (special slot, draw side) ---
+; (ZP_SPECIAL_STATE, ZP_SPECIAL_POS, ZP_SPECIAL_ROW, ZP_SPECIAL_HP,
+;  ZP_SPECIAL_SND_CTR are declared in special-tick-defines and
+;  draw-entities-defines.)
+ZP_SPECIAL_SND_CTR_B = $B6      ; Defeat/catch jingle counter (BMI = idle)
+ZP_SCREEN_X     = $AF           ; Transformed screen X scratch (body/puff)
+ZP_SCREEN_X_HI  = $B0           ; High byte of transformed screen X
+
+; --- Page-2 sound pitch table for $B6 ---
+SND_PITCH_TBL_SPECIAL_B = $021F ; 4+ pitch bytes indexed by ZP_SPECIAL_SND_CTR_B
+
+; --- Sprite-pointer tables ---
+; SPRITE_TABLE_LO/HI at $B000/$B080 is the main sprite-pointer table;
+; the special slot uses a family at offset $DA / $5A (i.e.\
+; \$AFDA/\$B05A) indexed by the perspective-frame index. This
+; family covers the drift-phase ``puff'' pointers, one pair per
+; scale-factor, so the puff shrinks with distance.
+SPECIAL_PUFF_LO = $AFDA         ; Drift-puff pointer table, low bytes
+SPECIAL_PUFF_HI = $B05A         ; Drift-puff pointer table, high bytes
+
+; --- Walk-cycle body sprite base pointers ---
+; Four poses in the per-level sprite table at $7578/$7678.. $758D/$768D
+; indexed by Y (perspective-frame index from PROJ_FRAME_IDX).  The six
+; SMC handlers visit them in order {0, 1, 2, 3, 2, 1} then cycle.
+SPECIAL_BODY_POSE0_LO = $7578   ; Pose 0 pointer table, low
+SPECIAL_BODY_POSE0_HI = $7678
+SPECIAL_BODY_POSE1_LO = $757F   ; Pose 1 (offset +7)
+SPECIAL_BODY_POSE1_HI = $767F
+SPECIAL_BODY_POSE2_LO = $7586   ; Pose 2 (offset +14)
+SPECIAL_BODY_POSE2_HI = $7686
+SPECIAL_BODY_POSE3_LO = $758D   ; Pose 3 (offset +21)
+SPECIAL_BODY_POSE3_HI = $768D
+
+; --- Inactive-phase marker sprite (single pointer) ---
+; One byte after ENEMY_C_PUFF ($7559/$7659) and one before ENEMY_B_PUFF
+; ($755A/$765A); a per-level pointer to the small \$02x\$06 ``peek''
+; sprite drawn while the slot is counting down to spawn.
+SPECIAL_PEEK_LO = $755B         ; Inactive-phase peek sprite pointer, low
+SPECIAL_PEEK_HI = $765B         ; Inactive-phase peek sprite pointer, high
+@
+
+<<special draw>>=
 
         ORG $6B39
+SPECIAL_DRAW:
         SUBROUTINE
-        ; Game engine tail (\$6B39-\$719C): SPECIAL_DRAW, entity
-        ; processing, level logic --- not yet disassembled.
-        ; Raw data --- 1636 bytes
+        ; Per-frame draw + collision handler for the ``special''
+        ; bonus-creature slot; direct draw partner of SPECIAL_TICK.
+        ; Three-way dispatch on ZP_SPECIAL_STATE ($AB):
+        ;   $00  inactive --> tail JMP to SPECIAL_INACTIVE_DRAW
+        ;   $01+ active   --> perspective transform, 4-slot
+        ;                     floor-enemy kill-box, JMP through
+        ;                     SMC ring to one of six body-walk handlers.
+        ;   $80+ drift    --> perspective transform, draw puff from
+        ;                     SPECIAL_PUFF table, test player catch,
+        ;                     award +$0500 BCD on catch and reset slot.
+        ;
+        ; Inputs:
+        ;   ZP_SPECIAL_STATE, ZP_SPECIAL_POS (16-bit), ZP_SPECIAL_ROW
+        ;   ZP_SPECIAL_HP, ZP_SPECIAL_SND_CTR_B
+        ;   ZP_PLAYER_Y ($4A), ZP_PLAYER_COL ($06), ZP_SPRITE_XREF ($4C)
+        ;   Floor-enemy slots $9B / $9F / $A3 (4 slots each)
+        ;
+        ; Behavior:
+        ;   1. Emit a SFX_TONE click (duration $08) indexed by
+        ;      SND_PITCH_TBL_SPECIAL_B[$B6] if $B6 >= 0; dec $B6.
+        ;   2. $AB == 0 --> JMP SPECIAL_INACTIVE_DRAW.
+        ;   3. Perspective-transform $AC/$AD against player world-X into
+        ;      $AF (lo) / $B0 (hi).  RTS if off-screen (hi != 0 or
+        ;      lo >= $A0).
+        ;   4. Prepare sprite column from PROJ_SCREEN_COL[X], sprite
+        ;      frame Y from PROJ_FRAME_IDX[X] (for sprite-table indexing).
+        ;   5. If $AB < 0 (drift): JMP .drift_puff at $6BEB.
+        ;   6. Else (active): draw 6x20 body, kill-box test against
+        ;      floor-enemies, maybe trigger defeat, JMP .dispatch_body.
+        ;
+        ; Modifies:
+        ;   ZP_SCREEN_X, ZP_SCREEN_X_HI, ZP_SPRITE_W/H/X/Y, $9B[X], $08,
+        ;   ZP_SPECIAL_STATE, ZP_SPECIAL_SND_CTR, ZP_SPECIAL_ROW,
+        ;   SMC_SPECIAL_BODY_LO/HI, SMC_DS_SRC_LO/HI, $1E (hit flag).
+        ; Clobbers: A, X, Y
 
-        HEX A6 B6 30
-        HEX 0A BD 1F 02 A2 08 20 C1
-        HEX 67 C6 B6 A5 AB D0 03 4C
-        HEX DB 6C A6 4A BD 8F 1A 38
-        HEX E5 4C 85 AF BD 8F 19 E9
-        HEX 00 85 B0 38 A5 AC E5 AF
-        HEX 85 AF A5 AD E5 B0 F0 01
-        HEX 60 A5 AF C9 A0 B0 F9 AA
-        HEX A5 AE 85 5B BD 34 1C 85
-        HEX 5D BD 8F 1B A8 A5 AB 30
-        HEX 66 A9 06 85 56 A9 14 85
-        HEX 57 A2 03 B5 9B D0 06 CA
-        HEX 10 F9 4C CA 6B A5 AF D5
-        HEX 9F 90 F4 38 E9 0F D5 9F
-        HEX B0 ED A5 AE D5 A3 B0 E7
-        HEX 18 69 0F D5 A3 90 E0 A9
-        HEX 00 95 9B C6 08 D0 2D A9
-        HEX FF 85 AB A9 06 85 B5 A5
-        HEX AE 18 69 03 85 AE A5 AF
-        HEX C9 40 90 18 C9 56 B0 14
-        HEX A5 06 38 E9 13 C5 AE B0
-        HEX 0B 18 69 25 C5 AE 90 04
-        HEX A9 FF 85 1E 4C 3F 6C A9
-        HEX 04 85 56 A9 0F 85 57 B9
-        HEX DA AF 8D B3 65 B9 5A B0
-        HEX 8D B4 65 20 6F 65 A5 AF
-        HEX C9 40 90 36 C9 53 B0 32
-        HEX A5 06 38 E9 0E C5 AE B0
-        HEX 29 18 69 20 C5 AE 90 22
-        HEX A9 00 85 AB A9 04 85 B6
-        HEX A9 00 85 1A A9 05 85 1B
-        HEX 20 1A 12 A9 D0 85 AC A5
-        HEX AF 38 E9 02 85 AD E6 AE
-        HEX E6 AE 60 A9 59 8D E9 6B
-        HEX A9 6C 8D EA 6B B9 78 75
-        HEX 8D B3 65 B9 78 76 8D B4
-        HEX 65 20 6F 65 60 A9 73 8D
-        HEX E9 6B A9 6C 8D EA 6B B9
-        HEX 7F 75 8D B3 65 B9 7F 76
-        HEX 8D B4 65 20 6F 65 60 A9
-        HEX 8D 8D E9 6B A9 6C 8D EA
-        HEX 6B B9 86 75 8D B3 65 B9
-        HEX 86 76 8D B4 65 20 6F 65
-        HEX 60 A9 A7 8D E9 6B A9 6C
-        HEX 8D EA 6B B9 8D 75 8D B3
-        HEX 65 B9 8D 76 8D B4 65 20
-        HEX 6F 65 60 A9 C1 8D E9 6B
-        HEX A9 6C 8D EA 6B B9 86 75
-        HEX 8D B3 65 B9 86 76 8D B4
-        HEX 65 20 6F 65 60 A9 3F 8D
-        HEX E9 6B A9 6C 8D EA 6B B9
-        HEX 7F 75 8D B3 65 B9 7F 76
-        HEX 8D B4 65 20 6F 65 60 A9
-        HEX 02 85 56 A9 06 85 57 A5
-        HEX AE 85 5B A6 AD BD 34 1C
-        HEX 85 5D AD 5B 75 8D B3 65
-        HEX AD 5B 76 8D B4 65 20 6F
-        HEX 65 60 A5 33 10 01 60 A2
+; --- Emit catch/defeat-jingle click ---
+        LDX ZP_SPECIAL_SND_CTR_B
+        BMI .after_click                ; Negative = idle
+        LDA SND_PITCH_TBL_SPECIAL_B,X   ; Pitch byte
+        LDX #$08                        ; Duration = 8 clicks
+        JSR SFX_TONE
+        DEC ZP_SPECIAL_SND_CTR_B
+.after_click:
+
+; --- State dispatch on $AB ---
+        LDA ZP_SPECIAL_STATE
+        BNE .active_or_drift            ; Non-zero = draw somehow
+        JMP SPECIAL_INACTIVE_DRAW       ; $00 = inactive marker draw
+.active_or_drift:
+
+; --- Perspective transform: screen_X = creature_pos - player_world_x ---
+        LDX ZP_PLAYER_Y                 ; $4A -> perspective-table index
+        LDA PERSPECTIVE_XOFF_LO,X       ; Y -> world-X offset (lo)
+        SEC
+        SBC ZP_SPRITE_XREF              ; - level's X reference
+        STA ZP_SCREEN_X                 ; ZP_SCREEN_X = player world-X (lo)
+        LDA PERSPECTIVE_XOFF_HI,X       ; Y -> world-X offset (hi)
+        SBC #$00                        ; (borrow from lo)
+        STA ZP_SCREEN_X_HI              ; ZP_SCREEN_X_HI = player world-X (hi)
+        SEC
+        LDA ZP_SPECIAL_POS              ; $AC
+        SBC ZP_SCREEN_X                 ; - player world-X (lo)
+        STA ZP_SCREEN_X
+        LDA ZP_SPECIAL_POS+1            ; $AD
+        SBC ZP_SCREEN_X_HI              ; - player world-X (hi)
+        BEQ .on_screen                  ; hi == 0 = on screen
+.off_screen:
+        RTS                             ; off-screen: early RTS (shared)
+.on_screen:
+        LDA ZP_SCREEN_X
+        CMP #$A0                        ; >= $A0 = too far right
+        BCS .off_screen                 ; take the early RTS
+        TAX                             ; X = screen X for PROJ tables
+
+; --- Common sprite-parameter setup ---
+        LDA ZP_SPECIAL_ROW              ; $AE
+        STA ZP_SPRITE_Y                 ; Sprite row
+        LDA PROJ_SCREEN_COL,X           ; $1C34
+        STA ZP_SPRITE_X                 ; Sprite column
+        LDA PROJ_FRAME_IDX,X            ; $1B8F
+        TAY                             ; Y = sprite-frame index
+
+; --- Branch to drift if $AB < 0 ---
+        LDA ZP_SPECIAL_STATE
+        BMI .drift_puff                 ; Drift -> puff branch
+
+; --- Active body path: prepare body-sprite size, run kill-box test ---
+        LDA #$06                        ; Body: W = 6
+        STA ZP_SPRITE_W
+        LDA #$14                        ; Body: H = 20
+        STA ZP_SPRITE_H
+        LDX #$03                        ; Walk 4-slot enemy table X = 3..0
+.find_enemy:
+        LDA ZP_ENEMY_FLAG,X             ; $9B,X --- active?
+        BNE .check_box                  ;   non-zero = try kill-box
+.try_next_enemy:
+        DEX
+        BPL .find_enemy                 ;   continue X = 3..0
+        JMP .no_kill                    ; no active enemy: skip kill-box
+.check_box:
+; Kill-box: X-range [pos-$0F, pos) AND Y-range [row-$0F, row) on enemy slot
+        LDA ZP_SCREEN_X
+        CMP ZP_ENEMY_COL,X              ; $9F,X
+        BCC .try_next_enemy             ;   X < enemy_x
+        SEC
+        SBC #$0F                        ;   pos - $0F
+        CMP ZP_ENEMY_COL,X
+        BCS .try_next_enemy             ;   X - $0F >= enemy_x (too far)
+        LDA ZP_SPECIAL_ROW
+        CMP ZP_ENEMY_Y,X                ; $A3,X
+        BCS .try_next_enemy             ;   Y >= enemy_y (below)
+        CLC
+        ADC #$0F
+        CMP ZP_ENEMY_Y,X
+        BCC .try_next_enemy             ;   Y + $0F < enemy_y (above)
+; Kill: clear enemy slot, dec HP, maybe trigger defeat
+        LDA #$00
+        STA ZP_ENEMY_FLAG,X             ; $9B,X = 0 (kill floor enemy)
+        DEC ZP_SPECIAL_HP               ; $08
+        BNE .dispatch_body              ; HP != 0: skip defeat + catch
+; Defeat edge: enter drift, arm defeat jingle, bump row
+        LDA #$FF
+        STA ZP_SPECIAL_STATE            ; $AB = $FF -> drift mode
+        LDA #$06
+        STA ZP_SPECIAL_SND_CTR          ; Arm ascending-tone jingle
+        LDA ZP_SPECIAL_ROW
+        CLC
+        ADC #$03
+        STA ZP_SPECIAL_ROW              ; Row += 3 (fall start)
+        ; Fall through into the catch box below (defeat edge only).
+.no_kill:
+
+; --- Body-phase player-catch box (triggers hit-flag only) ---
+; Note: only reached on .no_kill fall-through (no-active-enemy case)
+; or after defeat-edge fall-through (HP reached 0 this frame).  HP>0
+; kills skip straight to .dispatch_body to bypass this test.
+        LDA ZP_SCREEN_X
+        CMP #$40
+        BCC .dispatch_body              ; X < $40
+        CMP #$56
+        BCS .dispatch_body              ; X >= $56
+        LDA ZP_PLAYER_COL               ; $06
+        SEC
+        SBC #$13                        ; player_col - $13
+        CMP ZP_SPECIAL_ROW
+        BCS .dispatch_body              ; row <= player_col-$13
+        CLC
+        ADC #$25                        ; -> player_col + $12
+        CMP ZP_SPECIAL_ROW
+        BCC .dispatch_body              ; row > player_col+$12
+        LDA #$FF
+        STA $1E                         ; Hit flag = $FF
+.dispatch_body:
+        JMP SPECIAL_BODY_STEP1          ; SMC: operand bytes rewritten
+SMC_SPECIAL_BODY_LO = *-2               ;   by handlers at $6C3F+ to walk
+SMC_SPECIAL_BODY_HI = *-1               ;   the 6-step palindromic cycle.
+
+; --- Drift-phase puff draw + player-catch (award +$0500 BCD) ---
+.drift_puff:
+        LDA #$04
+        STA ZP_SPRITE_W                 ; Puff: W = 4
+        LDA #$0F
+        STA ZP_SPRITE_H                 ; Puff: H = 15
+        LDA SPECIAL_PUFF_LO,Y           ; Y-indexed per-scale puff pointer
+        STA SMC_DS_SRC_LO
+        LDA SPECIAL_PUFF_HI,Y
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE                 ; Transparent OR blit
+; Drift-phase catch box: X in [$40, $53), Y in [player_col-$0E, +$12]
+        LDA ZP_SCREEN_X
+        CMP #$40
+        BCC .drift_done                  ; X < $40
+        CMP #$53
+        BCS .drift_done                  ; X >= $53
+        LDA ZP_PLAYER_COL               ; $06
+        SEC
+        SBC #$0E                        ; player_col - $0E
+        CMP ZP_SPECIAL_ROW
+        BCS .drift_done
+        CLC
+        ADC #$20                        ; -> player_col + $12
+        CMP ZP_SPECIAL_ROW
+        BCC .drift_done
+; Catch: clear slot, arm catch-jingle, award +$0500 BCD
+        LDA #$00
+        STA ZP_SPECIAL_STATE            ; Back to inactive
+        LDA #$04
+        STA ZP_SPECIAL_SND_CTR_B        ; Arm catch tone (4 clicks)
+        LDA #$00
+        STA ZP_SCORE_ADD_LO             ; +$0500 BCD
+        LDA #$05
+        STA ZP_SCORE_ADD_HI
+        JSR SCORE_ADD
+        LDA #$D0
+        STA ZP_SPECIAL_POS              ; Reseed 8-bit inactive timer
+        LDA ZP_SCREEN_X
+        SEC
+        SBC #$02
+        STA ZP_SPECIAL_POS+1            ; Seed $AD (carried through)
+        INC ZP_SPECIAL_ROW              ; Bump row by 2 (fall-through look)
+        INC ZP_SPECIAL_ROW
+.drift_done:
+        RTS
+@ %def SPECIAL_DRAW SMC_SPECIAL_BODY_LO SMC_SPECIAL_BODY_HI ZP_SPECIAL_SND_CTR_B SND_PITCH_TBL_SPECIAL_B SPECIAL_PUFF_LO SPECIAL_PUFF_HI SPECIAL_BODY_POSE0_LO SPECIAL_BODY_POSE0_HI SPECIAL_BODY_POSE1_LO SPECIAL_BODY_POSE1_HI SPECIAL_BODY_POSE2_LO SPECIAL_BODY_POSE2_HI SPECIAL_BODY_POSE3_LO SPECIAL_BODY_POSE3_HI ZP_SCREEN_X ZP_SCREEN_X_HI
+
+<<special body draw steps>>=
+
+        ORG $6C3F
+; ---------------------------------------------------------------------
+; Six SMC-chained body-walk handlers for SPECIAL_DRAW.
+;
+; The active-path JMP at $6BE8 has operand bytes $6BE9/$6BEA
+; (SMC_SPECIAL_BODY_LO/HI) patched by each handler to point to the NEXT
+; handler in the cycle.  On-disk initial value is $6C3F (STEP1).  Each
+; handler:
+;
+;   1. Writes the lo/hi of the next step's address into
+;      SMC_SPECIAL_BODY_LO/HI (the $6BE8 JMP operand).
+;   2. Patches SMC_DS_SRC_LO/HI (the DRAW_SPRITE source pointer
+;      operand at $65B3/$65B4) with its pose's level-data sprite
+;      pointer, indexed by Y (perspective-frame index).
+;   3. JSR DRAW_SPRITE, then RTS back to SPECIAL_DRAW's caller.
+;
+; The six poses visit sprite-table offsets {0, 7, 14, 21, 14, 7}, a
+; palindromic cycle (0 -> 1 -> 2 -> 3 -> 2 -> 1 -> 0 -> ...) giving
+; a 6-frame walking animation from four distinct poses.  The cycle
+; point persists across activations because nothing resets the SMC
+; bytes at rearm --- after defeat/restart, drawing resumes from
+; wherever the last cycle left off.
+; ---------------------------------------------------------------------
+
+SPECIAL_BODY_STEP1:
+        ; Pose 0 (offset 0); next = STEP2
+        LDA #<SPECIAL_BODY_STEP2
+        STA SMC_SPECIAL_BODY_LO
+        LDA #>SPECIAL_BODY_STEP2
+        STA SMC_SPECIAL_BODY_HI
+        LDA SPECIAL_BODY_POSE0_LO,Y
+        STA SMC_DS_SRC_LO
+        LDA SPECIAL_BODY_POSE0_HI,Y
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+        RTS
+
+SPECIAL_BODY_STEP2:
+        ; Pose 1 (offset 7); next = STEP3
+        LDA #<SPECIAL_BODY_STEP3
+        STA SMC_SPECIAL_BODY_LO
+        LDA #>SPECIAL_BODY_STEP3
+        STA SMC_SPECIAL_BODY_HI
+        LDA SPECIAL_BODY_POSE1_LO,Y
+        STA SMC_DS_SRC_LO
+        LDA SPECIAL_BODY_POSE1_HI,Y
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+        RTS
+
+SPECIAL_BODY_STEP3:
+        ; Pose 2 (offset 14); next = STEP4
+        LDA #<SPECIAL_BODY_STEP4
+        STA SMC_SPECIAL_BODY_LO
+        LDA #>SPECIAL_BODY_STEP4
+        STA SMC_SPECIAL_BODY_HI
+        LDA SPECIAL_BODY_POSE2_LO,Y
+        STA SMC_DS_SRC_LO
+        LDA SPECIAL_BODY_POSE2_HI,Y
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+        RTS
+
+SPECIAL_BODY_STEP4:
+        ; Pose 3 (offset 21); next = STEP5 (cycle apex)
+        LDA #<SPECIAL_BODY_STEP5
+        STA SMC_SPECIAL_BODY_LO
+        LDA #>SPECIAL_BODY_STEP5
+        STA SMC_SPECIAL_BODY_HI
+        LDA SPECIAL_BODY_POSE3_LO,Y
+        STA SMC_DS_SRC_LO
+        LDA SPECIAL_BODY_POSE3_HI,Y
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+        RTS
+
+SPECIAL_BODY_STEP5:
+        ; Pose 2 again (mirror of STEP3); next = STEP6
+        LDA #<SPECIAL_BODY_STEP6
+        STA SMC_SPECIAL_BODY_LO
+        LDA #>SPECIAL_BODY_STEP6
+        STA SMC_SPECIAL_BODY_HI
+        LDA SPECIAL_BODY_POSE2_LO,Y
+        STA SMC_DS_SRC_LO
+        LDA SPECIAL_BODY_POSE2_HI,Y
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+        RTS
+
+SPECIAL_BODY_STEP6:
+        ; Pose 1 again (mirror of STEP2); next = STEP1 (wrap)
+        LDA #<SPECIAL_BODY_STEP1
+        STA SMC_SPECIAL_BODY_LO
+        LDA #>SPECIAL_BODY_STEP1
+        STA SMC_SPECIAL_BODY_HI
+        LDA SPECIAL_BODY_POSE1_LO,Y
+        STA SMC_DS_SRC_LO
+        LDA SPECIAL_BODY_POSE1_HI,Y
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+        RTS
+@ %def SPECIAL_BODY_STEP1 SPECIAL_BODY_STEP2 SPECIAL_BODY_STEP3 SPECIAL_BODY_STEP4 SPECIAL_BODY_STEP5 SPECIAL_BODY_STEP6
+
+<<special inactive draw>>=
+
+        ORG $6CDB
+SPECIAL_INACTIVE_DRAW:
+        SUBROUTINE
+        ; Small \$02x\$06 ``peek'' marker drawn while the special slot
+        ; is in its inactive countdown phase ($AB == 0).  The tick is
+        ; cycling $AC as an 8-bit counter and $AD stays at $00 (seeded
+        ; by SPECIAL_REARM), so the sprite's screen position is
+        ; effectively fixed by the slot's row-anchor $AE plus the
+        ; perspective-transformed index in $AD.  Tail-jumped to from
+        ; SPECIAL_DRAW's $6B4B.
+        ;
+        ; Inputs:
+        ;   ZP_SPECIAL_ROW ($AE), ZP_SPECIAL_POS+1 ($AD)
+        ;   SPECIAL_PEEK_LO/HI ($755B/$765B) --- per-level sprite pointer
+        ;
+        ; Modifies:
+        ;   ZP_SPRITE_W/H/X/Y, SMC_DS_SRC_LO/HI.
+        ; Clobbers: A, X
+
+        LDA #$02
+        STA ZP_SPRITE_W                 ; W = 2
+        LDA #$06
+        STA ZP_SPRITE_H                 ; H = 6
+        LDA ZP_SPECIAL_ROW              ; $AE
+        STA ZP_SPRITE_Y                 ; Sprite row = row anchor
+        LDX ZP_SPECIAL_POS+1            ; $AD (stays 0 during inactive)
+        LDA PROJ_SCREEN_COL,X           ; $1C34
+        STA ZP_SPRITE_X                 ; Sprite col via PROJ table
+        LDA SPECIAL_PEEK_LO             ; Un-indexed
+        STA SMC_DS_SRC_LO
+        LDA SPECIAL_PEEK_HI
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+        RTS
+@ %def SPECIAL_INACTIVE_DRAW SPECIAL_PEEK_LO SPECIAL_PEEK_HI
+
+<<game engine B tail>>=
+
+        ORG $6CFE
+        SUBROUTINE
+        ; Game engine tail (\$6CFE-\$719C): entity processing, level
+        ; logic --- not yet disassembled.  Raw data --- 1183 bytes.
+
+        HEX A5 33 10 01 60 A2
         HEX 01 B5 B3 F0 08 30 0D B5
         HEX B1 30 10 10 48 A9 01 95
         HEX B3 4C 93 6D 4C 24 6F CA
@@ -11102,7 +11543,14 @@ SPECIAL_REARM:
 <<level intro tick>>
 ; --- ORG $6ABA: Special sprite tick ---
 <<special tick>>
-; --- ORG $6B39: Game engine B tail ---
+; --- ORG $6B39: Special sprite draw ---
+<<special draw defines>>
+<<special draw>>
+; --- ORG $6C3F: Special body-draw step handlers (SMC-chained) ---
+<<special body draw steps>>
+; --- ORG $6CDB: Special inactive-phase draw ---
+<<special inactive draw>>
+; --- ORG $6CFE: Game engine B tail ---
 <<game engine B tail>>
 ; --- ORG $719D: Difficulty update ---
 <<difficulty update>>

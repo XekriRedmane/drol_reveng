@@ -3986,7 +3986,7 @@ After restoring state, it zeroes the entity activity table at
 [[$03A8]]--[[$03BB]], the movement slots at [[$C5]]--[[$C8]],  % TODO-SYM: $03BB $C8
 [[ZP_MOVE_DIR]] ([[$04]], player horizontal move direction), and the
 frame counter~[[$FD]]. It also zeroes [[$03FF]], sets
-[[$4B]]/[[$4C]]~=~2, [[$39]]~=~1, fills [[$0237]]--[[$023B]] with [[$FF]], and patches  % TODO-SYM: $4B $023B $FF
+[[ZP_WALK_FRAME]] ([[$4B]]) and [[ZP_SPRITE_XREF]] ([[$4C]])~=~[[$02]], [[$39]]~=~1, fills [[$0237]]--[[$023B]] with [[$FF]], and patches  % TODO-SYM: $023B
 the four direction slots in the main loop to [[BIT]] ([[$2C]], inactive).
 Finally it loads two bytes from [[$029A]]/[[$029B]] into [[$42]]/[[$43]].  % TODO-SYM: $029A $029B $42 $43
 
@@ -4048,8 +4048,8 @@ INIT_LEVEL_STATE:
 
 ; --- Initialize game-state variables ---
         LDX #$02
-        STX $4B                   ; Unknown state A
-        STX $4C                   ; Unknown state B
+        STX ZP_WALK_FRAME         ; Walking-animation frame = 2
+        STX $4C                   ; World-X reference (ZP_SPRITE_XREF) = 2
         DEX
         STX $39                   ; Set game-over flag to 1
 
@@ -4206,6 +4206,7 @@ guess that pre-dated understanding [[POST_FRAME]] / [[$6A1E]];  % TODO-SYM: $6A1
 
 ; --- Zero-page (game start) ---
 ZP_PLAYER_Y     = $4A           ; Player Y (perspective-table index)
+ZP_WALK_FRAME   = $4B           ; Walking-animation frame (floor-stripe index)
 ZP_SCORE_0      = $2B           ; Score HUD digit 0 (runtime sprite slot)
 ZP_SCORE_1      = $2C           ; Score HUD digit 1
 ZP_SCORE_2      = $2D           ; Score HUD digit 2
@@ -5436,7 +5437,7 @@ hi-res memory interleave, so the per-group 3-STA triplet lands in three
 
 \subsection{Callers and twin selection}
 
-Three caller sites --- all three now carved out of the
+Four caller sites --- all four now carved out of the
 \texttt{<<game engine A>>} hex blob as their own chunks --- share
 the same shape:
 
@@ -5448,7 +5449,7 @@ the same shape:
       helper.
 \end{enumerate}
 
-The three callers are:
+The four callers are:
 \begin{itemize}
 \item [[REFRESH_RIGHT_WALL]] at [[$61F0]] --- right-edge
       playfield wall (shared tail at [[$624C]], [[INTERLACE_BLIT]]
@@ -5456,6 +5457,10 @@ The three callers are:
 \item [[REFRESH_LEFT_WALL]] at [[$626A]] --- left-edge playfield
       wall (shared tail at [[$62AC]], [[INTERLACE_BLIT]] at
       [[$62C6]] for page~2 --- the task-named site).
+\item [[REFRESH_FLOOR_LINES]] at [[$62CA]] --- four-row floor
+      painter (no shared tail; tail-calls
+      [[FLOOR_LINES_P1]]/[[FLOOR_LINES_P2]] at
+      [[$08C8]]/[[$08DF]] instead of [[INTERLACE_BLIT]]).
 \item [[REFRESH_PILLARS]] at [[$62E2]] --- six-slot landmark
       pillar loop (shared tail at [[$62FD]], [[INTERLACE_BLIT]] at
       [[$6317]] for page~2).
@@ -5465,7 +5470,8 @@ The selectors pick [[INTERLACE_BLIT_P1]] when [[ZP_PAGE_FLAG]] is
 positive and [[INTERLACE_BLIT_P2]] otherwise --- the same gating
 pattern already documented for [[INTERLACE_RESTORE_P1]]/[[P2]].  The
 sprite tables at [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]]
-([[$7500]]/[[$7600]]), [[WALL_L_SPR_LO]]/[[WALL_L_SPR_HI]]
+([[$7500]]/[[$7600]]), [[FLOOR_SPR_LO]]/[[FLOOR_SPR_HI]]
+([[$750E]]/[[$760E]]), [[WALL_L_SPR_LO]]/[[WALL_L_SPR_HI]]
 ([[$7519]]/[[$7619]]), and [[WALL_SPR_LO]]/[[WALL_SPR_HI]]
 ([[$7520]]/[[$7620]]) hold pointers into the swappable level banks;
 the sprites have widths in the 1\,column (40 bytes) to 4\,columns
@@ -5960,24 +5966,91 @@ INTERLACE_BLIT_P2:
         RTS                             ; $08C7
 @ %def INTERLACE_BLIT_P2
 
-<<game code 03A8>>=
+<<floor lines p1>>=
 
         ORG $08C8
+FLOOR_LINES_P1:
         SUBROUTINE
-        ; Hi-res framebuffer library tail ($08C8-$09FD, 310 bytes).
-        ; Contains the ROW_PAINT_P1_38/P2_38 painters at $08C8/$08DF
-        ; and the TEXT_ROW_FROM_A30D_P1/P2 helpers at $08F6/$097A ---
-        ; all four still awaiting full carve-out.  The INTERLACE_BLIT
-        ; helpers at $054E/$070B have been carved out into their own
-        ; chunks above; the INTERLACE_RESTORE helpers at $09FE/$0B4B
-        ; are carved as their own chunks below.
+        ; Paint 40 bytes of pixel data into four evenly-spaced hi-res
+        ; page~1 rows: row 67 ($2C28), row 107 ($2EA8), row 147 ($2D50),
+        ; and row 187 ($2FD0).  Each source byte is replicated to the
+        ; same column on all four rows, so the four rows display the
+        ; same 40-column pattern.
+        ;
+        ; Inputs:
+        ;   ZP_BLIT_SRC ($FE/$FF) --- source pointer to 40-byte row
+        ;                             (points into a 12-frame animation
+        ;                             table at FLOOR_SPR_LO/HI; in the
+        ;                             shipped Drol levels every frame
+        ;                             is all-zero, so the four rows get
+        ;                             cleared each call).
+        ;
+        ; Behavior:
+        ;   Y counts 0..39, X counts 39..0 in parallel.  For each step
+        ;   load (ZP_BLIT_SRC),Y and STA to row-base + X at four rows.
+        ;   The reversed X index means source byte 0 lands at column
+        ;   39 and source byte 39 lands at column 0.
+        ;
+        ; Modifies:
+        ;   Hi-res page 1 at rows 67, 107, 147, 187 (columns 0..39).
+        ; Clobbers: A, X, Y
 
-        HEX A0 00 A2 27 B1 FE 9D 28
-        HEX 2C 9D A8 2E 9D 50 2D 9D
-        HEX D0 2F C8 CA 10 EE 60 A0
-        HEX 00 A2 27 B1 FE 9D 28 4C
-        HEX 9D A8 4E 9D 50 4D 9D D0
-        HEX 4F C8 CA 10 EE 60
+        LDY #$00                        ; $08C8
+        LDX #$27                        ; $08CA
+.row:
+        LDA (ZP_BLIT_SRC),Y             ; $08CC
+        STA $2C28,X                     ; $08CE: row 67
+        STA $2EA8,X                     ; $08D1: row 107
+        STA $2D50,X                     ; $08D4: row 147
+        STA $2FD0,X                     ; $08D7: row 187
+        INY                             ; $08DA
+        DEX                             ; $08DB
+        BPL .row                        ; $08DC
+        RTS                             ; $08DE
+@ %def FLOOR_LINES_P1
+
+<<floor lines p2>>=
+
+        ORG $08DF
+FLOOR_LINES_P2:
+        SUBROUTINE
+        ; Page-2 twin of FLOOR_LINES_P1 ($08C8): paint 40 bytes into
+        ; the same four rows on hi-res page~2 ($4C28, $4EA8, $4D50,
+        ; $4FD0).  Byte-for-byte identical to the page-1 variant with
+        ; the destination row bases rebased from $2xxx to $4xxx.
+        ;
+        ; Inputs / Behavior / Callers: see FLOOR_LINES_P1.
+        ;
+        ; Modifies:
+        ;   Hi-res page 2 at rows 67, 107, 147, 187 (columns 0..39).
+        ; Clobbers: A, X, Y
+
+        LDY #$00                        ; $08DF
+        LDX #$27                        ; $08E1
+.row:
+        LDA (ZP_BLIT_SRC),Y             ; $08E3
+        STA $4C28,X                     ; $08E5: row 67
+        STA $4EA8,X                     ; $08E8: row 107
+        STA $4D50,X                     ; $08EB: row 147
+        STA $4FD0,X                     ; $08EE: row 187
+        INY                             ; $08F1
+        DEX                             ; $08F2
+        BPL .row                        ; $08F3
+        RTS                             ; $08F5
+@ %def FLOOR_LINES_P2
+
+<<game code 03A8>>=
+
+        ORG $08F6
+        SUBROUTINE
+        ; Hi-res framebuffer library tail ($08F6-$09FD, 264 bytes).
+        ; Contains the TEXT_ROW_FROM_A30D_P1/P2 helpers at $08F6/$097A
+        ; (both still awaiting full carve-out).  The INTERLACE_BLIT
+        ; helpers at $054E/$070B and the FLOOR_LINES painters at
+        ; $08C8/$08DF have been carved out into their own chunks above;
+        ; the INTERLACE_RESTORE helpers at $09FE/$0B4B are carved as
+        ; their own chunks below.
+
         HEX A2 0F A0 00 B9 0D A3 9D
         HEX 0C 24 9D 0C 28 9D 0C 2C
         HEX 9D 0C 30 9D 0C 34 9D 0C
@@ -9546,6 +9619,8 @@ page-gates the paired restore+blit on [[ZP_PAGE_FLAG]].
 ; and the hi-byte table is at page $76 at the same offset.
 PILLAR_SPR_LO   = $7500         ; REFRESH_PILLARS sprite ptr, low byte
 PILLAR_SPR_HI   = $7600         ; REFRESH_PILLARS sprite ptr, high byte
+FLOOR_SPR_LO    = $750E         ; REFRESH_FLOOR_LINES sprite ptr, low byte
+FLOOR_SPR_HI    = $760E         ; REFRESH_FLOOR_LINES sprite ptr, high byte
 WALL_L_SPR_LO   = $7519         ; REFRESH_LEFT_WALL sprite ptr, low byte
 WALL_L_SPR_HI   = $7619         ; REFRESH_LEFT_WALL sprite ptr, high byte
 WALL_SPR_LO     = $7520         ; REFRESH_RIGHT_WALL sprite ptr, low byte
@@ -9817,22 +9892,92 @@ REFRESH_LEFT_WALL:
         RTS                             ; $62C9
 @ %def REFRESH_LEFT_WALL
 
-<<game engine A middle>>=
+\section{Floor-line refresh}
+
+[[REFRESH_FLOOR_LINES]] at [[$62CA]] is a fourth playfield-refresh
+callee, sandwiched in [[PLAYER_TICK_IDLE]] between
+[[REFRESH_RIGHT_WALL]] and [[REFRESH_PILLARS]].  Unlike its three
+neighbours it does \emph{not} call [[INTERLACE_BLIT]] /
+[[INTERLACE_RESTORE]] --- instead it paints 40~bytes onto four
+fixed hi-res rows (rows [[67]], [[107]], [[147]], [[187]]) using
+[[FLOOR_LINES_P1]] / [[FLOOR_LINES_P2]] as the page-selected row
+painter.  The source is a 12-frame animation table at
+[[FLOOR_SPR_LO]]/[[FLOOR_SPR_HI]] ([[$750E]]/[[$760E]]) indexed by
+[[ZP_WALK_FRAME]] --- the same walking-animation counter that
+cycles [[ZP_SPRITE_XREF]] for the wall/pillar sprites.
+
+\paragraph{What the four rows are.}  The four destination rows sit
+one row above each of [[INTERLACE_BLIT_P1]]'s three perspective bands
+(band~0: rows 72--79, band~1: rows 112--119, band~2: rows 152--159)
+plus a fourth row near the bottom of the screen.  Rows 67, 107, 147,
+and 187 are the only bytes in all of [[drol.bin]] that are written
+by [[FLOOR_LINES_P1]]/[[FLOOR_LINES_P2]] --- no other code touches
+any of the four hi-res row bases at [[$2C28]]/[[$2EA8]]/[[$2D50]]/%
+[[$2FD0]] or their page-2 twins.  They are effectively ``reserved''
+rows maintained every frame by this routine.
+
+\paragraph{Why the sprite table is all zero.}  The 12 pointers at
+[[FLOOR_SPR_LO]]/[[FLOOR_SPR_HI]] resolve to a 12$\times$40 source
+table occupying [[$7BEC]]--[[$7DCB]] (stride [[$28]] bytes per
+frame), with all 480~bytes set to [[$00]] in all four shipped Drol
+levels.  The net effect is that this routine \emph{clears} those
+four rows every frame --- it behaves as a per-frame spot-clean of
+reserved floor-reference lines, overwriting whatever sprite or
+tracer ink may have bled onto them in the previous frame.  The
+animation-indexed table is a generic level-data hook that happens to
+be unused by the shipped levels; it would paint a 40-byte
+repeating pattern cycling through 12 frames if level overlays
+populated it.
+
+\paragraph{Page gate.}  The [[BIT ZP_PAGE_FLAG]] / [[BMI]] pair
+selects [[FLOOR_LINES_P2]] when [[ZP_PAGE_FLAG]] is negative (the
+even-frame page~2 path) and [[FLOOR_LINES_P1]] otherwise --- same
+gating convention used by every other playfield-refresh callee.
+
+<<refresh floor lines>>=
 
         ORG $62CA
+REFRESH_FLOOR_LINES:
         SUBROUTINE
-        ; Game-engine-A middle slice (\$62CA-\$62E1, 24 bytes): still
-        ; awaiting full RE.  The routine at \$62CA is a third
-        ; playfield-refresh callee, but unlike its neighbors it does
-        ; NOT call INTERLACE_BLIT/INTERLACE_RESTORE --- instead it uses
-        ; ROW_PAINT_P1_38 / ROW_PAINT_P2_38 at \$08C8/\$08DF (38-column
-        ; text-row paint helpers).  Sprite pointer loaded from
-        ; \$750E/\$760E indexed by \$4B.
+        ; Per-frame repaint of four reserved hi-res floor rows
+        ; (67, 107, 147, 187) from a 12-frame animation table
+        ; indexed by ZP_WALK_FRAME.  Paints on hi-res page 1 or
+        ; page 2 depending on ZP_PAGE_FLAG.
+        ;
+        ; Inputs:
+        ;   ZP_WALK_FRAME ($4B)       --- walking-animation frame
+        ;                                 (0..11, cycled by
+        ;                                 PLAYER_TICK_MOVE_LEFT/RIGHT).
+        ;   FLOOR_SPR_LO/HI at $750E/$760E --- 12-entry 16-bit
+        ;                                 pointer table; indexed
+        ;                                 entry points to a 40-byte
+        ;                                 source row.
+        ;   ZP_PAGE_FLAG  ($00)       --- drawing-page selector
+        ;                                 (BMI = page 2).
+        ;
+        ; Behavior:
+        ;   Load the indexed sprite pointer into ZP_BLIT_SRC, then
+        ;   tail-call FLOOR_LINES_P1 or FLOOR_LINES_P2 to broadcast
+        ;   the 40-byte row to the four destination rows.
+        ;
+        ; Modifies:
+        ;   ZP_BLIT_SRC ($FE/$FF), hi-res page 1 or page 2 at
+        ;   rows 67, 107, 147, 187 (columns 0..39).
+        ; Clobbers: A, X, Y
 
-        HEX A4 4B B9 0E 76 85 FF B9
-        HEX 0E 75 85 FE 24 00 30 04
-        HEX 20 C8 08 60 20 DF 08 60
-@
+        LDY ZP_WALK_FRAME               ; $62CA: walking-anim frame index
+        LDA FLOOR_SPR_HI,Y              ; $62CC: $760E,Y -> ZP_BLIT_SRC+1
+        STA ZP_BLIT_SRC+1               ; $62CF
+        LDA FLOOR_SPR_LO,Y              ; $62D1: $750E,Y -> ZP_BLIT_SRC
+        STA ZP_BLIT_SRC                 ; $62D4
+        BIT ZP_PAGE_FLAG                ; $62D6
+        BMI .page2                      ; $62D8
+        JSR FLOOR_LINES_P1              ; $62DA
+        RTS                             ; $62DD
+.page2:
+        JSR FLOOR_LINES_P2              ; $62DE
+        RTS                             ; $62E1
+@ %def REFRESH_FLOOR_LINES
 
 \section{Landmark-pillar refresh}
 
@@ -10063,13 +10208,13 @@ that live inside the \texttt{<<game engine A>>} hex blob at
   negative, the player is moving left.  If [[ZP_PLAYER_Y]] ([[$4A]]) is
   already at the low clamp ($<$[[$01]]), fall through into
   [[PLAYER_TICK_IDLE]]; otherwise decrement [[$4A]] by~1, cycle the
-  walking-animation state at [[$4B]] (mod~12, stepping by~2) and [[$4C]]  % TODO-SYM: $4B
+  walking-animation state at [[ZP_WALK_FRAME]] (mod~12, stepping by~2) and [[$4C]]
   (state-machine with constants [[$FE]]/[[$FF]]/[[$02]] at the transitions),  % TODO-SYM: $FE $FF
   then fall through into [[PLAYER_TICK_IDLE]].
 \item [[PLAYER_TICK_MOVE_RIGHT]] ([[$619A]]): when [[ZP_MOVE_DIR]] is
   positive nonzero, the player is moving right.  If [[ZP_PLAYER_Y]]
   ([[$4A]]) is already at the high clamp ($\geq$[[$D7]]), jump directly to
-  the per-frame update tail; otherwise increment [[$4A]] by~1, cycle [[$4B]]  % TODO-SYM: $4B
+  the per-frame update tail; otherwise increment [[$4A]] by~1, cycle [[ZP_WALK_FRAME]]
   (mod~12, stepping by~-2) and [[$4C]] ([[$07]]/[[$08]]/[[$FE]] transitions), then  % TODO-SYM: $FE
   \texttt{JMP} into the middle of the per-frame update chain so the
   same 7 routines run (in a slightly reshuffled order that swaps
@@ -14523,7 +14668,11 @@ RESCUE_UPDATE:
 <<interlace blit p1>>
 ; --- ORG $070B: Hi-res page 2 interlace-blit (3-band sprite) ---
 <<interlace blit p2>>
-; --- ORG $08C8: Hi-res framebuffer library tail (hex) ---
+; --- ORG $08C8: Hi-res page 1 floor-lines painter ---
+<<floor lines p1>>
+; --- ORG $08DF: Hi-res page 2 floor-lines painter ---
+<<floor lines p2>>
+; --- ORG $08F6: Hi-res framebuffer library tail (hex) ---
 <<game code 03A8>>
 ; --- ORG $09FE: Hi-res page 1 interlace-restore (text strip from $0300) ---
 <<interlace restore p1>>
@@ -14627,8 +14776,8 @@ RESCUE_UPDATE:
 <<refresh right wall>>
 ; --- ORG $626A: Left-edge wall refresh ---
 <<refresh left wall>>
-; --- ORG $62CA: Game engine A middle (awaiting RE) ---
-<<game engine A middle>>
+; --- ORG $62CA: Floor-line refresh ---
+<<refresh floor lines>>
 ; --- ORG $62E2: Landmark-pillar refresh ---
 <<refresh pillars>>
 ; --- ORG $631D: Game engine A tail (entity redraw + movement handlers, awaiting RE) ---

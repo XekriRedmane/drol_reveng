@@ -16,3 +16,4 @@
 - [DRAW_SPRITE W+1 bytes/row](drol-draw-sprite-w-plus-1.md) — ZP_SPRITE_W is W-1 bytes/row; the BPL loop runs W+1 iterations not W
 - [Level-1 extraction from drol.dsk](drol-level-data-extraction.md) — extract_level1.py replays loader phase-0 to produce reference/level1.bin for sprite art in $8C00-$BDFF
 - [Drol playfield-refresh routines](drol-playfield-refresh.md) — $61F0/$626A REFRESH_RIGHT_WALL/REFRESH_LEFT_WALL update HUD_LIVES_COL/HUD_SCORE_COL; $62E2 REFRESH_PILLARS is a no-op (slots never written)
+- [Drol floor-line refresh](drol-floor-lines.md) — $62CA REFRESH_FLOOR_LINES + FLOOR_LINES_P1/P2 ($08C8/$08DF) paint 4 reserved rows (67/107/147/187); animation table all-zero in all 4 shipped levels, effectively a per-frame spot-clean

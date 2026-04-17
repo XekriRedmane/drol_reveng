@@ -1,5 +1,74 @@
 # TODO
 
+## Milestone: `REFRESH_FLOOR_LINES` + `FLOOR_LINES_P1/P2` carved (2026-04-17)
+
+The fourth and last playfield-refresh callee --- `REFRESH_FLOOR_LINES`
+at `$62CA` (24 bytes) --- has been fully RE'd, and both of its row
+painters (`ROW_PAINT_P1_38/P2_38` in the previous stub naming) have
+been carved as `FLOOR_LINES_P1/FLOOR_LINES_P2`:
+
+- **`REFRESH_FLOOR_LINES`** at `$62CA` (24 bytes): per-frame repaint
+  of four reserved hi-res floor rows (67, 107, 147, 187) from a
+  12-frame animation table at `FLOOR_SPR_LO/FLOOR_SPR_HI`
+  ($750E/$760E) indexed by `ZP_WALK_FRAME` ($4B, the walking-
+  animation frame counter).  Page-flag-gated tail-call to
+  `FLOOR_LINES_P1` or `FLOOR_LINES_P2`.  Called from
+  `PLAYER_TICK_IDLE` ($6190) between `REFRESH_RIGHT_WALL` and
+  `REFRESH_PILLARS`.
+- **`FLOOR_LINES_P1`** at `$08C8` (23 bytes): broadcasts a 40-byte
+  source row at `(ZP_BLIT_SRC),Y` to four page-1 rows
+  ($2C28/$2EA8/$2D50/$2FD0 = rows 67/107/147/187), source-byte-0
+  at column 39 and source-byte-39 at column 0 (reversed).
+- **`FLOOR_LINES_P2`** at `$08DF` (23 bytes): page-2 twin.
+
+**Effect in shipped Drol:** the 12-frame 480-byte source table at
+`$7BEC..$7DCB` is all-zero in every shipped level, so the routine
+functionally *clears* the four reserved rows each frame --- a
+per-frame spot-clean of reserved floor-reference lines.  The
+level-data hook is generic and would paint a 40-byte repeating
+pattern cycling through 12 frames if a future level populated it.
+
+**Byte count retired:**
+- `<<game engine A middle>>`: 24 bytes retired (chunk fully
+  deleted, replaced by `<<refresh floor lines>>`).
+- `<<game code 03A8>>`: 46 bytes retired (ROW_PAINT_P1_38 + _P2_38;
+  chunk now covers $08F6-$09FD, 264 bytes; was 310).
+
+No PNG rendered: all 12 frames of the 40-byte source row are $00
+in every shipped level, so the sprite art is blank --- a render
+would be a meaningless all-black 40x4 rectangle.  See prose in
+`\section{Floor-line refresh}` for the geometry diagram
+(rows 67/107/147/187 described relative to the three
+`INTERLACE_BLIT` bands).
+
+New EQUs:
+- `ZP_WALK_FRAME = $4B` (walking-animation frame).
+- `FLOOR_SPR_LO = $750E`, `FLOOR_SPR_HI = $760E` (floor-lines
+  sprite-pointer table).
+
+Prior-doc corrections:
+
+- Playfield-refresh overview prose upgraded from "three caller
+  sites" to "four caller sites" and the sprite-table enumeration
+  now includes `FLOOR_SPR_LO/HI`.
+- Stale "Unknown state A/B" comment on the `$4B/$4C` init in
+  `INIT_LEVEL_STATE` replaced with the proper labels.
+- Three `% TODO-SYM: $4B` markers in the
+  `PLAYER_TICK_MOVE_LEFT/RIGHT` prose dropped (address is now
+  symbolic as `ZP_WALK_FRAME`).
+
+Next-session priorities:
+
+1. The `<<game engine A tail>>` (430 bytes) at `$631D` --- this
+   contains the already-EQU'd `DO_ASCEND` ($6378), `DO_DESCEND`
+   ($63B4), `DO_MOVE_RIGHT` ($6409), `DO_MOVE_LEFT` ($646D)
+   movement-input handlers plus the entity-redraw loop at `$6321`
+   and the text-row dispatch at `$636C`.
+2. The two remaining hi-res-library helpers in `<<game code 03A8>>`
+   (`TEXT_ROW_FROM_A30D_P1/P2` $08F6/$097A, 132 bytes each).
+3. The `<<game engine A prologue>>` ($614B-$61EF, 165 bytes) ---
+   the movement-tick handler bodies + `CLEAR_DRAW_PAGE` wrapper.
+
 ## Milestone: `INTERLACE_BLIT_P1/P2` callers carved as playfield-refresh routines (2026-04-17)
 
 The three `INTERLACE_BLIT` caller sites inside the
@@ -42,9 +111,9 @@ blob is now split into:
   the movement-tick handler bodies + `CLEAR_DRAW_PAGE` wrapper.
 - `<<refresh right wall>>` $61F0-$6269 (122 bytes, source).
 - `<<refresh left wall>>` $626A-$62C9 (96 bytes, source).
-- `<<game engine A middle>>` $62CA-$62E1 (24 bytes, HEX) ---
-  a third playfield-refresh callee that uses `ROW_PAINT_P1_38/P2_38`
-  instead of `INTERLACE_BLIT`; still awaiting RE.
+- `<<refresh floor lines>>` $62CA-$62E1 (24 bytes, source; was
+  `<<game engine A middle>>` HEX) --- the fourth playfield-refresh
+  callee; see the REFRESH_FLOOR_LINES milestone above.
 - `<<refresh pillars>>` $62E2-$631C (59 bytes, source).
 - `<<game engine A tail>>` $631D-$64CA (430 bytes, HEX) --- entity
   redraw loop at $6321, text-row dispatch at $636C, and the four
@@ -75,12 +144,13 @@ Prior-doc corrections:
   `REFRESH_RIGHT_WALL`/`REFRESH_LEFT_WALL` instead of raw
   addresses $61F0/$626A.
 
-Next-session priorities:
+Next-session priorities (at the time of the INTERLACE_BLIT carve;
+superseded by the REFRESH_FLOOR_LINES milestone above):
 
 1. The `<<game engine A middle>>` routine at $62CA (24 bytes) ---
    a third playfield-refresh callee using ROW_PAINT_P1_38/P2_38
    ($08C8/$08DF) instead of `INTERLACE_BLIT`.  Small and similar
-   in shape to the wall routines.
+   in shape to the wall routines. [DONE in subsequent session.]
 2. The `<<game engine A tail>>` (430 bytes) --- this contains
    the already-EQU'd `DO_ASCEND` ($6378), `DO_DESCEND` ($63B4),
    `DO_MOVE_RIGHT` ($6409), `DO_MOVE_LEFT` ($646D) movement-input
@@ -89,6 +159,7 @@ Next-session priorities:
 3. The four remaining hi-res-library helpers in `<<game code 03A8>>`
    (`ROW_PAINT_P1_38/P2_38` $08C8/$08DF, 23 bytes each;
    `TEXT_ROW_FROM_A30D_P1/P2` $08F6/$097A, 132 bytes each).
+   [P1/P2 done as FLOOR_LINES_P1/P2 in subsequent session.]
 
 ## Milestone: `INTERLACE_BLIT_P1/P2` carved (2026-04-17)
 

@@ -2006,7 +2006,7 @@ SCROLL_UP_PRE:
         BEQ .skip               ; If A was $FF, skip to main scroll
         JMP GAME_SCROLL_HANDLER ; Otherwise jump to game scroll handler
 
-; The JMP $28A0 above is ZP_SPRITE_XREF $A0 $28. Entry sees KEY_JUMP $28 = LDY #$28.
+; The JMP $28A0 above is ZP_SPRITE_XREF KEY_JUMP $28. Entry sees KEY_JUMP $28 = LDY #$28.
 SCROLL_UP = SCROLL_UP_PRE + 5  ; overlapping entry (LDY #$28)
 
 .skip:
@@ -6689,7 +6689,7 @@ RESCUE_DRAW:
         LDX RESCUE_COUNTDOWN,Y             ; RESCUE_COUNTDOWN[Y] in 1..4
         LDA $D7,X                          ; quasi-random AND-mask byte
         STA SMC_SPRITE_MASK_ARG
-        STY ZP_DRAW_LOOP_IDX               ; $5C
+        STY ZP_DRAW_LOOP_IDX
         LDA RESCUE_DRIFT_PITCH,X           ; RESCUE_DRIFT_PITCH[X] = pitch for this frame
         LDX #$12                           ; X = duration
         JSR SND_DELAY_DOWN                 ; descending click
@@ -6699,19 +6699,19 @@ RESCUE_DRAW:
 .compute_screen_x:
         SEC
         LDA ENTITY_FLOOR_COL,Y             ; ENTITY_FLOOR_COL[Y]
-        SBC ZP_PERSP_OFFSET_LO             ; $0F
+        SBC ZP_PERSP_OFFSET_LO
         STA $AF                            ; screen-X residue
         LDA ENTITY_XOFF_IDX,Y              ; ENTITY_XOFF_IDX[Y]
-        SBC ZP_PERSP_OFFSET_HI             ; $10
+        SBC ZP_PERSP_OFFSET_HI
         BNE .skip_off_screen               ; high-byte != 0: off camera
         LDA $AF
         CMP #$9A                           ; clip right edge
         BCS .skip_off_screen
         TAX                                ; X = screen-X residue
         LDA ENTITY_FLOOR_POS,Y             ; row
-        STA ZP_SPRITE_Y                    ; $5B
+        STA ZP_SPRITE_Y
         LDA PROJ_SCREEN_COL,X              ; PROJ_SCREEN_COL[X] = column
-        STA ZP_SPRITE_X                    ; $5D
+        STA ZP_SPRITE_X
         LDA PROJ_FRAME_IDX,X               ; PROJ_FRAME_IDX[X] = frame index
         TAX                                ; X = sprite frame index
         LDA #$03
@@ -6791,14 +6791,14 @@ RESCUE_DRAW:
 
 ; --- Pre-compute helper: cache PERSPECTIVE_XOFF[player_Y] - $4C in ZP_ENEMY_A_LEG_PHASE/SOUND_FLAG_MASK ---
 RESCUE_DRAW_PERSPECTIVE_CACHE:
-        LDX ZP_PLAYER_Y                    ; $4A
+        LDX ZP_PLAYER_Y
         LDA PERSPECTIVE_XOFF_LO,X          ; PERSPECTIVE_XOFF_LO[X]
         SEC
-        SBC ZP_SPRITE_XREF                 ; $4C
-        STA ZP_PERSP_OFFSET_LO             ; $0F
+        SBC ZP_SPRITE_XREF
+        STA ZP_PERSP_OFFSET_LO
         LDA PERSPECTIVE_XOFF_HI,X          ; PERSPECTIVE_XOFF_HI[X]
         SBC #$00
-        STA ZP_PERSP_OFFSET_HI             ; $10
+        STA ZP_PERSP_OFFSET_HI
         RTS
 
 ; --- Post-draw: drift-mode skips collision; active runs all 3 checks ---
@@ -6862,7 +6862,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         BCC .test_proj_spawn               ; X < $40: outside band
         CMP #$50
         BCS .test_proj_spawn               ; X >= $50: outside band
-        LDA ZP_PLAYER_COL                  ; $06
+        LDA ZP_PLAYER_COL
         SEC
         SBC #$19
         CMP ENTITY_FLOOR_POS,Y
@@ -6873,7 +6873,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         BCC .test_proj_spawn               ; player_col+$12 < entity_row
 ; Player pickup: signal hit, then merge into reward path (no enemy clear).
         LDA #$FF
-        STA ZP_HIT_FLAG                    ; $1E
+        STA ZP_HIT_FLAG
         JMP .award_reward                  ; rescue=drift, +$0035
 
 ; --- Hostile projectile spawn (no collision occurred) ---
@@ -6887,7 +6887,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         JMP .slot_next
 .check_floor_match:
         LDA RESCUE_FLOOR,Y                 ; RESCUE_FLOOR[Y]
-        CMP ZP_PLAYER_FLOOR_CUR            ; $0C
+        CMP ZP_PLAYER_FLOOR_CUR
         BEQ .find_empty_proj
         JMP .slot_next
 .find_empty_proj:
@@ -9438,7 +9438,7 @@ RESTART_DISPATCH:
         ; intended gateway between restart flows before the code was
         ; reorganised around the MAIN_LOOP exit-check style.
 
-        LDA ZP_RESTART_FLAG             ; $44
+        LDA ZP_RESTART_FLAG
         BEQ .flag_zero                  ; == 0 --> life-lost resume
         BMI .flag_negative              ; < 0  --> plain main-loop entry
         JSR GAME_RESTART                ; > 0  --> partial reset then...
@@ -10251,7 +10251,7 @@ PLAYER_MOVE_TICK:
         ;
         ; Clobbers: A (plus whatever the chosen handler clobbers)
 
-        LDA ZP_MOVE_DIR         ; $04
+        LDA ZP_MOVE_DIR
         BEQ .idle               ; zero: no motion
         LDA ZP_MOVE_DIR
         BMI .move_left          ; negative: moving left
@@ -10467,12 +10467,12 @@ DRAW_PLAYER:
         ; Clobbers: A, X, Y
 
 ; --- Gate on action flag ---
-        LDA ZP_ACTION_DIR               ; $02
+        LDA ZP_ACTION_DIR
         BNE .action_path                ;   non-zero = elevator in motion
 
 ; --- Idle path: single body sprite from PLAYER_SPR_IDLE tables ---
 .idle_path:
-        LDX ZP_PLAYER_STANCE            ; $03
+        LDX ZP_PLAYER_STANCE
         LDA PLAYER_SPR_IDLE_LO,X        ; Sprite pointer low byte
         STA SMC_DS_SRC_LO
         LDA PLAYER_SPR_IDLE_HI,X        ; Sprite pointer high byte
@@ -10495,12 +10495,12 @@ DRAW_PLAYER:
 
 ; --- Action path: optional flicker + main body ---
 .action_path:
-        LDA ZP_HIT_FLAG                 ; $1E
+        LDA ZP_HIT_FLAG
         BMI .body_from_active           ;   hit: body only, no flicker
         BEQ .body_from_active           ;   intro: body only, no flicker
 
 ; --- Check stance against floor-extreme values $03 / $09 ---
-        LDA ZP_PLAYER_STANCE            ; $03
+        LDA ZP_PLAYER_STANCE
         CMP #$03                        ; Top floor?
         BNE .check_bottom
         LDA #$14                        ; Flicker X column = $14 (top)
@@ -10520,7 +10520,7 @@ DRAW_PLAYER:
 .flicker_setup:
         LDA #$29                        ; $29 = AND #imm opcode
         STA SMC_SPRITE_MASK_OP          ;   patch live SMC slot in DRAW_SPRITE
-        LDA ZP_PLAYER_COL               ; $06
+        LDA ZP_PLAYER_COL
         CLC
         ADC #$0D                        ;   + $0D
         STA ZP_SPRITE_Y                 ; Y = player_col + $0D
@@ -10540,7 +10540,7 @@ DRAW_PLAYER:
 
 ; --- Main body draw from PLAYER_SPR_ACTIVE tables ---
 .body_from_active:
-        LDX ZP_PLAYER_STANCE            ; $03
+        LDX ZP_PLAYER_STANCE
         LDA PLAYER_SPR_ACTIVE_LO,X      ; Pointer low
         STA SMC_DS_SRC_LO
         LDA PLAYER_SPR_ACTIVE_HI,X      ; Pointer high
@@ -10679,7 +10679,7 @@ DRAW_SPRITE:
         BMI .page2
         LDA #<SCREEN_ROW_ADDR_HI  ; $C0 --- low of SCREEN_ROW_ADDR_HI (page 1)
         STA SMC_ROW_HI_LO
-        LDA #>SCREEN_ROW_ADDR_HI  ; $72
+        LDA #>SCREEN_ROW_ADDR_HI
         STA SMC_ROW_HI_HI
         JMP .outer_entry
 .page2:
@@ -10842,7 +10842,7 @@ DRAW_SPRITE_PLAYFIELD:
         ; Behavior:
         ;   Outer loop walks ZP_SPRITE_H rows.  For each row, patches
         ;   the ORA/STA operands with the row's base screen address
-        ;   (high byte from SCREEN_ROW_ADDR_HI or $7440 via the row-high SMC operand,
+        ;   (high byte from SCREEN_ROW_ADDR_HI or SCREEN_ROW_ADDR_HI2 via the row-high SMC operand,
         ;   low byte from SCREEN_ROW_ADDR_LO).  Inner loop walks
         ;   ZP_SPRITE_W bytes from the right edge leftward: rejects
         ;   col $0B, rejects cols >=$1C, rejects zero source bytes;
@@ -10859,7 +10859,7 @@ DRAW_SPRITE_PLAYFIELD:
         BMI .page2
         LDA #<SCREEN_ROW_ADDR_HI  ; $C0 --- low of SCREEN_ROW_ADDR_HI (page 1)
         STA SMC_PFB_ROW_HI_LO
-        LDA #>SCREEN_ROW_ADDR_HI  ; $72
+        LDA #>SCREEN_ROW_ADDR_HI
         STA SMC_PFB_ROW_HI_HI
         JMP .outer_entry
 .page2:
@@ -11012,7 +11012,7 @@ DRAW_SPRITE_OPAQUE:
         ; Behavior:
         ;   Outer loop walks ZP_SPRITE_H rows.  For each row, patches
         ;   the STA operand with the row's base screen address (high
-        ;   byte from SCREEN_ROW_ADDR_HI or $7440 via the row-high SMC operand, low
+        ;   byte from SCREEN_ROW_ADDR_HI or SCREEN_ROW_ADDR_HI2 via the row-high SMC operand, low
         ;   byte from SCREEN_ROW_ADDR_LO).  Inner loop walks
         ;   ZP_SPRITE_W bytes from the right edge leftward: rejects
         ;   cols >=$28 (offscreen), otherwise unconditionally STA's
@@ -11029,7 +11029,7 @@ DRAW_SPRITE_OPAQUE:
         BMI .page2
         LDA #<SCREEN_ROW_ADDR_HI  ; $C0 --- low of SCREEN_ROW_ADDR_HI (page 1)
         STA SMC_OPQ_ROW_HI_LO
-        LDA #>SCREEN_ROW_ADDR_HI  ; $72
+        LDA #>SCREEN_ROW_ADDR_HI
         STA SMC_OPQ_ROW_HI_HI
         JMP .outer_entry
 .page2:
@@ -11410,7 +11410,7 @@ DRAW_ENTITIES:
 
 ; --- Phase 2: player sprite ---
 .draw_player:
-        LDA ZP_HIT_GATE                 ; $0E
+        LDA ZP_HIT_GATE
         BMI .draw_special               ;   negative = suppress player
         LDA ZP_PLAYER_Y                 ; Player floor position
         CLC
@@ -11440,7 +11440,7 @@ DRAW_ENTITIES:
         LDA #$04
         STA ZP_SPRITE_H                 ; Height = 4 rows
         LDX ZP_INTRO_Y                  ; Default: intro Y source
-        LDA ZP_HIT_FLAG                 ; $1E
+        LDA ZP_HIT_FLAG
         BEQ .player_row                 ;   $00 = intro running, keep $17
         LDX ZP_PLAYER_COL               ; Gameplay: use player column
 .player_row:
@@ -11450,7 +11450,7 @@ DRAW_ENTITIES:
 
 ; --- Phase 3: special sprite (moon-ball / attract actor) ---
 .draw_special:
-        LDA ZP_SPECIAL_A                ; $AB
+        LDA ZP_SPECIAL_A
         BEQ .draw_companions            ;   $00 = inactive
         BPL .special_active             ;   positive = active
         BMI .draw_companions            ;   negative = inactive
@@ -11485,7 +11485,7 @@ DRAW_ENTITIES:
         LDA $7694,X
         STA SMC_PFB_SRC_HI
 .special_row:
-        LDA ZP_SPECIAL_ROW              ; $AE
+        LDA ZP_SPECIAL_ROW
         TAX
         LDA FLOOR_TO_ROW,X
         STA ZP_SPRITE_Y
@@ -11493,7 +11493,7 @@ DRAW_ENTITIES:
 
 ; --- Phase 4: two companion-slot sprites ---
 .draw_companions:
-        LDA ZP_COMPANION_GATE           ; $33
+        LDA ZP_COMPANION_GATE
         BMI .draw_entity_list
         LDX #$01                        ; Slots 1 then 0
 .companion_loop:
@@ -12045,7 +12045,7 @@ SPECIAL_TICK:
 
 ; --- Drift: fall with ladder-row pauses ---
 .drift:
-        LDA ZP_SPECIAL_ROW              ; $AE
+        LDA ZP_SPECIAL_ROW
         CMP #$34
         BEQ .at_ladder
         CMP #$5C
@@ -12355,10 +12355,10 @@ SPECIAL_DRAW:
         SBC #$00                        ; (borrow from lo)
         STA ZP_SCREEN_X_HI              ; ZP_SCREEN_X_HI = player world-X (hi)
         SEC
-        LDA ZP_SPECIAL_POS              ; $AC
+        LDA ZP_SPECIAL_POS
         SBC ZP_SCREEN_X                 ; - player world-X (lo)
         STA ZP_SCREEN_X
-        LDA ZP_SPECIAL_POS+1            ; $AD
+        LDA ZP_SPECIAL_POS+1
         SBC ZP_SCREEN_X_HI              ; - player world-X (hi)
         BEQ .on_screen                  ; hi == 0 = on screen
 .off_screen:
@@ -12370,7 +12370,7 @@ SPECIAL_DRAW:
         TAX                             ; X = screen X for PROJ tables
 
 ; --- Common sprite-parameter setup ---
-        LDA ZP_SPECIAL_ROW              ; $AE
+        LDA ZP_SPECIAL_ROW
         STA ZP_SPRITE_Y                 ; Sprite row
         LDA PROJ_SCREEN_COL,X
         STA ZP_SPRITE_X                 ; Sprite column
@@ -12413,7 +12413,7 @@ SPECIAL_DRAW:
 ; Kill: clear enemy slot, dec HP, maybe trigger defeat
         LDA #$00
         STA ZP_ENEMY_FLAG,X             ; ZP_ENEMY_FLAG[X] = 0 (kill floor enemy)
-        DEC ZP_SPECIAL_HP               ; $08
+        DEC ZP_SPECIAL_HP
         BNE .dispatch_body              ; HP != 0: skip defeat + catch
 ; Defeat edge: enter drift, arm defeat jingle, bump row
         LDA #$FF
@@ -12436,7 +12436,7 @@ SPECIAL_DRAW:
         BCC .dispatch_body              ; X < $40
         CMP #$56
         BCS .dispatch_body              ; X >= $56
-        LDA ZP_PLAYER_COL               ; $06
+        LDA ZP_PLAYER_COL
         SEC
         SBC #$13                        ; player_col - $13
         CMP ZP_SPECIAL_ROW
@@ -12469,7 +12469,7 @@ SMC_SPECIAL_BODY_HI = *-1               ;   the 6-step palindromic cycle.
         BCC .drift_done                  ; X < $40
         CMP #$53
         BCS .drift_done                  ; X >= $53
-        LDA ZP_PLAYER_COL               ; $06
+        LDA ZP_PLAYER_COL
         SEC
         SBC #$0E                        ; player_col - $0E
         CMP ZP_SPECIAL_ROW
@@ -12630,7 +12630,7 @@ SPECIAL_INACTIVE_DRAW:
         STA ZP_SPRITE_W                 ; W = 2
         LDA #$06
         STA ZP_SPRITE_H                 ; H = 6
-        LDA ZP_SPECIAL_ROW              ; $AE
+        LDA ZP_SPECIAL_ROW
         STA ZP_SPRITE_Y                 ; Sprite row = row anchor
         LDX ZP_SPECIAL_POS+1            ; $AD (stays 0 during inactive)
         LDA PROJ_SCREEN_COL,X
@@ -12857,7 +12857,7 @@ COMPANION_UPDATE:
         ; Clobbers: A, X, Y
 
 ; --- Subsystem gate ---
-        LDA ZP_COMPANION_GATE           ; $33
+        LDA ZP_COMPANION_GATE
         BPL .slot_loop_init
         RTS
 
@@ -12914,7 +12914,7 @@ COMPANION_UPDATE:
         LDA #$01
         STA ZP_COMPANION_DIR,X          ; flip to +dir
         STX ZP_DRAW_LOOP_IDX            ; $5C: save slot X
-        LDX ZP_PLAYER_FLOOR             ; $0A
+        LDX ZP_PLAYER_FLOOR
         LDA FLOOR_THRESH,X              ; FLOOR_THRESH[X]
         CLC
         ADC #$0B
@@ -12960,14 +12960,14 @@ COMPANION_UPDATE:
 ; --- Draw preamble: perspective transform + clip + entity-proximity check ---
 .draw_preamble:
         STX ZP_DRAW_LOOP_IDX            ; $5C: save slot X
-        LDY ZP_PLAYER_Y                 ; $4A
+        LDY ZP_PLAYER_Y
         LDA PERSPECTIVE_XOFF_LO,Y       ; PERSPECTIVE_XOFF_LO[Y]
         SEC
-        SBC ZP_SPRITE_XREF              ; $4C
-        STA ZP_SCREEN_X                 ; $AF
+        SBC ZP_SPRITE_XREF
+        STA ZP_SCREEN_X
         LDA PERSPECTIVE_XOFF_HI,Y       ; PERSPECTIVE_XOFF_HI[Y]
         SBC #$00
-        STA ZP_SCREEN_X_HI              ; $B0
+        STA ZP_SCREEN_X_HI
         SEC
         LDA ZP_COMPANION_POS_LO,X
         SBC ZP_SCREEN_X
@@ -13173,7 +13173,7 @@ COMPANION_NEG_POSE3:
         BCC .catch_done                 ; < $40: no catch
         CMP #$50
         BCS .catch_done                 ; >= $50: no catch
-        LDA ZP_PLAYER_COL               ; $06
+        LDA ZP_PLAYER_COL
         SEC
         SBC #$08
         CMP ZP_COMPANION_ROW,X
@@ -13504,7 +13504,7 @@ RESCUE_UPDATE:
         CMP #$FE
         BEQ .exit_anim                  ;   == $FE -> exit animation
 ; (fall through: any other negative state = drift countdown)
-        LDA ZP_FRAME_COUNTER            ; $FD
+        LDA ZP_FRAME_COUNTER
         AND #$01
         BNE .slot_next                  ;   skip odd frames (tick every 2 frames)
         LDA RESCUE_COUNTDOWN,Y
@@ -13532,7 +13532,7 @@ RESCUE_UPDATE:
 ; --- $00 state: spawn check (PRNG-gated + player-floor override) ---
 .spawn_check:
         LDA RESCUE_FLOOR,Y
-        CMP ZP_PLAYER_FLOOR_CUR         ; $0C
+        CMP ZP_PLAYER_FLOOR_CUR
         BEQ .spawn_trigger              ; floor match: forced spawn (one-shot)
         STY ZP_DRAW_LOOP_IDX            ; save Y (PRNG clobbers A; Y needs to survive)
         JSR PRNG                        ; 8-bit PRNG, returns in A
@@ -13541,7 +13541,7 @@ RESCUE_UPDATE:
         LDY ZP_DRAW_LOOP_IDX
         JMP .slot_next
 .spawn_prng_ok:
-        LDA ZP_RESCUE_SPAWN_CTR         ; $4D
+        LDA ZP_RESCUE_SPAWN_CTR
         AND #$03
         CMP #$03
         BEQ .spawn_phase_ok             ; every 4th slot in this pass
@@ -13599,20 +13599,20 @@ RESCUE_UPDATE:
         DC.W .slot_next                 ; BIT/JMP operand (reads or jumps to .slot_next)
         LDA #$4C                        ; JMP opcode
         STA .spawn_trigger_opcode       ; patch BIT -> JMP for rest of pass
-        LDA ZP_ANIM_COUNTER             ; $1F
+        LDA ZP_ANIM_COUNTER
         CMP #$10
         BCC .spawn_go
         JMP .slot_next                  ;   anim too high: suppress spawn
 .spawn_go:
         STY ZP_DRAW_LOOP_IDX
-        LDA ZP_RESCUE_SPAWN_CTR         ; $4D
+        LDA ZP_RESCUE_SPAWN_CTR
         AND #$01
         BEQ .spawn_pos_dir              ;   even counter: +dir spawn
         JMP .spawn_neg_dir              ;   odd  counter: -dir spawn
 
 ; --- Active-walk dispatch ---
 .active_walk:
-        LDA ZP_PLAYER_FLOOR_CUR         ; $0C
+        LDA ZP_PLAYER_FLOOR_CUR
         CMP RESCUE_FLOOR,Y
         BNE .walk_normal                ;   player elsewhere: normal walk
         JMP .meet_player                ;   player on same floor: chase AI
@@ -13637,7 +13637,7 @@ RESCUE_UPDATE:
         JMP .slot_next
 .drift_gate_pos:
         TYA
-        EOR ZP_PRNG_A                   ; $5F
+        EOR ZP_PRNG_A
         CMP #$05
         BNE .step_pos_preload           ;   not 5: no drift trigger
 ; Drift trigger (no-hit path): state := drift, anim = 8, flip dir.
@@ -13752,7 +13752,7 @@ RESCUE_UPDATE:
         BCC .flip_to_pos                ;   < $13: far left, turn right
         SEC
         SBC #$13
-        CMP ZP_PLAYER_Y                 ; $4A
+        CMP ZP_PLAYER_Y
         BCC .meet_before_player         ;   < player: entity to left of player
 ; >= player: entity at or past player.
         LDA RESCUE_DIR,Y

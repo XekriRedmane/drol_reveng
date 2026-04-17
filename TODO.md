@@ -21,7 +21,7 @@ Review existing chunks for violations:
 - [ ] `$683C` — Page flip routine
 - [ ] `$10AB` — Display update
 - [ ] `$130A` — Page flip preparation
-- [ ] `$656F` — Most-referenced subroutine (~40 xrefs) — likely sprite draw utility
+- [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page. Sibling variants at `$65D5` (narrow column range, OR blit) and `$662C` (`BLIT_TILE`, opaque STA blit) still to do.
 
 ### Game flow routines
 

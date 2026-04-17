@@ -2843,7 +2843,7 @@ HAZARD_CHECK:
         LDA PROJ_SPR_L_HI,Y       ; Left sprite data high
         STA SPRITE_PTR_HI
         STX ZP_SAVE_X
-        JSR SPRITE_DRAW_CALL      ; Draw projectile
+        JSR DRAW_SPRITE      ; Draw projectile
         LDX ZP_SAVE_X
         JMP .collision_check
 
@@ -2888,7 +2888,7 @@ HAZARD_CHECK:
         LDA PROJ_SPR_R_HI,Y       ; Right sprite data high
         STA SPRITE_PTR_HI
         STX ZP_SAVE_X
-        JSR SPRITE_DRAW_CALL      ; Draw projectile
+        JSR DRAW_SPRITE      ; Draw projectile
         LDX ZP_SAVE_X
 
 ; --- Player collision check ---
@@ -3963,19 +3963,14 @@ re-enabled, and execution falls through into [[ATTRACT\_LOOP]].
 
 ; --- Subroutine stubs (level complete) ---
 ; (LEVEL_TRANSITION has its own ORG chunk)
-SPRITE_DRAW_CALL = $656F        ; Sprite draw subroutine (in game engine hex data)
-SPRITE_PTR_LO   = $65B3         ; Sprite data pointer, low byte
-SPRITE_PTR_HI   = $65B4         ; Sprite data pointer, high byte
+; (DRAW_SPRITE / SPRITE_PTR_LO / SPRITE_PTR_HI have their own ORG chunk)
+; (ZP_SPRITE_W / _H / _Y / _X live in draw sprite defines)
 SMC_ATTRACT_RTS = $6827         ; Self-mod: attract loop control
 SMC_COLLISION_A = $64FA         ; Self-mod: collision parameter A
 SMC_COLLISION_B = $64F6         ; Self-mod: collision parameter B
 
 ; --- Zero-page (level complete) ---
 ZP_EXTRA_LIVES  = $8C           ; Extra lives counter for animation
-ZP_SPRITE_W     = $56           ; Sprite width
-ZP_SPRITE_H     = $57           ; Sprite height
-ZP_SPRITE_Y     = $5B           ; Sprite Y position
-ZP_SPRITE_X     = $5D           ; Sprite X column
 ZP_SOUND_A      = $36           ; Sound flag A
 ZP_SOUND_B      = $38           ; Sound flag B
 @
@@ -4028,7 +4023,7 @@ LEVEL_COMPLETE:
         STA SPRITE_PTR_LO        ; Sprite data pointer low
         LDA #$B6
         STA SPRITE_PTR_HI        ; Sprite data pointer high
-        JSR SPRITE_DRAW_CALL     ; Draw extra-life sprite
+        JSR DRAW_SPRITE     ; Draw extra-life sprite
 
 ; --- Poll input during animation ---
         LDA KEYBOARD             ; Check keyboard
@@ -4186,7 +4181,7 @@ ATTRACT_ANIM_2:
         LDA ATTRACT_SPR2_HI,X    ; Sprite data pointer high
         STA SPRITE_PTR_HI
         STX ZP_SAVE_X             ; Save loop index
-        JSR SPRITE_DRAW_CALL      ; Draw entity
+        JSR DRAW_SPRITE      ; Draw entity
         LDX ZP_SAVE_X             ; Restore loop index
         DEX
         BPL .draw_entity
@@ -4326,7 +4321,7 @@ ATTRACT_ANIM_4:
         STA SPRITE_PTR_LO
         LDA ATTRACT_SPR_HI,X    ; Sprite data pointer high
         STA SPRITE_PTR_HI
-        JSR SPRITE_DRAW_CALL     ; Draw this entity
+        JSR DRAW_SPRITE     ; Draw this entity
         LDX ZP_SAVE_X            ; Restore loop index
         DEX
         BPL .draw_entity         ; Next entity (1 → 0)
@@ -4344,7 +4339,7 @@ ATTRACT_ANIM_4:
         STA SPRITE_PTR_HI        ; Sprite data high = $BC
         LDA #$F1
         STA SPRITE_PTR_LO        ; Sprite data low = $F1
-        JSR SPRITE_DRAW_CALL     ; Draw logo sprite
+        JSR DRAW_SPRITE     ; Draw logo sprite
         RTS
 @ %def ATTRACT_ANIM_4
 
@@ -5091,8 +5086,8 @@ BG_RESTORE:
 
         ORG $614B
         SUBROUTINE
-        ; Game engine (\$614B-\$6673): movement, collision, sprite drawing
-        ; Raw data --- 1321 bytes
+        ; Game engine (\$614B-\$656E): movement, collision, sprite setup
+        ; Raw data --- 1060 bytes
 
         HEX A5 4A C9 01 90 33 A5 4C C9 03 F0 12 C9 02 F0 0E
         HEX C9 05 D0 04 A9 FE 30 06 C9 06 D0 04 A9 FF C6 4A
@@ -5160,24 +5155,205 @@ BG_RESTORE:
         HEX 06 85 57 A4 FD B9 00 65 8D B3 65 B9 00 66 29 7F
         HEX 8D B4 65 20 6F 65 A9 24 8D B7 65 A6 03 BD 31 75
         HEX 8D B3 65 BD 31 76 8D B4 65 A9 03 85 56 A9 14 85
-        HEX 57 4C F9 64 24 00 30 0D A9 C0 8D 93 65 A9 72 8D
-        HEX 94 65 4C 8A 65 A9 40 8D 93 65 A9 74 8D 94 65 A0
-        HEX 00 A5 56 85 5A A6 5B BD 00 90 8D BB 65 8D BE 65
-        HEX BD 80 73 8D BA 65 8D BD 65 A6 5D E0 28 B0 15 E0
-        HEX 00 B0 04 C8 4C CC 65 B9 00 90 F0 08 24 00 1D 00
-        HEX 90 9D 00 90 C8 CA C6 5A 10 E1 E6 5B C6 57 D0 C1
-        HEX 60 CA C6 5A 30 F4 C8 4C CC 65 24 00 30 0D A9 C0
-        HEX 8D F9 65 A9 72 8D FA 65 4C F0 65 A9 40 8D F9 65
-        HEX A9 74 8D FA 65 A0 00 A5 56 85 5A A6 5B BD 00 90
-        HEX 8D 1B 66 8D 1E 66 BD 80 73 8D 1A 66 8D 1D 66 A6
-        HEX 5D E0 0B F0 0F E0 1C B0 0B B9 00 90 F0 06 1D 00
-        HEX 90 9D 00 90 C8 CA C6 5A 10 E7 E6 5B C6 57 D0 C7
-        HEX 60 24 00 30 0D A9 C0 8D 50 66 A9 72 8D 51 66 4C
-        HEX 47 66 A9 40 8D 50 66 A9 74 8D 51 66 A0 00 A5 56
-        HEX 85 5A A6 5B BD 00 90 8D 66 66 BD 80 73 8D 65 66
-        HEX A6 5D E0 28 B0 06 B9 00 90 9D 00 90 C8 CA C6 5A
-        HEX 10 F0 E6 5B C6 57 D0 D6 60
+        HEX 57 4C F9 64
 @
+
+\section{Sprite draw (transparent blit)}
+
+[[DRAW\_SPRITE]] at \$656F is the game's main sprite draw routine --- it
+is called from about 40 places (projectiles, entities, UI sprites, the
+attract logo, extra-life animation). It OR-blits a rectangular sprite
+onto the currently-hidden hi-res page, using
+[[ZP\_PAGE\_FLAG]] (bit~7) to choose between page~1 (addresses
+\$2000-\$3FFF, row-high table at [[SCREEN\_ROW\_ADDR\_HI]] = \$72C0) and
+page~2 (addresses \$4000-\$5FFF, row-high table at
+[[SCREEN\_ROW\_ADDR\_HI2]] = \$7440). Row-low bytes always come from
+[[SCREEN\_ROW\_ADDR\_LO]] at \$7380.
+
+Inputs are the usual sprite-parameter quartet:
+\begin{itemize}
+\item [[ZP\_SPRITE\_W]] (\$56) --- width in bytes.
+\item [[ZP\_SPRITE\_H]] (\$57) --- height in rows.
+\item [[ZP\_SPRITE\_Y]] (\$5B) --- starting screen row.
+\item [[ZP\_SPRITE\_X]] (\$5D) --- starting column (right edge).
+\item [[SPRITE\_PTR\_LO]]/[[SPRITE\_PTR\_HI]] (\$65B3/\$65B4,
+  self-modifying operand bytes of the sprite-data fetch) --- source
+  pointer into sprite data.
+\end{itemize}
+
+The routine is heavily self-modifying. On entry it patches three
+absolute-address operands with the current screen row address:
+\begin{itemize}
+\item The [[LDA xxxx,X]] at \$6592 selects the row-high-byte table
+  (\$72C0 or~\$7440), based on [[ZP\_PAGE\_FLAG]].
+\item The [[ORA xxxx,X]] at \$65B9 and [[STA xxxx,X]] at \$65BC both
+  get patched with the current row's base screen address on every
+  outer-loop iteration.
+\end{itemize}
+
+The outer loop (one iteration per row) walks the sprite data byte-by-byte
+using Y. The inner loop walks X from the right edge of the sprite
+toward the left, decrementing the byte counter in ZP~\$5A. For each
+byte: if the destination column is out of range ([[X >= \$28]]), the
+sprite byte is skipped but Y is still advanced. Otherwise the sprite
+byte is fetched; if it is zero the source byte is skipped (transparency);
+otherwise the byte is OR'd into the screen memory at the row/column
+position.
+
+There is a short dead-code tail at \$65CC-\$65D4 that is only reachable
+from an unreachable [[CPX \#\$00 / BCS]] fall-through at \$65AE-\$65B1
+(the [[BCS]] is always taken because X is unsigned). The bytes are kept
+verbatim so that the binary stays byte-perfect.
+
+<<draw sprite defines>>=
+
+; --- Zero-page (sprite draw parameters) ---
+ZP_SPRITE_W     = $56           ; Sprite width (bytes per row)
+ZP_SPRITE_H     = $57           ; Sprite height (rows)
+ZP_SPRITE_ROW_REMAIN = $5A      ; Inner-loop byte-countdown scratch
+ZP_SPRITE_Y     = $5B           ; Sprite starting screen row
+ZP_SPRITE_X     = $5D           ; Sprite starting column (right edge)
+
+; --- Self-mod operand placeholder ---
+; Disk-image value for the four self-modifying absolute operands in
+; DRAW_SPRITE.  $9000 is outside the game's memory map and serves only
+; as a harmless initial pattern; all four are overwritten before the
+; instructions are executed.
+SPRITE_SMC_INIT = $9000
+@
+
+<<draw sprite>>=
+
+        ORG $656F
+DRAW_SPRITE:
+        SUBROUTINE
+        ; Sprite draw --- transparent (OR) blit to the hidden hi-res page.
+        ;
+        ; Inputs:
+        ;   ZP_SPRITE_W ($56)      --- width in bytes per row
+        ;   ZP_SPRITE_H ($57)      --- height in rows
+        ;   ZP_SPRITE_Y ($5B)      --- starting screen row (0..191)
+        ;   ZP_SPRITE_X ($5D)      --- starting column (right edge)
+        ;   SPRITE_PTR_LO/HI       --- source pointer (self-mod operand of
+        ;                              the LDA abs,Y at $65B2)
+        ;   ZP_PAGE_FLAG ($00) b7  --- selects page 1 (clear) or page 2
+        ;                              (set) as the draw target.
+        ;
+        ; Behavior:
+        ;   Patches its own row-address-table operand based on
+        ;   ZP_PAGE_FLAG.  Outer loop (ZP_SPRITE_H iterations) walks
+        ;   rows; for each row it refreshes the ORA/STA operands with
+        ;   the row's base screen address.  Inner loop walks
+        ;   ZP_SPRITE_W bytes from the right edge leftward: columns
+        ;   off the right edge and zero source bytes are transparent,
+        ;   otherwise the byte is OR'd into screen RAM.
+        ;
+        ; Modifies:
+        ;   Self (operands at $6593/$6594, $65BA/$65BB, $65BD/$65BE),
+        ;   ZP_SPRITE_ROW_REMAIN ($5A), ZP_SPRITE_Y (post-increment).
+        ; Clobbers: A, X, Y
+
+; --- Select row-high table based on ZP_PAGE_FLAG ---
+        BIT ZP_PAGE_FLAG
+        BMI .page2
+        LDA #<SCREEN_ROW_ADDR_HI  ; $C0 --- low of $72C0 (page 1)
+        STA SMC_ROW_HI_LO
+        LDA #>SCREEN_ROW_ADDR_HI  ; $72
+        STA SMC_ROW_HI_HI
+        JMP .outer_entry
+.page2:
+        LDA #<SCREEN_ROW_ADDR_HI2 ; $40 --- low of $7440 (page 2)
+        STA SMC_ROW_HI_LO
+        LDA #>SCREEN_ROW_ADDR_HI2 ; $74
+        STA SMC_ROW_HI_HI
+
+; --- Entry into the draw loop: initialise sprite-data index ---
+.outer_entry:
+        LDY #$00
+
+; --- Outer loop: one iteration per sprite row ---
+.next_row:
+        LDA ZP_SPRITE_W
+        STA ZP_SPRITE_ROW_REMAIN  ; Inner-loop byte counter
+        LDX ZP_SPRITE_Y           ; Current screen row (0..191)
+SMC_ROW_HI_LO = *+1               ; Low of LDA abs,X operand --- patched
+SMC_ROW_HI_HI = *+2               ; High of LDA abs,X operand --- patched
+        LDA SPRITE_SMC_INIT,X     ; Runtime: LDA $72C0,X or LDA $7440,X
+        STA SMC_ORA_HI            ; Patch ORA operand (high byte)
+        STA SMC_STA_HI            ; Patch STA operand (high byte)
+        LDA SCREEN_ROW_ADDR_LO,X  ; Row-low (fixed $7380 table)
+        STA SMC_ORA_LO            ; Patch ORA operand (low byte)
+        STA SMC_STA_LO            ; Patch STA operand (low byte)
+
+; --- Inner loop: one iteration per sprite byte on this row ---
+        LDX ZP_SPRITE_X           ; Destination column
+.col_loop:
+        CPX #$28                  ; Column >= 40 (off right edge)?
+        BCS .col_skip             ;   yes --- transparent
+        CPX #$00                  ; (Dead: X unsigned, BCS always taken)
+        BCS .fetch_src
+        INY                       ; (unreachable) advance and skip
+        JMP .dead_tail            ; (unreachable) jump to dead tail
+.fetch_src:
+SPRITE_PTR_LO = *+1               ; Low of LDA abs,Y operand --- caller sets
+SPRITE_PTR_HI = *+2               ; High of LDA abs,Y operand --- caller sets
+        LDA SPRITE_SMC_INIT,Y     ; Runtime: LDA (sprite_ptr),Y
+        BEQ .col_skip             ; Zero pixel --- transparent
+        BIT ZP_PAGE_FLAG          ; (Harmless 2-byte pad; flags unused)
+SMC_ORA_LO = *+1                  ; Low of ORA abs,X operand --- patched
+SMC_ORA_HI = *+2                  ; High of ORA abs,X operand --- patched
+        ORA SPRITE_SMC_INIT,X     ; OR with screen byte (SMC operand)
+SMC_STA_LO = *+1                  ; Low of STA abs,X operand --- patched
+SMC_STA_HI = *+2                  ; High of STA abs,X operand --- patched
+        STA SPRITE_SMC_INIT,X     ; Store back (SMC operand)
+.col_skip:
+        INY                       ; Next sprite byte
+        DEX                       ; Move left one column
+        DEC ZP_SPRITE_ROW_REMAIN
+        BPL .col_loop             ; More bytes on this row?
+
+; --- Advance to next row ---
+.advance_row:                     ; $65C5 --- BMI target from dead tail
+        INC ZP_SPRITE_Y           ; Next screen row
+        DEC ZP_SPRITE_H           ; Rows remaining?
+        BNE .next_row
+        RTS
+
+; --- Dead-code tail ($65CC-$65D4, 9 bytes) ---
+; Reached only from the unreachable "INY / JMP" at $65AE-$65B1
+; (since [[CPX \#\$00 / BCS]] is always taken).  Retained verbatim
+; for byte-faithful assembly.
+.dead_tail:
+        DEX
+        DEC ZP_SPRITE_ROW_REMAIN
+        BMI .advance_row          ; $65CF --- target $65C5
+        INY
+        JMP .dead_tail
+@ %def DRAW_SPRITE SPRITE_PTR_LO SPRITE_PTR_HI
+
+<<game engine A tail>>=
+
+        ORG $65D5
+        SUBROUTINE
+        ; Game engine tail (\$65D5-\$6673) --- not yet disassembled.
+        ; Two further sprite-draw variants:
+        ;   \$65D5: OR-blit restricted to a narrow column range
+        ;     ($0B..$1B) --- likely the score/status strip.
+        ;   \$662C: opaque (STA) tile blit --- already aliased as
+        ;     [[BLIT\_TILE]] and used by [[DISPLAY\_UPDATE]] and
+        ;     [[POST\_FRAME]] for digit/tile rendering.
+        ; Raw data --- 159 bytes.
+
+        HEX 24 00 30 0D A9 C0 8D F9 65 A9 72 8D FA 65 4C F0
+        HEX 65 A9 40 8D F9 65 A9 74 8D FA 65 A0 00 A5 56 85
+        HEX 5A A6 5B BD 00 90 8D 1B 66 8D 1E 66 BD 80 73 8D
+        HEX 1A 66 8D 1D 66 A6 5D E0 0B F0 0F E0 1C B0 0B B9
+        HEX 00 90 F0 06 1D 00 90 9D 00 90 C8 CA C6 5A 10 E7
+        HEX E6 5B C6 57 D0 C7 60 24 00 30 0D A9 C0 8D 50 66
+        HEX A9 72 8D 51 66 4C 47 66 A9 40 8D 50 66 A9 74 8D
+        HEX 51 66 A0 00 A5 56 85 5A A6 5B BD 00 90 8D 66 66
+        HEX BD 80 73 8D 65 66 A6 5D E0 28 B0 06 B9 00 90 9D
+        HEX 00 90 C8 CA C6 5A 10 F0 E6 5B C6 57 D0 D6 60
 
 <<entity process code>>=
 
@@ -5806,6 +5982,7 @@ PAGE_FLIP:
 <<level transition defines>>
 <<score add defines>>
 <<prng defines>>
+<<draw sprite defines>>
 <<hazard check defines>>
 ; --- ORG $0100: Screen row copy ---
 <<screen row copy>>
@@ -5881,6 +6058,10 @@ PAGE_FLIP:
 <<display page flip>>
 ; --- ORG $614B: Game engine A ---
 <<game engine A>>
+; --- ORG $656F: Draw sprite ---
+<<draw sprite>>
+; --- ORG $65D5: Game engine A tail ---
+<<game engine A tail>>
 ; --- ORG $6674: PRNG ---
 <<prng>>
 ; --- ORG $6683: Entity processing ---

@@ -1,5 +1,74 @@
 # TODO
 
+## Milestone: `INTERLACE_BLIT_P1/P2` carved (2026-04-17)
+
+The last large twin pair in `<<game code 03A8>>` ---
+previously called `STRIPE_COPY_PAGE1/PAGE2` in the earlier carve
+plans --- is now fully RE'd and renamed:
+
+- **`INTERLACE_BLIT_P1`** at `$054E` (445 bytes): 3-band perspective
+  sprite blitter.  Walks X from `ZP_BLIT_X_START` ($59, inclusive)
+  down to `ZP_BLIT_X_END` ($58, exclusive), pulling 35 source bytes
+  per painted column from `(ZP_BLIT_SRC),Y` ($FE/$FF); each source
+  byte lands in all three perspective bands at the same relative row
+  (rows 72-106 band 0, 112-146 band 1, 152-186 band 2 on hi-res page
+  1).  Y is never reset between columns, so the source layout is a
+  flat column-major stream of 35 bytes per column, rightmost column
+  first.  An `CPX #$28` pre-paint guard skips columns >=40 while
+  still advancing Y by 35 (offscreen-source alignment safety).
+- **`INTERLACE_BLIT_P2`** at `$070B` (445 bytes): page-2 twin;
+  byte-for-byte identical except each STA operand high nibble is
+  $20 higher (writes to $40xx-$5Fxx instead of $20xx-$3Fxx).
+
+The two helpers are the streaming analogue of `INTERLACE_FILL_P1/P2`:
+same 105-row, 3-band row pattern, but source bytes come from `($FE),Y`
+instead of A.  Three caller sites (all still inside hex blobs near
+`$625F`, `$62C6`, `$6317`) read a 16-bit sprite pointer from tables at
+`$7500/$7600` (persistent + swappable sprite data) and use the
+`BIT $00 / BMI` page-flag gate to pick P1 vs P2 --- the same gating
+already documented for `INTERLACE_RESTORE_P1/P2`.
+
+**Byte count retired from `<<game code 03A8>>`:** 890 bytes (blob
+now covers $08C8-$09FD, 310 bytes; was $054E-$09FD, 1200 bytes).
+The remaining tail contains only `ROW_PAINT_P1_38/P2_38` at
+$08C8/$08DF and `TEXT_ROW_FROM_A30D_P1/P2` at $08F6/$097A.  New ZP
+EQUs: `ZP_BLIT_X_END = $58`, `ZP_BLIT_X_START = $59`,
+`ZP_BLIT_SRC = $FE` (pointer lo; +1 is hi byte).
+
+PNG rendered: `images/interlace_blit_demo_sprite7700.png` shows the
+triple-ghost 3-band effect when blitting the 4-column, 140-byte
+sprite at $7700 to columns 15..19 of hi-res page 1 (Figure
+`fig:interlace-blit-demo` in main.nw).  The companion
+`images/interlace_blit_demo_singleband.png` shows the same sprite
+painted to band 0 only so the artwork (a decorative pillar) is
+legible without the 3x perspective repeat.
+
+Prior-doc corrections:
+
+- Three prose references to the old working name
+  `STRIPE_COPY_PAGE1` have been upgraded to `INTERLACE_BLIT_P1`: in
+  the sector-residue analysis at $4713 and in `INTERLACE_RESTORE_P1`'s
+  caller list.
+- The `% TODO-SYM: $054E $05FF` marker on the sector-residue section
+  has been dropped (both addresses are now symbolic-reachable).
+
+Next-session priorities:
+
+1. The three `INTERLACE_BLIT` caller sites at $625F / $62C6 / $6317
+   are inside `<<game engine A>>` / `<<game engine A tail>>` hex
+   blobs.  Each is the 2-step "playfield refresh" paired with
+   `INTERLACE_RESTORE_P{1,2}` (text strip) + `INTERLACE_BLIT_P{1,2}`
+   (playfield sprite).  Carving them would finally retire the last
+   raw-hex `JSR $054E` / `JSR $070B` / `JSR $09FE` / `JSR $0B4B`
+   references in main.nw and make the page-flag-gated twin dispatch
+   explicit.  This also unlocks the sprite-pointer tables at
+   $7500/$7600 (indexed by ZP slot numbers) and connects the
+   playfield refresh to the entity-draw dispatch.
+2. The four remaining helpers in `<<game code 03A8>>`'s tail
+   (`ROW_PAINT_P1_38/P2_38` at $08C8/$08DF, 23 bytes each;
+   `TEXT_ROW_FROM_A30D_P1/P2` at $08F6/$097A, 132 bytes each) ---
+   the last 310 bytes of hex in the chunk.
+
 ## Milestone: `INTERLACE_RESTORE_P1/P2` carved; `INTERLACE_FILL_P1/P2` verified complete (2026-04-17)
 
 Confirmed the primary target `INTERLACE_FILL_P1` ($0A0F) and

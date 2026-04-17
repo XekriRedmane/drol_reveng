@@ -11,14 +11,18 @@ library of hi-res framebuffer routines, NOT game logic.  It contains:
 - `CLEAR_PAGE1` ($0400-$04A6) / `CLEAR_PAGE2` ($04A7-$054D): paired
   screen-clear routines for hi-res pages 1 ($2000-$3FFF) and 2
   ($4000-$5FFF).  Called from player-tick code ($61E8/$61EC).
-- `STRIPE_COPY_PAGE1` ($054E-$070A) / `STRIPE_COPY_PAGE2` ($070B-$08C7):
-  copy from `($FE),Y` into hi-res row-decimated stripes.  Column range
-  `$58..$59`.  Called from $62XX.
+- `INTERLACE_BLIT_P1` ($054E-$070A) / `INTERLACE_BLIT_P2` ($070B-$08C7):
+  3-band perspective sprite blitter.  Streaming analogue of
+  INTERLACE_FILL: each `(ZP_BLIT_SRC),Y` byte paints the same relative
+  row in all three bands.  Source is column-major (35 bytes per column,
+  rightmost first), Y never resets between columns.  Column range
+  `ZP_BLIT_X_END+1 .. ZP_BLIT_X_START` ($58/$59).  Called from
+  $625F/$62C6/$6317 (page selected by `BIT $00; BMI`).
 - Small row painters at $08C8, $08DF, $08F6, $097A.
 - `INTERLACE_RESTORE_P1` ($09FE, 16 bytes) / `INTERLACE_RESTORE_P2`
   ($0B4B, 16 bytes): per-column walker from `ZP_SCORE_0` ($2B) down
   to `ZP_SCORE_1` ($2C), loading `$0300,X` and calling the paired
-  INTERLACE_FILL on each column.  Called paired with STRIPE_COPY
+  INTERLACE_FILL on each column.  Called paired with INTERLACE_BLIT
   from $625C/$62BC (page selected by `BIT $00; BMI`).
 - `INTERLACE_FILL_P1` ($0A0F-$0B4A, 316 bytes) / `INTERLACE_FILL_P2`
   ($0B5C-$0C97, 316 bytes): unrolled 105 `STA abs,X` broadcast of

@@ -6686,11 +6686,11 @@ RESCUE_DRAW:
 ; Drift-mode (any other -ve): play descending click + enable flicker patch.
         LDA #$29                           ; AND #imm opcode
         STA SMC_SPRITE_MASK_OP             ; $65B7 (flicker the next draw)
-        LDX RESCUE_COUNTDOWN,Y             ; $03E4,Y in 1..4
+        LDX RESCUE_COUNTDOWN,Y             ; RESCUE_COUNTDOWN[Y] in 1..4
         LDA $D7,X                          ; quasi-random AND-mask byte
         STA SMC_SPRITE_MASK_ARG
         STY ZP_DRAW_LOOP_IDX               ; $5C
-        LDA RESCUE_DRIFT_PITCH,X           ; $0213,X = pitch for this frame
+        LDA RESCUE_DRIFT_PITCH,X           ; RESCUE_DRIFT_PITCH[X] = pitch for this frame
         LDX #$12                           ; X = duration
         JSR SND_DELAY_DOWN                 ; descending click
         LDY ZP_DRAW_LOOP_IDX
@@ -6698,10 +6698,10 @@ RESCUE_DRAW:
 ; --- Common: compute screen-X residue and stage sprite XYHW ---
 .compute_screen_x:
         SEC
-        LDA ENTITY_FLOOR_COL,Y             ; $0358,Y
+        LDA ENTITY_FLOOR_COL,Y             ; ENTITY_FLOOR_COL[Y]
         SBC ZP_PERSP_OFFSET_LO             ; $0F
         STA $AF                            ; screen-X residue
-        LDA ENTITY_XOFF_IDX,Y              ; $036C,Y
+        LDA ENTITY_XOFF_IDX,Y              ; ENTITY_XOFF_IDX[Y]
         SBC ZP_PERSP_OFFSET_HI             ; $10
         BNE .skip_off_screen               ; high-byte != 0: off camera
         LDA $AF
@@ -6710,17 +6710,17 @@ RESCUE_DRAW:
         TAX                                ; X = screen-X residue
         LDA ENTITY_FLOOR_POS,Y             ; row
         STA ZP_SPRITE_Y                    ; $5B
-        LDA PROJ_SCREEN_COL,X              ; $1C34,X = column
+        LDA PROJ_SCREEN_COL,X              ; PROJ_SCREEN_COL[X] = column
         STA ZP_SPRITE_X                    ; $5D
-        LDA PROJ_FRAME_IDX,X               ; $1B8F,X = frame index
+        LDA PROJ_FRAME_IDX,X               ; PROJ_FRAME_IDX[X] = frame index
         TAX                                ; X = sprite frame index
         LDA #$03
         STA ZP_SPRITE_W                    ; $56 = 3 (width)
 ; --- Direction split: -ve dir (left), +ve dir (right) ---
-        LDA RESCUE_DIR,Y                   ; $0394,Y
+        LDA RESCUE_DIR,Y                   ; RESCUE_DIR[Y]
         BMI .draw_neg_dir
 ; +dir branch.
-        LDA RESCUE_ANIM,Y                  ; $03BC,Y
+        LDA RESCUE_ANIM,Y                  ; RESCUE_ANIM[Y]
         BEQ .draw_pos_end                  ; anim 0 -> end-step
         CMP #$07
         BEQ .draw_pos_end                  ; anim 7 -> end-step
@@ -6730,9 +6730,9 @@ RESCUE_DRAW:
 .draw_pos_mid:
         LDA #$1C
         STA ZP_SPRITE_H                    ; $57 = $1C
-        LDA RESCUE_SPR_POS_MID_LO,X        ; $75F0,X
+        LDA RESCUE_SPR_POS_MID_LO,X        ; RESCUE_SPR_POS_MID_LO[X]
         STA SMC_DS_SRC_LO
-        LDA RESCUE_SPR_POS_MID_HI,X        ; $76F0,X
+        LDA RESCUE_SPR_POS_MID_HI,X        ; RESCUE_SPR_POS_MID_HI[X]
         STA SMC_DS_SRC_HI
         STY ZP_DRAW_LOOP_IDX
         JSR DRAW_SPRITE
@@ -6742,9 +6742,9 @@ RESCUE_DRAW:
 .draw_pos_end:
         LDA #$1A
         STA ZP_SPRITE_H                    ; $57 = $1A
-        LDA RESCUE_SPR_POS_END_LO,X        ; $75E9,X
+        LDA RESCUE_SPR_POS_END_LO,X        ; RESCUE_SPR_POS_END_LO[X]
         STA SMC_DS_SRC_LO
-        LDA RESCUE_SPR_POS_END_HI,X        ; $76E9,X
+        LDA RESCUE_SPR_POS_END_HI,X        ; RESCUE_SPR_POS_END_HI[X]
         STA SMC_DS_SRC_HI
         STY ZP_DRAW_LOOP_IDX
         JSR DRAW_SPRITE
@@ -6765,9 +6765,9 @@ RESCUE_DRAW:
 .draw_neg_mid:
         LDA #$1C
         STA ZP_SPRITE_H
-        LDA RESCUE_SPR_NEG_MID_LO,X        ; $75E2,X
+        LDA RESCUE_SPR_NEG_MID_LO,X        ; RESCUE_SPR_NEG_MID_LO[X]
         STA SMC_DS_SRC_LO
-        LDA RESCUE_SPR_NEG_MID_HI,X        ; $76E2,X
+        LDA RESCUE_SPR_NEG_MID_HI,X        ; RESCUE_SPR_NEG_MID_HI[X]
         STA SMC_DS_SRC_HI
         STY ZP_DRAW_LOOP_IDX
         JSR DRAW_SPRITE
@@ -6777,9 +6777,9 @@ RESCUE_DRAW:
 .draw_neg_end:
         LDA #$1A
         STA ZP_SPRITE_H
-        LDA RESCUE_SPR_NEG_END_LO,X        ; $75DB,X
+        LDA RESCUE_SPR_NEG_END_LO,X        ; RESCUE_SPR_NEG_END_LO[X]
         STA SMC_DS_SRC_LO
-        LDA RESCUE_SPR_NEG_END_HI,X        ; $76DB,X
+        LDA RESCUE_SPR_NEG_END_HI,X        ; RESCUE_SPR_NEG_END_HI[X]
         STA SMC_DS_SRC_HI
         STY ZP_DRAW_LOOP_IDX
         JSR DRAW_SPRITE
@@ -6792,11 +6792,11 @@ RESCUE_DRAW:
 ; --- Pre-compute helper: cache PERSPECTIVE_XOFF[player_Y] - $4C in $0F/$10 ---
 RESCUE_DRAW_PERSPECTIVE_CACHE:
         LDX ZP_PLAYER_Y                    ; $4A
-        LDA PERSPECTIVE_XOFF_LO,X          ; $1A8F,X
+        LDA PERSPECTIVE_XOFF_LO,X          ; PERSPECTIVE_XOFF_LO[X]
         SEC
         SBC ZP_SPRITE_XREF                 ; $4C
         STA ZP_PERSP_OFFSET_LO             ; $0F
-        LDA PERSPECTIVE_XOFF_HI,X          ; $198F,X
+        LDA PERSPECTIVE_XOFF_HI,X          ; PERSPECTIVE_XOFF_HI[X]
         SBC #$00
         STA ZP_PERSP_OFFSET_HI             ; $10
         RTS
@@ -6814,7 +6814,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
 .collide_floor_enemy:
         LDX #$03
 .find_enemy:
-        LDA ZP_ENEMY_FLAG,X                ; $9B,X
+        LDA ZP_ENEMY_FLAG,X                ; ZP_ENEMY_FLAG[X]
         BNE .test_enemy_overlap
 .next_enemy:
         DEX
@@ -6823,7 +6823,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
 
 .test_enemy_overlap:
         LDA $AF                            ; entity screen-X
-        CMP ZP_ENEMY_COL,X                 ; $9F,X
+        CMP ZP_ENEMY_COL,X                 ; ZP_ENEMY_COL[X]
         BCC .next_enemy                    ; entity left of enemy: skip
         SEC
         SBC #$0A
@@ -6832,7 +6832,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         LDA ENTITY_FLOOR_POS,Y             ; entity row
         CLC
         ADC $42                            ; + level Y-extent low
-        CMP ZP_ENEMY_Y,X                   ; $A3,X
+        CMP ZP_ENEMY_Y,X                   ; ZP_ENEMY_Y[X]
         BCS .next_enemy
         CLC
         ADC $43                            ; + level Y-extent high
@@ -6886,7 +6886,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         BNE .check_floor_match
         JMP .slot_next
 .check_floor_match:
-        LDA RESCUE_FLOOR,Y                 ; $03D0,Y
+        LDA RESCUE_FLOOR,Y                 ; RESCUE_FLOOR[Y]
         CMP ZP_PLAYER_FLOOR_CUR            ; $0C
         BEQ .find_empty_proj
         JMP .slot_next
@@ -6894,15 +6894,15 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         LDX ZP_PROJ_MAX                    ; $31 = max projectile slot
         BMI .proj_skip                     ; $31 < 0: subsystem off
 .proj_loop:
-        LDA ZP_PROJ_DIR,X                  ; $C5,X
+        LDA ZP_PROJ_DIR,X                  ; ZP_PROJ_DIR[X]
         BNE .proj_advance                  ; slot busy: try next
 ; Empty slot found: seed it.
-        LDA RESCUE_DIR,Y                   ; $0394,Y = direction
-        STA ZP_PROJ_DIR,X                  ; $C5,X
+        LDA RESCUE_DIR,Y                   ; RESCUE_DIR[Y] = direction
+        STA ZP_PROJ_DIR,X                  ; ZP_PROJ_DIR[X]
         LDA ENTITY_FLOOR_POS,Y
-        STA ZP_PROJ_Y,X                    ; $CD,X = row
+        STA ZP_PROJ_Y,X                    ; ZP_PROJ_Y[X] = row
         LDA $AF
-        STA ZP_PROJ_X,X                    ; $C9,X = screen-X
+        STA ZP_PROJ_X,X                    ; ZP_PROJ_X[X] = screen-X
         LDX #$0A                           ; descending-click args
         LDA #$0D
         STY ZP_DRAW_LOOP_IDX
@@ -7364,7 +7364,7 @@ BEAM_TRACER_SPAWN:
         AND #$0F                        ; State low nibble = target floor
         TAX
         LDA BEAM_Y
-        CMP FLOOR_THRESH,X              ; $83,X: per-floor Y limit
+        CMP FLOOR_THRESH,X              ; FLOOR_THRESH[X]: per-floor Y limit
         BCS .done
         STA TRACER_ROW,Y                ; Row := beam Y
         LDA #$22
@@ -8957,7 +8957,7 @@ ENEMY_C_DRAW:
 ; --- Hit test: walk 4-slot floor-enemy table for first active slot ---
         LDX #$03
 .scan:
-        LDA ZP_ENEMY_FLAG,X             ; 4-slot active flag ($9B,X)
+        LDA ZP_ENEMY_FLAG,X             ; 4-slot active flag (ZP_ENEMY_FLAG[X])
         BNE .test_slot                  ; non-zero: test this slot
 .next:
         DEX
@@ -9732,9 +9732,9 @@ REFRESH_RIGHT_WALL:
 ; --- Shared tail: load sprite pointer, page-gate, call RESTORE+BLIT ---
 .shared_tail:
         LDY $4C                         ; sprite-animation index
-        LDA WALL_SPR_HI,Y               ; $7620,Y -> ZP_BLIT_SRC+1
+        LDA WALL_SPR_HI,Y               ; WALL_SPR_HI[Y] -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
-        LDA WALL_SPR_LO,Y               ; $7520,Y -> ZP_BLIT_SRC
+        LDA WALL_SPR_LO,Y               ; WALL_SPR_LO[Y] -> ZP_BLIT_SRC
         STA ZP_BLIT_SRC
         BIT ZP_PAGE_FLAG
         BMI .page2                      ; page 2 path
@@ -9866,9 +9866,9 @@ REFRESH_LEFT_WALL:
 ; --- Shared tail: load sprite pointer, page-gate, call RESTORE+BLIT ---
 .shared_tail:
         LDY $4C                         ; sprite-animation index
-        LDA WALL_L_SPR_HI,Y             ; $7619,Y -> ZP_BLIT_SRC+1
+        LDA WALL_L_SPR_HI,Y             ; WALL_L_SPR_HI[Y] -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
-        LDA WALL_L_SPR_LO,Y             ; $7519,Y -> ZP_BLIT_SRC
+        LDA WALL_L_SPR_LO,Y             ; WALL_L_SPR_LO[Y] -> ZP_BLIT_SRC
         STA ZP_BLIT_SRC
         BIT ZP_PAGE_FLAG
         BMI .page2                      ; page 2 path
@@ -9955,9 +9955,9 @@ REFRESH_FLOOR_LINES:
         ; Clobbers: A, X, Y
 
         LDY ZP_WALK_FRAME               ; walking-anim frame index
-        LDA FLOOR_SPR_HI,Y              ; $760E,Y -> ZP_BLIT_SRC+1
+        LDA FLOOR_SPR_HI,Y              ; FLOOR_SPR_HI[Y] -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
-        LDA FLOOR_SPR_LO,Y              ; $750E,Y -> ZP_BLIT_SRC
+        LDA FLOOR_SPR_LO,Y              ; FLOOR_SPR_LO[Y] -> ZP_BLIT_SRC
         STA ZP_BLIT_SRC
         BIT ZP_PAGE_FLAG
         BMI .page2
@@ -10096,9 +10096,9 @@ REFRESH_PILLARS:
 .paint:
         STX $5C                         ; save loop index
         LDY $4C                         ; sprite-animation index
-        LDA PILLAR_SPR_HI,Y             ; $7600,Y -> ZP_BLIT_SRC+1
+        LDA PILLAR_SPR_HI,Y             ; PILLAR_SPR_HI[Y] -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
-        LDA PILLAR_SPR_LO,Y             ; $7500,Y -> ZP_BLIT_SRC
+        LDA PILLAR_SPR_LO,Y             ; PILLAR_SPR_LO[Y] -> ZP_BLIT_SRC
         STA ZP_BLIT_SRC
         BIT ZP_PAGE_FLAG
         BMI .page2
@@ -12388,7 +12388,7 @@ SPECIAL_DRAW:
         STA ZP_SPRITE_H
         LDX #$03                        ; Walk 4-slot enemy table X = 3..0
 .find_enemy:
-        LDA ZP_ENEMY_FLAG,X             ; $9B,X --- active?
+        LDA ZP_ENEMY_FLAG,X             ; ZP_ENEMY_FLAG[X] --- active?
         BNE .check_box                  ;   non-zero = try kill-box
 .try_next_enemy:
         DEX
@@ -12397,14 +12397,14 @@ SPECIAL_DRAW:
 .check_box:
 ; Kill-box: X-range [pos-$0F, pos) AND Y-range [row-$0F, row) on enemy slot
         LDA ZP_SCREEN_X
-        CMP ZP_ENEMY_COL,X              ; $9F,X
+        CMP ZP_ENEMY_COL,X              ; ZP_ENEMY_COL[X]
         BCC .try_next_enemy             ;   X < enemy_x
         SEC
         SBC #$0F                        ;   pos - $0F
         CMP ZP_ENEMY_COL,X
         BCS .try_next_enemy             ;   X - $0F >= enemy_x (too far)
         LDA ZP_SPECIAL_ROW
-        CMP ZP_ENEMY_Y,X                ; $A3,X
+        CMP ZP_ENEMY_Y,X                ; ZP_ENEMY_Y[X]
         BCS .try_next_enemy             ;   Y >= enemy_y (below)
         CLC
         ADC #$0F
@@ -12412,7 +12412,7 @@ SPECIAL_DRAW:
         BCC .try_next_enemy             ;   Y + $0F < enemy_y (above)
 ; Kill: clear enemy slot, dec HP, maybe trigger defeat
         LDA #$00
-        STA ZP_ENEMY_FLAG,X             ; $9B,X = 0 (kill floor enemy)
+        STA ZP_ENEMY_FLAG,X             ; ZP_ENEMY_FLAG[X] = 0 (kill floor enemy)
         DEC ZP_SPECIAL_HP               ; $08
         BNE .dispatch_body              ; HP != 0: skip defeat + catch
 ; Defeat edge: enter drift, arm defeat jingle, bump row
@@ -12865,17 +12865,17 @@ COMPANION_UPDATE:
         LDX #$01                        ; Iterate X=1, X=0
 
 .slot_body:
-        LDA ZP_COMPANION_STATE,X        ; $B3,X
+        LDA ZP_COMPANION_STATE,X        ; ZP_COMPANION_STATE[X]
         BEQ .slot_activate              ;   $00 -> activate
         BMI .slot_drift                 ;   $FF -> drift handler
-        LDA ZP_COMPANION_DIR,X          ; $B1,X: direction
+        LDA ZP_COMPANION_DIR,X          ; ZP_COMPANION_DIR[X]: direction
         BMI .active_neg                 ;   $FF: left-walker
         BPL .active_pos                 ;   $00/$01: right-walker
 
 ; --- Inactive slot: activate and drop into draw ---
 .slot_activate:
         LDA #$01
-        STA ZP_COMPANION_STATE,X        ; $B3,X := $01
+        STA ZP_COMPANION_STATE,X        ; ZP_COMPANION_STATE[X] := $01
         JMP .draw_preamble
 
 ; --- Drift (climbing) slot: hand off to drift handler ---
@@ -12894,7 +12894,7 @@ COMPANION_UPDATE:
         CMP #$05
         BCS .neg_move                   ; skip 95% of the time
         LDA #$01
-        STA ZP_COMPANION_DIR,X          ; $B1,X := $01 (flip to right)
+        STA ZP_COMPANION_DIR,X          ; ZP_COMPANION_DIR[X] := $01 (flip to right)
 .neg_move:
         SEC
         LDA ZP_COMPANION_POS_LO,X
@@ -12915,7 +12915,7 @@ COMPANION_UPDATE:
         STA ZP_COMPANION_DIR,X          ; flip to +dir
         STX ZP_DRAW_LOOP_IDX            ; $5C: save slot X
         LDX ZP_PLAYER_FLOOR             ; $0A
-        LDA FLOOR_THRESH,X              ; $83,X
+        LDA FLOOR_THRESH,X              ; FLOOR_THRESH[X]
         CLC
         ADC #$0B
         LDX ZP_DRAW_LOOP_IDX            ; restore slot X
@@ -12961,11 +12961,11 @@ COMPANION_UPDATE:
 .draw_preamble:
         STX ZP_DRAW_LOOP_IDX            ; $5C: save slot X
         LDY ZP_PLAYER_Y                 ; $4A
-        LDA PERSPECTIVE_XOFF_LO,Y       ; $1A8F,Y
+        LDA PERSPECTIVE_XOFF_LO,Y       ; PERSPECTIVE_XOFF_LO[Y]
         SEC
         SBC ZP_SPRITE_XREF              ; $4C
         STA ZP_SCREEN_X                 ; $AF
-        LDA PERSPECTIVE_XOFF_HI,Y       ; $198F,Y
+        LDA PERSPECTIVE_XOFF_HI,Y       ; PERSPECTIVE_XOFF_HI[Y]
         SBC #$00
         STA ZP_SCREEN_X_HI              ; $B0
         SEC
@@ -12983,14 +12983,14 @@ COMPANION_UPDATE:
         BCS .slot_next_jmp              ; screen-X >= $9A: clip off-right
         LDX ZP_HIT_MAX                  ; $41: scan hit-entity table
 .entity_scan:
-        LDA ENTITY_HIT_STATE,X          ; $8D,X
+        LDA ENTITY_HIT_STATE,X          ; ENTITY_HIT_STATE[X]
         BPL .entity_check_row           ; active ($00 or $01): check row match
         DEX
         BPL .entity_scan
         LDX ZP_DRAW_LOOP_IDX            ; no active entity: restore slot X
         JMP .body_draw                  ; skip proximity check
 .entity_check_row:
-        LDA ENTITY_HIT_ROW,X            ; $72,X: entity row attribute
+        LDA ENTITY_HIT_ROW,X            ; ENTITY_HIT_ROW[X]: entity row attribute
         SEC
         SBC #$08
         LDX ZP_DRAW_LOOP_IDX            ; restore slot X
@@ -13041,9 +13041,9 @@ COMPANION_UPDATE:
         STA ZP_SPRITE_Y
         LDA ZP_SCREEN_X
         TAY
-        LDA PROJ_SCREEN_COL,Y           ; $1C34,Y
+        LDA PROJ_SCREEN_COL,Y           ; PROJ_SCREEN_COL[Y]
         STA ZP_SPRITE_X
-        LDA PROJ_FRAME_IDX,Y            ; $1B8F,Y
+        LDA PROJ_FRAME_IDX,Y            ; PROJ_FRAME_IDX[Y]
         TAY                             ; Y = perspective-frame index
         LDA #$03
         STA ZP_SPRITE_W
@@ -13066,9 +13066,9 @@ COMPANION_POS_POSE1:
         STA SMC_COMPANION_POS_HI
 .pos_draw_nocycle:
         ; Entry when state == 0: load current pose 1 pointers and draw.
-        LDA COMPANION_POS_POSE1_LO,Y    ; $75B7,Y
+        LDA COMPANION_POS_POSE1_LO,Y    ; COMPANION_POS_POSE1_LO[Y]
         STA SMC_DS_SRC_LO
-        LDA COMPANION_POS_POSE1_HI,Y    ; $76B7,Y
+        LDA COMPANION_POS_POSE1_HI,Y    ; COMPANION_POS_POSE1_HI[Y]
         STA SMC_DS_SRC_HI
         JSR DRAW_SPRITE
         LDX ZP_DRAW_LOOP_IDX
@@ -13080,9 +13080,9 @@ COMPANION_POS_POSE2:
         STA SMC_COMPANION_POS_LO
         LDA #>COMPANION_POS_POSE3
         STA SMC_COMPANION_POS_HI
-        LDA COMPANION_POS_POSE2_LO,Y    ; $75BE,Y
+        LDA COMPANION_POS_POSE2_LO,Y    ; COMPANION_POS_POSE2_LO[Y]
         STA SMC_DS_SRC_LO
-        LDA COMPANION_POS_POSE2_HI,Y    ; $76BE,Y
+        LDA COMPANION_POS_POSE2_HI,Y    ; COMPANION_POS_POSE2_HI[Y]
         STA SMC_DS_SRC_HI
         JSR DRAW_SPRITE
         LDX ZP_DRAW_LOOP_IDX
@@ -13094,9 +13094,9 @@ COMPANION_POS_POSE3:
         STA SMC_COMPANION_POS_LO
         LDA #>COMPANION_POS_POSE1
         STA SMC_COMPANION_POS_HI
-        LDA COMPANION_POS_POSE3_LO,Y    ; $75C5,Y
+        LDA COMPANION_POS_POSE3_LO,Y    ; COMPANION_POS_POSE3_LO[Y]
         STA SMC_DS_SRC_LO
-        LDA COMPANION_POS_POSE3_HI,Y    ; $76C5,Y
+        LDA COMPANION_POS_POSE3_HI,Y    ; COMPANION_POS_POSE3_HI[Y]
         STA SMC_DS_SRC_HI
         JSR DRAW_SPRITE
         LDX ZP_DRAW_LOOP_IDX
@@ -13131,9 +13131,9 @@ COMPANION_NEG_POSE1:
         LDA #>COMPANION_NEG_POSE2
         STA SMC_COMPANION_NEG_HI
 .neg_draw_nocycle:
-        LDA COMPANION_NEG_POSE1_LO,Y    ; $75A2,Y
+        LDA COMPANION_NEG_POSE1_LO,Y    ; COMPANION_NEG_POSE1_LO[Y]
         STA SMC_DS_SRC_LO
-        LDA COMPANION_NEG_POSE1_HI,Y    ; $76A2,Y
+        LDA COMPANION_NEG_POSE1_HI,Y    ; COMPANION_NEG_POSE1_HI[Y]
         STA SMC_DS_SRC_HI
         JSR DRAW_SPRITE
         LDX ZP_DRAW_LOOP_IDX
@@ -13145,9 +13145,9 @@ COMPANION_NEG_POSE2:
         STA SMC_COMPANION_NEG_LO
         LDA #>COMPANION_NEG_POSE3
         STA SMC_COMPANION_NEG_HI
-        LDA COMPANION_NEG_POSE2_LO,Y    ; $75A9,Y
+        LDA COMPANION_NEG_POSE2_LO,Y    ; COMPANION_NEG_POSE2_LO[Y]
         STA SMC_DS_SRC_LO
-        LDA COMPANION_NEG_POSE2_HI,Y    ; $76A9,Y
+        LDA COMPANION_NEG_POSE2_HI,Y    ; COMPANION_NEG_POSE2_HI[Y]
         STA SMC_DS_SRC_HI
         JSR DRAW_SPRITE
         LDX ZP_DRAW_LOOP_IDX
@@ -13159,9 +13159,9 @@ COMPANION_NEG_POSE3:
         STA SMC_COMPANION_NEG_LO
         LDA #>COMPANION_NEG_POSE1
         STA SMC_COMPANION_NEG_HI
-        LDA COMPANION_NEG_POSE3_LO,Y    ; $75B0,Y
+        LDA COMPANION_NEG_POSE3_LO,Y    ; COMPANION_NEG_POSE3_LO[Y]
         STA SMC_DS_SRC_LO
-        LDA COMPANION_NEG_POSE3_HI,Y    ; $76B0,Y
+        LDA COMPANION_NEG_POSE3_HI,Y    ; COMPANION_NEG_POSE3_HI[Y]
         STA SMC_DS_SRC_HI
         JSR DRAW_SPRITE
         LDX ZP_DRAW_LOOP_IDX
@@ -13663,7 +13663,7 @@ RESCUE_UPDATE:
         STA ENTITY_XOFF_IDX,Y
 ; Apply bobble table to row.
 .apply_bobble:
-        LDA RESCUE_BOBBLE,X             ; $BD,X = signed step-Y delta
+        LDA RESCUE_BOBBLE,X             ; RESCUE_BOBBLE[X] = signed step-Y delta
         ASL                             ; bit 7 -> carry
         BCC .bobble_sub                 ;   bit7=0: ascend (add magnitude)
         LSR                             ; restore low 7 bits as magnitude
@@ -13741,13 +13741,13 @@ RESCUE_UPDATE:
 ;   (A - $13) >= $4A   -> entity at/past player   -> -dir (or step if already)
         LDA ENTITY_FLOOR_COL,Y
         TAX
-        LDA FLOOR_BASE_ROW,X            ; $188F,X
+        LDA FLOOR_BASE_ROW,X            ; FLOOR_BASE_ROW[X]
         PHA
         LDA ENTITY_XOFF_IDX,Y
         TAX
         PLA
         CLC
-        ADC PERSPECTIVE_XOFF_BYTE,X     ; $B9,X: byte-domain perspective offset
+        ADC PERSPECTIVE_XOFF_BYTE,X     ; PERSPECTIVE_XOFF_BYTE[X]: byte-domain perspective offset
         CMP #$13
         BCC .flip_to_pos                ;   < $13: far left, turn right
         SEC

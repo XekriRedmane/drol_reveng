@@ -118,6 +118,7 @@ Omit the Outputs section if the routine doesn't return meaningful values (e.g., 
 Additional annotation rules:
 - Comment the **purpose**, not the mechanics: "extract location tier" not "rotate left 4 times".
 - **Never prefix an instruction comment with its own address.** `STA $3CA8,X ; $05B4: row 79` is wrong — drop the `$05B4:` prefix, keep `; row 79`. The `.lst` file shows instruction addresses; repeating them in source is noise. Bare `; $XXXX` comments that carry no other information are removed entirely.
+- **In comments, refer to indexed tables by `SYMBOL[Y]` notation, never `$XXXX,Y` or `SYMBOL,Y`.** The `,Y` form mimics the instruction syntax on the same line — `LDA FOO,Y ; $7519,Y -> ptr` reads as two copies of the same thing, and uses raw hex where a symbol exists. Write `LDA FOO,Y ; FOO[Y] -> ptr` instead (or simply `; load pointer by frame index` if the mechanic is what matters). The `[Y]` bracket form is unambiguously prose, not asm.
 - Use `; --- section name ---` headers between logical phases within a long routine.
 - Align all `;` comments to the same column within each routine.
 - Routines without `SUBROUTINE` (simple trampolines like `JMP target`) get a one-line `;` comment above instead of a full plate.

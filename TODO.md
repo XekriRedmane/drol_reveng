@@ -128,6 +128,7 @@ Review existing chunks for violations:
       ($1359) / `SMC_TRACER_ADDR_HI` ($135A) patched inline.  Retires
       "Page flip preparation" stub name (real page flip is at $6138
       `DISPLAY_PAGE_FLIP`).
+- [x] `$1536` — `ENEMY_B_ADVANCE`: enemy-B slot up-counter; see triplet section below.
 - [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page.
 - [x] `$65D5` — `DRAW_SPRITE_PLAYFIELD`: sibling of DRAW_SPRITE.
       Identical structure, but inner-loop column check rejects col
@@ -148,13 +149,25 @@ Review existing chunks for violations:
 ### Triplet of entity-slot tick routines
 
 - [x] `$13D6` `ENEMY_A_ADVANCE` --- enemy-A slot ($DC/$DD/$DE/$DF, $B8 sound).
-- [ ] `$1536` `SPRITE_DRAW_2` (likely `ENEMY_B_ADVANCE`) --- enemy-B slot
-      ($E0/$E1/$E2/$E3, $E4 sound, $0231 pitch table).  Disassembled bytes
-      are structurally similar (LDX $E4; BMI; LDA $0231,X; LDX #$0A; JSR
-      $67C1; DEC $E4; LDA $E0; ...) but the tick ADDS $01 instead of
-      subtracting `ZP_ADVANCE_RATE`, suggesting a slow free-running counter
-      with a different rearm trigger ($E1 >= $5A and $1F == 0/2 gate).
-      Worth full RE next to confirm.
+- [x] `$1536` `ENEMY_B_ADVANCE` --- enemy-B slot ($E0/$E1/$E2/$E3, $E4
+      sound, $0231 pitch table).  Counts UP (ADC, not SBC), with the
+      per-frame increment patched by self-modifying code at
+      `SMC_ENEMY_B_ADD` ($1551, the `ADC #imm` operand byte).  The
+      gate inspects `ZP_ANIM_COUNTER` ($1F, the player animation frame
+      index): if $1F in {1, 3} the SMC byte is rewritten to $1F so the
+      next frame adds 1 or 3 (tripling the advance when the player is
+      in anim frame 3).  Rearm triggers when counter >= $035A: reload
+      to $003E, reseat row from $84,X with X = $1F & 3 (four-entry
+      table, vs.\ enemy-C which uses only three entries).  No handshake
+      in rearm --- the B->{A,C} firing write ($FF to $D4 and $DC) lives
+      in the draw routine at $1757-$1763 inside SPRITE_DRAW_3.  Drift
+      mode INCs lo-byte only and self-deactivates on 256-frame wrap.
+      Carved $1536-$1590 out of the old SPRITE_DRAW_1 HEX blob; new
+      chunk `<<sprite player code 1591>>` holds SPRITE_DRAW_3 ($1591-$1645)
+      as HEX.  Retired `SPRITE_DRAW_2 = $1536` EQU stub.  Introduces
+      ZPs `ZP_ENEMY_B_STATE` ($E0), `ZP_ENEMY_B_POS` ($E1/$E2),
+      `ZP_ENEMY_B_ROW` ($E3), `ZP_ENEMY_B_SND_CTR` ($E4), and
+      `SND_PITCH_TBL_B` ($0231).
 - [x] `$1646` `ENEMY_C_ADVANCE` --- enemy-C slot ($D4/$D5/$D6/$D7, $B7
       sound).  Done; see above.
 

@@ -15,7 +15,7 @@ Review existing chunks for violations:
 
 ### High-priority routines (called from main loop)
 
-- [ ] `$6000` — Input dispatcher (keyboard/joystick handler)
+- [x] `$6000` — `INPUT_DISPATCH`: keyboard/joystick input dispatcher.
 - [x] `$699C` — `LEVEL_INTRO_TICK`: per-frame level-start state machine. Init
       (disables input/render SMC slots, clears state, $18=$12, $19=$40),
       countdown (odd-frame tick + flickering sprite draw + SFX_TONE pulse),
@@ -59,8 +59,15 @@ Review existing chunks for violations:
       panel + offscreen), confining gameplay sprites to the
       playfield region.  No flicker SMC slot, no dead-code tail.
       Sole callers are the four JSR sites inside DRAW_ENTITIES
-      (player / special / companion / entity list).  Sibling
-      `$662C` (`BLIT_TILE`, opaque STA blit) still to do.
+      (player / special / companion / entity list).
+- [x] `$662C` — `DRAW_SPRITE_OPAQUE`: third blitter in the triplet.
+      Opaque (plain STA) blit --- no source-zero skip, no ORA step,
+      simple col `>= $28` offscreen check.  Used only for HUD tiles
+      (timer animation from DISPLAY_UPDATE, score/hiscore/level BCD
+      digits from POST_FRAME/DRAW_DIGIT).  Retires the last 72-byte
+      `<<game engine A tail>>` HEX blob.  SMC source-pointer operand
+      bytes exported as `SMC_TILE_SRC_LO/HI` ($6662/$6663) ---
+      replaces the old `TILE_DATA_LO/HI` + `BLIT_TILE` EQU stubs.
 
 ### Game flow routines
 

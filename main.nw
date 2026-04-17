@@ -3591,18 +3591,13 @@ PRNG:
 bar. It sets up a 1$\times$6 sprite at column~9, row~\$16, then indexes
 the animation counter (ZP~\$1F) into frame tables at \$6800 and \$6900 to
 select the current frame's tile data. The selected pair is stored at
-\$6662/\$6663 and drawn via [[BLIT_TILE]] at \$662C.
+\$6662/\$6663 and drawn via [[DRAW_SPRITE_OPAQUE]] at \$662C.
 
 <<display update defines>>=
 
 ; --- Timer display tables ---
 TIMER_FRAME_LO  = $6800         ; Timer animation frame table, low bytes
 TIMER_FRAME_HI  = $6900         ; Timer animation frame table, high bytes
-
-; --- Tile blit ---
-TILE_DATA_LO    = $6662         ; Current tile data pointer, low byte
-TILE_DATA_HI    = $6663         ; Current tile data pointer, high byte
-BLIT_TILE       = $662C         ; Blit a tile to the screen (in game engine hex data)
 
 ; --- Digit tile tables ---
 DIGIT_TILE_LO   = $AFF6         ; Digit tile data table, low bytes (0-9)
@@ -3620,7 +3615,7 @@ DISPLAY_UPDATE:
         ;   ZP_ANIM_COUNTER ($1F) — animation frame index
         ;
         ; Modifies:
-        ;   $6662/$6663 (tile data pointer), sprite params
+        ;   SMC_TILE_SRC_LO/HI (tile data pointer), sprite params
         ; Clobbers: A, X
 
 ; --- Set up sprite parameters ---
@@ -3637,10 +3632,10 @@ DISPLAY_UPDATE:
         LDX ZP_ANIM_COUNTER      ; Current frame index
         LDA TIMER_FRAME_HI,X     ; Frame data high byte
         AND #$7F                  ; Strip high bit
-        STA TILE_DATA_HI
+        STA SMC_TILE_SRC_HI
         LDA TIMER_FRAME_LO,X     ; Frame data low byte
-        STA TILE_DATA_LO
-        JSR BLIT_TILE             ; Draw the tile
+        STA SMC_TILE_SRC_LO
+        JSR DRAW_SPRITE_OPAQUE    ; Draw the tile
         RTS
 @ %def DISPLAY_UPDATE
 
@@ -3656,8 +3651,8 @@ Two helper sub-entries exist:
 \item \$1150 ([[DRAW_DIGIT_SHORT]]) sets width/height/row to 1/6/\$0C
   before falling through.
 \item \$115C ([[DRAW_DIGIT]]) looks up digit tile data from tables at
-  \$AFF6 (low) and \$B076 (high), stores it at \$6662/\$6663, and calls
-  [[BLIT_TILE]].
+  \$AFF6 (low) and \$B076 (high), stores it at [[SMC_TILE_SRC_LO]]/[[HI]]
+  (\$6662/\$6663), and calls [[DRAW_SPRITE_OPAQUE]].
 \end{itemize}
 
 The digit positions (column values stored in~\$5D) are:
@@ -3676,7 +3671,7 @@ POST_FRAME:
         ;   ZP $5E — level state flag
         ;
         ; Modifies:
-        ;   Sprite parameters, $6662/$6663
+        ;   Sprite parameters, SMC_TILE_SRC_LO/HI
         ; Clobbers: A, X
 
 ; --- Digit 1: low nibble of $D1, column 2 ---
@@ -3777,10 +3772,10 @@ DRAW_DIGIT_SHORT:
 ; --- Draw digit from lookup table ---
 DRAW_DIGIT:
         LDA DIGIT_TILE_LO,X      ; Digit tile data low
-        STA TILE_DATA_LO
+        STA SMC_TILE_SRC_LO
         LDA DIGIT_TILE_HI,X      ; Digit tile data high
-        STA TILE_DATA_HI
-        JSR BLIT_TILE             ; Draw the digit tile
+        STA SMC_TILE_SRC_HI
+        JSR DRAW_SPRITE_OPAQUE    ; Draw the digit tile
         RTS
 @ %def POST_FRAME DRAW_DIGIT_SHORT DRAW_DIGIT
 
@@ -6365,25 +6360,167 @@ SMC_PFB_STA_HI = *+2              ; High of STA abs,X operand --- patched
         RTS
 @ %def DRAW_SPRITE_PLAYFIELD SMC_PFB_SRC_LO SMC_PFB_SRC_HI
 
-<<game engine A tail>>=
+\section{Sprite draw (opaque)}
+
+[[DRAW_SPRITE_OPAQUE]] at \$662C is the third member of Drol's
+sprite-blitter triplet --- sibling of [[DRAW_SPRITE]] (\$656F) and
+[[DRAW_SPRITE_PLAYFIELD]] (\$65D5).  Where the other two use an
+[[ORA]]/[[STA]] pair to \emph{overlay} the sprite on top of whatever
+is already on the hi-res page (transparent blit), this routine uses a
+plain [[STA]] that \emph{overwrites} the screen byte unconditionally
+(opaque blit).  Every source byte is written, including zero bytes ---
+there is no source-transparency test.
+
+The routine shares the same sprite-parameter quartet
+([[ZP_SPRITE_W]]/[[\_H]]/[[\_Y]]/[[\_X]] at \$56/\$57/\$5B/\$5D) and
+the same [[ZP_PAGE_FLAG]]-driven row-high-table selection, so all
+three blitters are drop-in compatible from the caller's point of
+view.  They differ only in (1) the inner column-clip check, (2)
+whether a zero source byte is skipped, and (3) whether an [[ORA]]
+is performed before the [[STA]]:
+
+\begin{center}
+\begin{tabular}{lccc}
+\hline
+                              & [[DRAW_SPRITE]]  & [[DRAW_SPRITE_PLAYFIELD]] & [[DRAW_SPRITE_OPAQUE]] \\ \hline
+Reject col $\ge \$28$         & yes              & implicit (via $\ge\$1C$)  & yes \\
+Reject col $=\$0B$            & no               & yes                       & no \\
+Reject col $\ge \$1C$         & no               & yes                       & no \\
+Skip zero source byte         & yes              & yes                       & \textbf{no} \\
+OR with screen before store   & yes              & yes                       & \textbf{no} \\
+Flicker SMC slot              & yes (\$65B7)     & no                        & no \\
+Dead-code tail                & yes (9 bytes)    & no                        & no \\
+Live size                     & 102 bytes        & 87 bytes                  & 72 bytes \\ \hline
+\end{tabular}
+\end{center}
+
+\paragraph{Callers.}  Only two routines call [[DRAW_SPRITE_OPAQUE]]:
+
+\begin{itemize}
+\item [[DISPLAY_UPDATE]] (\$10AB) --- draws the timer animation tile
+  at column~\$09, row~\$16 (a 1$\times$6 sprite in the SCORE HUD
+  strip).  Source comes from [[TIMER_FRAME_LO]]/[[HI]] at
+  \$6800/\$6900.
+\item [[DRAW_DIGIT]] (\$115C) --- draws a single BCD digit tile
+  (1$\times$6) at a caller-chosen column.  Source comes from
+  [[DIGIT_TILE_LO]]/[[HI]] at \$AFF6/\$B076.
+  [[POST_FRAME]] (\$10CF) calls this seven times per frame --- five
+  score nibbles plus two level-state digits.
+\end{itemize}
+
+Every caller draws at fixed HUD positions where whatever was on screen
+previously (the previous digit, or the previous timer frame) must be
+completely replaced.  An OR blit would leave the old digit's pixels
+visible underneath the new one, turning a ``0'' drawn over ``8'' into
+an ``8''.  The opaque STA blit solves this by unconditionally
+overwriting --- which also means the caller is responsible for
+clearing any region the new sprite does not cover (the digit and
+timer tiles are designed as rectangular 1$\times$6 bounding boxes that
+tile cleanly).
+
+\paragraph{Source-pointer SMC.}  The [[LDA \$9000,Y]] at \$6661 is
+patched by the callers with the per-tile source-data address.  The
+operand bytes are named [[SMC_TILE_SRC_LO]] (\$6662) and
+[[SMC_TILE_SRC_HI]] (\$6663), exported for the callers.  Disk-image
+initial value is \$9000 --- a harmless pattern outside the game's
+memory map, overwritten before the first execution.
+
+<<draw sprite opaque>>=
 
         ORG $662C
+DRAW_SPRITE_OPAQUE:
         SUBROUTINE
-        ; Game engine tail (\$662C-\$6673) --- not yet disassembled.
-        ; \$662C: opaque (STA) tile blit --- already aliased as
-        ;   [[BLIT_TILE]] and used by [[DISPLAY_UPDATE]] and
-        ;   [[POST_FRAME]] for digit/tile rendering.
-        ; Raw data --- 72 bytes.
+        ; Opaque (STA) blit to the hidden hi-res page.
+        ; Third member of the sprite-blitter triplet --- sibling of
+        ; DRAW_SPRITE ($656F, OR + source-zero skip) and
+        ; DRAW_SPRITE_PLAYFIELD ($65D5, OR + source-zero skip + HUD
+        ; column clip).  Unlike those two, this routine has NO
+        ; source-zero transparency test and NO ORA step: every source
+        ; byte is stored unconditionally, overwriting whatever was on
+        ; the screen.  Column clip is the simple >=$28 offscreen
+        ; check, same as DRAW_SPRITE.  Used for HUD tiles (timer
+        ; animation, score/hiscore/level digits) where the previous
+        ; frame's pixels must be replaced, not OR'd on top of.
+        ;
+        ; Inputs:
+        ;   ZP_SPRITE_W ($56)      --- width in bytes per row
+        ;   ZP_SPRITE_H ($57)      --- height in rows
+        ;   ZP_SPRITE_Y ($5B)      --- starting screen row (0..191)
+        ;   ZP_SPRITE_X ($5D)      --- starting column (right edge)
+        ;   SMC_TILE_SRC_LO/HI     --- source pointer (self-mod operand
+        ;                              of the LDA abs,Y at $6661),
+        ;                              patched by each caller.
+        ;   ZP_PAGE_FLAG ($00) b7  --- selects page 1 (clear) or page 2
+        ;                              (set) as the draw target.
+        ;
+        ; Behavior:
+        ;   Outer loop walks ZP_SPRITE_H rows.  For each row, patches
+        ;   the STA operand with the row's base screen address (high
+        ;   byte from $72C0 or $7440 via the row-high SMC operand, low
+        ;   byte from SCREEN_ROW_ADDR_LO).  Inner loop walks
+        ;   ZP_SPRITE_W bytes from the right edge leftward: rejects
+        ;   cols >=$28 (offscreen), otherwise unconditionally STA's
+        ;   the source byte to screen RAM.
+        ;
+        ; Modifies:
+        ;   Self (operands at SMC_OPQ_ROW_HI_LO/HI,
+        ;   SMC_TILE_SRC_LO/HI, SMC_OPQ_STA_LO/HI),
+        ;   ZP_SPRITE_ROW_REMAIN ($5A), ZP_SPRITE_Y (post-increment).
+        ; Clobbers: A, X, Y
 
-        HEX 24 00 30 0D A9 C0 8D 50
-        HEX 66 A9 72 8D 51 66 4C 47
-        HEX 66 A9 40 8D 50 66 A9 74
-        HEX 8D 51 66 A0 00 A5 56 85
-        HEX 5A A6 5B BD 00 90 8D 66
-        HEX 66 BD 80 73 8D 65 66 A6
-        HEX 5D E0 28 B0 06 B9 00 90
-        HEX 9D 00 90 C8 CA C6 5A 10
-        HEX F0 E6 5B C6 57 D0 D6 60
+; --- Select row-high table based on ZP_PAGE_FLAG ---
+        BIT ZP_PAGE_FLAG
+        BMI .page2
+        LDA #<SCREEN_ROW_ADDR_HI  ; $C0 --- low of $72C0 (page 1)
+        STA SMC_OPQ_ROW_HI_LO
+        LDA #>SCREEN_ROW_ADDR_HI  ; $72
+        STA SMC_OPQ_ROW_HI_HI
+        JMP .outer_entry
+.page2:
+        LDA #<SCREEN_ROW_ADDR_HI2 ; $40 --- low of $7440 (page 2)
+        STA SMC_OPQ_ROW_HI_LO
+        LDA #>SCREEN_ROW_ADDR_HI2 ; $74
+        STA SMC_OPQ_ROW_HI_HI
+
+; --- Entry into the draw loop: initialise sprite-data index ---
+.outer_entry:
+        LDY #$00
+
+; --- Outer loop: one iteration per sprite row ---
+.next_row:
+        LDA ZP_SPRITE_W
+        STA ZP_SPRITE_ROW_REMAIN  ; Inner-loop byte counter
+        LDX ZP_SPRITE_Y           ; Current screen row (0..191)
+SMC_OPQ_ROW_HI_LO = *+1           ; Low of LDA abs,X operand --- patched
+SMC_OPQ_ROW_HI_HI = *+2           ; High of LDA abs,X operand --- patched
+        LDA SPRITE_SMC_INIT,X     ; Runtime: LDA $72C0,X or LDA $7440,X
+        STA SMC_OPQ_STA_HI        ; Patch STA operand (high byte)
+        LDA SCREEN_ROW_ADDR_LO,X  ; Row-low (fixed $7380 table)
+        STA SMC_OPQ_STA_LO        ; Patch STA operand (low byte)
+
+; --- Inner loop: one iteration per sprite byte on this row ---
+        LDX ZP_SPRITE_X           ; Destination column
+.col_loop:
+        CPX #$28                  ; Column >= 40 (off right edge)?
+        BCS .col_skip             ;   yes --- transparent
+SMC_TILE_SRC_LO = *+1             ; Low of LDA abs,Y operand --- caller sets
+SMC_TILE_SRC_HI = *+2             ; High of LDA abs,Y operand --- caller sets
+        LDA SPRITE_SMC_INIT,Y     ; Runtime: LDA (tile_src),Y
+SMC_OPQ_STA_LO = *+1              ; Low of STA abs,X operand --- patched
+SMC_OPQ_STA_HI = *+2              ; High of STA abs,X operand --- patched
+        STA SPRITE_SMC_INIT,X     ; Store (opaque --- no OR, no zero skip)
+.col_skip:
+        INY                       ; Next sprite byte
+        DEX                       ; Move left one column
+        DEC ZP_SPRITE_ROW_REMAIN
+        BPL .col_loop             ; More bytes on this row?
+
+; --- Advance to next row ---
+        INC ZP_SPRITE_Y           ; Next screen row
+        DEC ZP_SPRITE_H           ; Rows remaining?
+        BNE .next_row
+        RTS
+@ %def DRAW_SPRITE_OPAQUE SMC_TILE_SRC_LO SMC_TILE_SRC_HI
 
 <<entity process code>>=
 
@@ -8340,8 +8477,8 @@ LEVEL_INTRO_TICK:
 <<draw sprite>>
 ; --- ORG $65D5: Draw sprite (playfield, HUD-clipped) ---
 <<draw sprite playfield>>
-; --- ORG $662C: Game engine A tail (BLIT_TILE blob) ---
-<<game engine A tail>>
+; --- ORG $662C: Draw sprite (opaque) ---
+<<draw sprite opaque>>
 ; --- ORG $6674: PRNG ---
 <<prng>>
 ; --- ORG $6683: Entity processing ---

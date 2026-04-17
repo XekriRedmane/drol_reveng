@@ -161,6 +161,26 @@ The `/annotate` skill automates these passes for an existing routine.
 - Never put LaTeX math inside `[[ ]]` noweb code refs.
 - `@ %def` must not have duplicate identifiers across chunks.
 
+### Prose rules
+
+In LaTeX prose (sections, paragraphs, captions, figure labels), never write a raw numeric address when a symbolic name exists for it. Use the `[[SYMBOL]]` noweb code ref — it renders as a tt-styled hyperlink to the defining chunk, so readers can navigate without consulting a memory map. Raw hex in prose (`\$XXXX`) is purely decorative and fails the reader.
+
+Applies to: addresses with ORG labels, EQU-defined constants (ZP aliases, table offsets, soft switches, SMC operand-byte labels), and any `@ %def`-exported symbol. When the prose describes *where* in memory something lives and the reader benefits from the numeric address, write `[[LABEL]] (\$XXXX)` — the symbol is still the primary reference.
+
+When no symbol exists yet (common during active RE), the raw form `[[\$XXXX]]` is acceptable, but flag it with a LaTeX comment so it's easy to upgrade later:
+
+```latex
+The routine reads from [[$XXXX]] % TODO-SYM: needs label
+```
+
+Grep for `TODO-SYM` periodically to find unresolved prose addresses. When adding a new label/EQU for an address, grep main.nw for `$XXXX` occurrences in prose and replace them with the symbol in the same commit.
+
+Exceptions where raw addresses are expected:
+- Memory-map tables and disk-layout tables showing raw addresses by design
+- `ORG` directives in code (already symbolic-free by definition)
+- Comments explaining *why* a specific numeric value matters (e.g. "chosen so the address is page-aligned")
+- Code chunks themselves — governed by the separate code chunk rules above, which already require symbolic addresses
+
 ## Assembly pitfalls
 
 ### Branch labels

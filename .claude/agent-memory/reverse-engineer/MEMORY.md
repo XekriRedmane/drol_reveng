@@ -12,3 +12,5 @@
 - [Drol companion slot](drol-companion-slot.md) — $6CFE COMPANION_UPDATE; two-slot hostile walker, $B3/$B1/$11/$13/$15,X parallel arrays, gate $33, auto-activates on tier unlock
 - [Drol rescue subsystem](drol-rescue-subsystem.md) — $6F9C RESCUE_UPDATE ticks; $0C98 RESCUE_DRAW awards +$0035 BCD AND can spawn hostile projectiles on player floor (odd row + free $C5,X slot)
 - [Drol hi-res library](drol-hires-library.md) — $0400-$0C97 is 2200 bytes of hi-res page 1/2 framebuffer routines (clear/copy/paint), NOT game logic; twin page 1/page 2 pairs
+- [DRAW_SPRITE W+1 bytes/row](drol-draw-sprite-w-plus-1.md) — ZP_SPRITE_W is W-1 bytes/row; the BPL loop runs W+1 iterations not W
+- [Level-1 extraction from drol.dsk](drol-level-data-extraction.md) — extract_level1.py replays loader phase-0 to produce reference/level1.bin for sprite art in $8C00-$BDFF

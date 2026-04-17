@@ -113,10 +113,10 @@ Drol uses a custom Broderbund boot chain, not DOS 3.3. The disk is not
 DOS-formatted and has no catalog. The entire boot sequence is:
 
 \begin{enumerate}
-\item The Disk II controller PROM (P5A) reads Track 0, Sector 0 to [[\$0800]]
-   and jumps to [[\$0801]]. This is the standard Apple II boot process (``boot0'').
-\item Boot1 at [[\$0801]] loads 10 more sectors from Track 0 to [[\$5000--\$59FF]]
-   using the PROM's re-entry point at [[\$Cn5C]].
+\item The Disk II controller PROM (P5A) reads Track 0, Sector 0 to [[$0800]]
+   and jumps to [[$0801]]. This is the standard Apple II boot process (``boot0'').
+\item Boot1 at [[$0801]] loads 10 more sectors from Track 0 to [[$5000--$59FF]]
+   using the PROM's re-entry point at [[$Cn5C]].
 \item Boot1 copies the Apple II ROM to language card RAM, relocates the
    loader and RWTS code, and jumps to the loader.
 \item The loader reads the game data from subsequent tracks into memory
@@ -135,7 +135,7 @@ sectors pass under the head in this order:
 \end{tabular}
 \end{center}
 
-The [[\texttt{.dsk}]] file format stores sectors by sector number (0--F).
+The [[.dsk]] file format stores sectors by sector number (0--F).
 To find the file offset of the Nth sector read by the PROM:
 
 \begin{verbatim}
@@ -146,8 +146,8 @@ To find the file offset of the Nth sector read by the PROM:
 
 \section{Track 0 memory map}
 
-Boot0 reads Sector 0 to [[\$0800]] (boot1 code). Boot1 then reads the next
-10 sectors to [[\$5000--\$59FF]]:
+Boot0 reads Sector 0 to [[$0800]] (boot1 code). Boot1 then reads the next
+10 sectors to [[$5000--$59FF]]:
 
 \begin{center}
 \ra{1.3}
@@ -188,24 +188,24 @@ backup copy).
 Boot1 occupies Track 0, Sector 0 (\$0800--\$08BF). The first byte (\$0800)
 is the sector count for boot0; the PROM reads this value and loads that many
 sectors. Here it is \$01, meaning boot0 loads only Sector 0 itself. After
-loading, boot0 sets [[\$27]] = \$09 (the next destination page) and jumps to
-[[\$0801]].
+loading, boot0 sets [[$27]] = \$09 (the next destination page) and jumps to
+[[$0801]].
 
 @ Boot1 is the first code executed after the PROM's boot0. It operates in
-three phases, re-entered at [[\$0801]] by the PROM after each sector read:
+three phases, re-entered at [[$0801]] by the PROM after each sector read:
 
-\textbf{Phase 1} --- When [[\$27]] = \$09 (immediately, since boot0 just set it):
+\textbf{Phase 1} --- When [[$27]] = \$09 (immediately, since boot0 just set it):
 switch to hi-res graphics mode, derive the slot number, patch the JMP
 instruction for PROM re-entry, set reset vectors, and redirect
-loading to [[\$5000]] by setting [[\$27]] = \$50.
+loading to [[$5000]] by setting [[$27]] = \$50.
 
-\textbf{Phase 2} --- While [[\$27]] $<$ \$5A: jump to [[\$Cn5C]] to read the next
-sector. The PROM stores it at page [[\$27]], increments [[\$27]], and re-enters
-[[\$0801]]. This loads 10 sectors to [[\$5000--\$59FF]].
+\textbf{Phase 2} --- While [[$27]] $<$ \$5A: jump to [[$Cn5C]] to read the next
+sector. The PROM stores it at page [[$27]], increments [[$27]], and re-enters
+[[$0801]]. This loads 10 sectors to [[$5000--$59FF]].
 
-\textbf{Phase 3} --- When [[\$27]] $\ge$ \$5A: all sectors loaded. Copy ROM to
+\textbf{Phase 3} --- When [[$27]] $\ge$ \$5A: all sectors loaded. Copy ROM to
 language card, relocate loader and RWTS, display splash text, and jump
-to the loader entry at [[\$51C0]].
+to the loader entry at [[$51C0]].
 
 <<boot1 defines>>=
 
@@ -426,23 +426,23 @@ SPLASH_TEXT:
 
 \section{Loader}
 
-After boot1 jumps to [[\$51C0]], the loader takes over. The loader occupies
-[[\$5000--\$59FF]] (loaded from Track 0 by boot1) and manages reading game
+After boot1 jumps to [[$51C0]], the loader takes over. The loader occupies
+[[$5000--$59FF]] (loaded from Track 0 by boot1) and manages reading game
 data from subsequent tracks into memory.
 
 The loader has two entry points:
 \begin{itemize}
-\item \$5000: Re-entry from game code. Saves zero page to [[\$5700]],
-  then falls through to [[\$51C0]].
+\item \$5000: Re-entry from game code. Saves zero page to [[$5700]],
+  then falls through to [[$51C0]].
 \item \$51C0: Entry from boot1. Restores the slot and track numbers from
-  [[\$BF49]]/[[\$BF48]] to zero page, then jumps to the main dispatch
-  at [[\$5500]].
+  [[$BF49]]/[[$BF48]] to zero page, then jumps to the main dispatch
+  at [[$5500]].
 \end{itemize}
 
 The RWTS (Read/Write Track/Sector) uses standard Apple II 16-sector nibble
 encoding with D5~AA~96 (address field) and D5~AA~AD (data field) prologues.
-The 6-and-2 nibble translate table lives at [[\$52D6--\$53D5]], spanning the
-RWTS work buffers at [[\$5200]] and [[\$5300]].
+The 6-and-2 nibble translate table lives at [[$52D6--$53D5]], spanning the
+RWTS work buffers at [[$5200]] and [[$5300]].
 
 The \$5800--\$59FF region is relocated by boot1 to \$BE00--\$BFFF and contains
 the high-level RWTS entry, reset handlers, screen buffer routines, and the
@@ -505,7 +505,7 @@ once from tracks 1--4, and \textbf{swappable level data} loaded from a
 \end{tabular}
 \end{center}
 
-The game calls back to the loader via [[JMP \$5000]] to swap in a new
+The game calls back to the loader via [[JMP $5000]] to swap in a new
 level set. The loader cycles through phases 0--3, each reading 5
 consecutive tracks (5--9, 10--14, 15--19, 20--24). Each phase replaces
 75 pages (19,200 bytes) of level data while leaving the persistent
@@ -1557,9 +1557,9 @@ JMP_TO_RESTORE:
 \section{Sector data reader}
 
 An alternate sector data reader at \$BE37 reads odd/even nibble-encoded
-data directly into memory via the [[\$A2]]/[[\$A3]] pointer. It reads
+data directly into memory via the [[$A2]]/[[$A3]] pointer. It reads
 256-byte blocks in a loop, checking for a \$D4 marker between blocks,
-and repeats until a page counter at [[\$A1]] reaches zero.
+and repeats until a page counter at [[$A1]] reaches zero.
 
 Note: the entry at \$BE37 overlaps with the last byte of the [[JMP]]
 instruction at \$BE35. The byte \$BE at that position serves double duty
@@ -1794,7 +1794,7 @@ COPY_ROM_TO_LC:
 \section{Reset handlers}
 
 Four entry points display different error characters on reset, using the
-BIT abs trick to skip [[LDA \#imm]] instructions:
+BIT abs trick to skip [[LDA #imm]] instructions:
 `R' (\$D2), `P' (\$D0), `L' (\$CC), or `!' (\$A1).
 
 The common handler copies ROM to language card, reinitializes the Monitor,
@@ -1886,8 +1886,8 @@ bottom 4 text lines from \$0300 data.
 
 SCROLL\_UP has two entry points: a preamble at \$BF4B that checks whether
 to use a game scroll handler, and the main entry at \$BF50 which overlaps
-with the operand bytes of a [[JMP \$28A0]] instruction (the byte sequence
-\$A0 \$28 reads as [[LDY \#\$28]] when entered at \$BF50).
+with the operand bytes of a [[JMP $28A0]] instruction (the byte sequence
+\$A0 \$28 reads as [[LDY #$28]] when entered at \$BF50).
 
 <<scroll up>>=
 
@@ -2038,22 +2038,22 @@ SCREEN_ADDR_TBL:
 
 @ \chapter{Game initialization}
 
-The game entry point is [[\$4000]], called by the loader's [[FIRST\_BOOT]]
-via [[JSR \$4000]]. The first 19 bytes (\$4000--\$4012) are NOPs --- the
+The game entry point is [[$4000]], called by the loader's [[FIRST_BOOT]]
+via [[JSR $4000]]. The first 19 bytes (\$4000--\$4012) are NOPs --- the
 original copy protection was patched out. The real initialization begins
 at \$4013.
 
 \section{Title screen unpacker}
 
-[[GAME\_INIT]] at \$4013 unpacks a data stream from \$4100 into hi-res
+[[GAME_INIT]] at \$4013 unpacks a data stream from \$4100 into hi-res
 page~1 (\$2000--\$3FFF), drawing the title screen. The stream consists
 of 37 records, each containing a 2-byte destination address (lo/hi)
 followed by 40 data bytes. A \$FF terminator ends the stream.
 
-After [[GAME\_INIT]] returns, [[FIRST\_BOOT]] sets up vectors, detects
+After [[GAME_INIT]] returns, [[FIRST_BOOT]] sets up vectors, detects
 the joystick, applies machine-specific patches, restores zero page from
-[[ZP\_SAVE]], and enters the game via [[JMP (\$004E)]]. The initial
-value of \$4E/\$4F from [[ZP\_SAVE]] is \$72A3, which is in the
+[[ZP_SAVE]], and enters the game via [[JMP ($004E)]]. The initial
+value of \$4E/\$4F from [[ZP_SAVE]] is \$72A3, which is in the
 swappable level data area loaded from track~5.
 
 <<drol defines>>=
@@ -2335,17 +2335,17 @@ GAME_INIT_EXTRA:
 
 \section{Input dispatcher}
 
-[[INPUT\_DISPATCH]] at \$6000 handles keyboard and joystick input during
+[[INPUT_DISPATCH]] at \$6000 handles keyboard and joystick input during
 gameplay. If the input mode flag (\$48) is negative, it delegates to the
 joystick handler at \$012B. Otherwise it reads the keyboard and processes
 five keys:
 
 \begin{itemize}
-\item Right arrow (\$95): enable [[DO\_MOVE\_RIGHT]], disable [[DO\_MOVE\_LEFT]]
-\item Left arrow (\$88): enable [[DO\_MOVE\_LEFT]], disable [[DO\_MOVE\_RIGHT]]
-\item `A' (\$C1): fire/ascend --- enable [[DO\_ASCEND]], disable [[DO\_DESCEND]],
+\item Right arrow (\$95): enable [[DO_MOVE_RIGHT]], disable [[DO_MOVE_LEFT]]
+\item Left arrow (\$88): enable [[DO_MOVE_LEFT]], disable [[DO_MOVE_RIGHT]]
+\item `A' (\$C1): fire/ascend --- enable [[DO_ASCEND]], disable [[DO_DESCEND]],
   search for a rescuable entity within range
-\item `Z' (\$DA): descend --- enable [[DO\_DESCEND]], disable [[DO\_ASCEND]],
+\item `Z' (\$DA): descend --- enable [[DO_DESCEND]], disable [[DO_ASCEND]],
   search for a rescuable entity, advance floor counter
 \item Space (\$A0): set jump flag (\$05 = \$FF)
 \end{itemize}
@@ -2561,9 +2561,9 @@ INPUT_DO_DESCEND:
 
 \section{Meta-key handler}
 
-[[INPUT\_PROCESS]] at \$6109 handles non-movement keys during gameplay:
+[[INPUT_PROCESS]] at \$6109 handles non-movement keys during gameplay:
 ESC pauses, Ctrl-R restarts, Ctrl-S toggles sound. Unrecognized keys
-fall through to [[KEY\_HANDLER\_EXT]] at \$0194, which handles
+fall through to [[KEY_HANDLER_EXT]] at \$0194, which handles
 Ctrl-J (joystick mode), Ctrl-K (keyboard mode), and Ctrl-V (speaker click).
 
 <<input process defines>>=
@@ -2630,7 +2630,7 @@ INPUT_PROCESS:
 
 \section{Pause handler}
 
-[[PAUSE\_HANDLER]] at \$0E51 clears the keyboard strobe, then waits in a
+[[PAUSE_HANDLER]] at \$0E51 clears the keyboard strobe, then waits in a
 tight loop until a new key is pressed. Used by the ESC key to pause the game.
 
 <<pause handler>>=
@@ -2647,14 +2647,14 @@ PAUSE_HANDLER:
 
 \section{Screen row copy}
 
-[[SCREEN\_ROW\_COPY]] at \$0100 copies all 192 rows of hi-res page~1 from
+[[SCREEN_ROW_COPY]] at \$0100 copies all 192 rows of hi-res page~1 from
 a 40-byte buffer at \$024C. For each screen row~X (0--191), it loads the
 row's base address from a pair of tables (\$7380 for the low byte,
 \$72C0 for the high byte), stores it in ZP pointer~\$29/\$2A, then copies
 40~bytes from the buffer to that address. Between rows it calls the
-Monitor [[WAIT]] routine for a brief delay and [[SCREEN\_ROW\_HELPER]] to
+Monitor [[WAIT]] routine for a brief delay and [[SCREEN_ROW_HELPER]] to
 update game state (scrolling effect). The first call to
-[[DISPLAY\_PAGE\_FLIP]] is gated on ZP~\$00 being positive (every other
+[[DISPLAY_PAGE_FLIP]] is gated on ZP~\$00 being positive (every other
 frame).
 
 <<screen row copy defines>>=
@@ -2719,7 +2719,7 @@ SCREEN_ROW_COPY:
 
 \section{Projectile update}
 
-[[HAZARD\_CHECK]] at \$0E5A processes up to four active projectiles
+[[HAZARD_CHECK]] at \$0E5A processes up to four active projectiles
 (indexed by \$31 down to~0). Each projectile has three state bytes:
 \begin{itemize}
 \item \$C5+X: direction flag (0~=~inactive, negative~=~moving left,
@@ -2917,7 +2917,7 @@ HAZARD_CHECK:
 
 \section{Joystick input handler}
 
-[[JOYSTICK\_HANDLER]] at \$012B reads the Apple~II game-port buttons and
+[[JOYSTICK_HANDLER]] at \$012B reads the Apple~II game-port buttons and
 paddles. The input dispatcher jumps here when joystick mode is active
 (\$48 negative).
 
@@ -2927,7 +2927,7 @@ set on the initial button-down transition.
 
 Paddle reading alternates between axes each frame, gated by the display
 page flag in ZP~\$00 (which toggles sign every frame via
-[[DISPLAY\_PAGE\_FLIP]]). On positive frames the vertical axis~(1) is
+[[DISPLAY_PAGE_FLIP]]). On positive frames the vertical axis~(1) is
 read; on negative frames the horizontal axis~(0). This spreads the
 paddle timing overhead across two frames.
 
@@ -2938,7 +2938,7 @@ descend. Horizontal zones: $<$\$3C = hard left, \$3C--\$63 = soft left
 joystick won't re-issue a direction command if the player is already
 moving that way, preventing jitter at the threshold.
 
-Each direction branch tail-calls into [[INPUT\_DISPATCH]] at the
+Each direction branch tail-calls into [[INPUT_DISPATCH]] at the
 appropriate entry point to share the keyboard handler's direction-setting
 logic.
 
@@ -3064,7 +3064,7 @@ JOYSTICK_HANDLER:
 
 \section{Extended key handler}
 
-[[KEY\_HANDLER\_EXT]] at \$0194 handles Ctrl-J (switch to joystick mode),
+[[KEY_HANDLER_EXT]] at \$0194 handles Ctrl-J (switch to joystick mode),
 Ctrl-K (switch to keyboard mode), and Ctrl-V (click the speaker). Any
 other key just clears the strobe and returns.
 
@@ -3126,7 +3126,7 @@ two game-state flags (\$5E and \$39), and either loops back to \$67CB or
 branches to level-complete (\$7208) or game-over (\$BDA0) handlers.
 
 \paragraph{Attract mode.}
-During the attract/title screen, the loop is entered via [[JSR \$67D7]],
+During the attract/title screen, the loop is entered via [[JSR $67D7]],
 which skips the first three calls (rendering setup, scroll, and input).
 Four [[BIT abs]] instructions at \$67D7--\$67E0 serve as 3-byte NOPs
 during normal play; during attract mode they are the entry point that
@@ -3221,9 +3221,9 @@ SMC_ATTRACT = *
 
 \section{Display page flip}
 
-[[DISPLAY\_PAGE\_FLIP]] at \$6138 toggles the active hi-res display page
+[[DISPLAY_PAGE_FLIP]] at \$6138 toggles the active hi-res display page
 using self-modifying code. The instruction at \$6138 alternates between
-[[LDA \$C054]] (page~1) and [[LDA \$C055]] (page~2) by XOR-patching its
+[[LDA $C054]] (page~1) and [[LDA $C055]] (page~2) by XOR-patching its
 own operand byte at \$6139. It also adjusts ZP \$00 by adding \$80 each
 frame (a half-page scroll offset counter).
 
@@ -3296,11 +3296,11 @@ PRNG:
 
 \section{Timer display update}
 
-[[DISPLAY\_UPDATE]] at \$10AB draws an animated timer element on the status
+[[DISPLAY_UPDATE]] at \$10AB draws an animated timer element on the status
 bar. It sets up a 1$\times$6 sprite at column~9, row~\$16, then indexes
 the animation counter (ZP~\$1F) into frame tables at \$6800 and \$6900 to
 select the current frame's tile data. The selected pair is stored at
-\$6662/\$6663 and drawn via [[BLIT\_TILE]] at \$662C.
+\$6662/\$6663 and drawn via [[BLIT_TILE]] at \$662C.
 
 <<display update defines>>=
 
@@ -3355,18 +3355,18 @@ DISPLAY_UPDATE:
 
 \section{Score and status display}
 
-[[POST\_FRAME]] at \$10CF runs after each game frame to draw the score and
+[[POST_FRAME]] at \$10CF runs after each game frame to draw the score and
 status digits on the screen. It extracts BCD nibbles from ZP~\$D1,
 \$D2, and~\$D3, and draws each digit at a specific column position. The
 level-state flag (\$5E) is also drawn as two digits.
 
 Two helper sub-entries exist:
 \begin{itemize}
-\item \$1150 ([[DRAW\_DIGIT\_SHORT]]) sets width/height/row to 1/6/\$0C
+\item \$1150 ([[DRAW_DIGIT_SHORT]]) sets width/height/row to 1/6/\$0C
   before falling through.
-\item \$115C ([[DRAW\_DIGIT]]) looks up digit tile data from tables at
+\item \$115C ([[DRAW_DIGIT]]) looks up digit tile data from tables at
   \$AFF6 (low) and \$B076 (high), stores it at \$6662/\$6663, and calls
-  [[BLIT\_TILE]].
+  [[BLIT_TILE]].
 \end{itemize}
 
 The digit positions (column values stored in~\$5D) are:
@@ -3495,7 +3495,7 @@ DRAW_DIGIT:
 
 \section{High score check}
 
-[[LEVEL\_TRANSITION]] at \$116C is called during the level-complete
+[[LEVEL_TRANSITION]] at \$116C is called during the level-complete
 sequence. It performs a 3-byte BCD comparison of the current score
 (\$D1/\$D2/\$D3) against the stored high score (\$20/\$21/\$22). If the
 current score does not exceed the high score, it returns immediately.
@@ -3503,7 +3503,7 @@ current score does not exceed the high score, it returns immediately.
 When a new high score is detected, it copies the current score into the
 high-score slots, then copies six rows of the score display area from
 hi-res page~1 to page~2 (rows~\$0C--\$11). The source address comes from
-[[SCREEN\_ROW\_ADDR\_LO]]/[[SCREEN\_ROW\_ADDR\_HI]] offset by~1 (skipping
+[[SCREEN_ROW_ADDR_LO]]/[[SCREEN_ROW_ADDR_HI]] offset by~1 (skipping
 the first byte of each row), and the destination uses a second high-byte
 table at \$7440 (page~2 addresses). This makes the high-score area
 visible on both display pages.
@@ -3587,7 +3587,7 @@ LEVEL_TRANSITION:
 
 \section{Level state initialization}
 
-[[INIT\_LEVEL\_STATE]] at \$11B8 restores game state from three buffer
+[[INIT_LEVEL_STATE]] at \$11B8 restores game state from three buffer
 areas in page~2 memory, then zeros out entity slots and direction
 patches.
 
@@ -3693,7 +3693,7 @@ INIT_LEVEL_STATE:
 
 \section{Score add}
 
-[[SCORE\_ADD]] at \$121A adds a BCD value to the 3-byte score. The
+[[SCORE_ADD]] at \$121A adds a BCD value to the 3-byte score. The
 addend's low byte is in ZP~\$1A and high byte in ZP~\$1B; these are added
 to \$D3 and \$D2 respectively, with carry propagating into \$D1. All
 arithmetic is performed in BCD mode.
@@ -3737,12 +3737,12 @@ SCORE_ADD:
 
 \section{Game start initialization}
 
-[[GAME\_START\_INIT]] at \$13A4 is called from the attract loop when the
+[[GAME_START_INIT]] at \$13A4 is called from the attract loop when the
 player presses a key or button. It resets the player position to the
 starting Y-coordinate (\$6B), zeros the three score digits (\$2B--\$2D),
 sets the initial lives count, calls two initialization subroutines
-([[INIT\_ENTITY\_STATE]] and [[INIT\_LEVEL\_STATE]]), and then tail-calls
-[[LOAD\_LEVEL]] to load the first level.
+([[INIT_ENTITY_STATE]] and [[INIT_LEVEL_STATE]]), and then tail-calls
+[[LOAD_LEVEL]] to load the first level.
 
 <<game start init defines>>=
 
@@ -3824,7 +3824,7 @@ GAME_START_INIT:
 
 \section{Difficulty configuration update}
 
-[[SCROLL\_CAMERA]] at \$719D runs once every 256 frames (when the frame
+[[SCROLL_CAMERA]] at \$719D runs once every 256 frames (when the frame
 counter wraps to zero). It reads two game-progress bytes (\$D1 and \$D2),
 nibble-swaps and combines them into a single difficulty index, then
 selects one of four configuration presets for ZP variables \$31--\$35
@@ -3839,8 +3839,8 @@ The four presets correspond to increasing difficulty:
 \item Index $\ge$ 24: maximum difficulty with the highest thresholds.
 \end{itemize}
 
-The sub-entry at [[INIT\_ENTITY\_STATE]] (\$71D6) is also called directly
-by [[GAME\_START\_INIT]] to reset entity state when starting a new game.
+The sub-entry at [[INIT_ENTITY_STATE]] (\$71D6) is also called directly
+by [[GAME_START_INIT]] to reset entity state when starting a new game.
 
 <<scroll camera>>=
 
@@ -3944,7 +3944,7 @@ INIT_ENTITY_STATE:
 
 \section{Level complete handler}
 
-[[LEVEL\_COMPLETE]] at \$7208 runs when the level-complete flag (\$5E)
+[[LEVEL_COMPLETE]] at \$7208 runs when the level-complete flag (\$5E)
 goes negative. It first clears the keyboard strobe, calls a transition
 routine, then patches the main loop to disable attract behavior.
 
@@ -3955,9 +3955,9 @@ main loop. During this animation, keyboard or joystick input is polled;
 if detected, control transfers to the attract loop's input-detection
 code.
 
-When the extra-life count reaches zero, [[GAME\_START\_INIT]] is called
+When the extra-life count reaches zero, [[GAME_START_INIT]] is called
 to reset game state, the sound flag is refreshed, sprite rendering is
-re-enabled, and execution falls through into [[ATTRACT\_LOOP]].
+re-enabled, and execution falls through into [[ATTRACT_LOOP]].
 
 <<level complete defines>>=
 
@@ -4051,7 +4051,7 @@ LEVEL_COMPLETE:
 
 \section{Attract entity movement}
 
-[[ATTRACT\_ANIM\_1]] at \$17A6 updates the vertical positions of up to four
+[[ATTRACT_ANIM_1]] at \$17A6 updates the vertical positions of up to four
 attract-mode entities (X~=~3 down to~0). Each entity has a direction flag
 in \$88+X: negative means moving down, positive means moving up, zero
 means inactive.
@@ -4133,7 +4133,7 @@ ATTRACT_ANIM_1:
 
 \section{Attract entity draw}
 
-[[ATTRACT\_ANIM\_2]] at \$17E1 draws the four attract-mode entities. For
+[[ATTRACT_ANIM_2]] at \$17E1 draws the four attract-mode entities. For
 each entity (X~=~3 down to~0), it loads the X column from \$E5+X, width
 from \$ED+X, and Y position from \$E9+X. The sprite height is computed as
 \$6B minus the Y position, clamped to a maximum of~\$0E (14~pixels).
@@ -4190,7 +4190,7 @@ ATTRACT_ANIM_2:
 
 \section{Attract elevator animation}
 
-[[ATTRACT\_ANIM\_3]] at \$1813 controls the vertical oscillation of an
+[[ATTRACT_ANIM_3]] at \$1813 controls the vertical oscillation of an
 attract-mode element (likely an elevator or platform). ZP \$F3 holds the
 current Y position and \$F7 the direction flag: negative means moving
 down (incrementing Y), positive means moving up (decrementing Y).
@@ -4267,12 +4267,12 @@ ATTRACT_ANIM_3:
 
 \section{Attract sprite draw}
 
-[[ATTRACT\_ANIM\_4]] at \$1844 draws the attract-mode sprites each frame.
+[[ATTRACT_ANIM_4]] at \$1844 draws the attract-mode sprites each frame.
 It loops over two entity slots (X~=~1 down to X~=~0), reading each
 entity's X column from ZP~\$F2/\$F1, Y position from ZP~\$F4/\$F3,
 and width from ZP~\$F6/\$F5. Sprite data pointers are fetched from
 tables at \$B006 and \$B086. Each entity is drawn with height~8 via
-[[SPRITE\_DRAW\_CALL]].
+[[SPRITE_DRAW_CALL]].
 
 After the entity loop, it draws a fixed ``logo'' sprite at column~\$1D,
 row~\$A5, dimensions \$12$\times$\$08, with sprite data at \$BCF1.
@@ -4345,15 +4345,15 @@ ATTRACT_ANIM_4:
 
 \section{Title screen and attract}
 
-At startup, [[JMP (ZP\_GAME\_ENTRY)]] enters [[START\_ATTRACT]]
+At startup, [[JMP (ZP_GAME_ENTRY)]] enters [[START_ATTRACT]]
 in the level data area. This copies the title screen from hi-res page~1
 to page~2, clears the keyboard strobe, and enters the attract loop.
 
-The attract loop at [[ATTRACT\_LOOP]] (\$7263) calls the main game loop's
-attract entry point ([[JSR \$67D7]]), which runs the game's rendering and
+The attract loop at [[ATTRACT_LOOP]] (\$7263) calls the main game loop's
+attract entry point ([[JSR $67D7]]), which runs the game's rendering and
 animation subsystems without input handling. After each frame, it polls
 the joystick buttons and keyboard. When input is detected, it patches
-the main loop for game mode and jumps to [[MAIN\_LOOP]].
+the main loop for game mode and jumps to [[MAIN_LOOP]].
 
 <<attract loop>>=
 
@@ -5160,23 +5160,23 @@ BG_RESTORE:
 
 \section{Sprite draw (transparent blit)}
 
-[[DRAW\_SPRITE]] at \$656F is the game's main sprite draw routine --- it
+[[DRAW_SPRITE]] at \$656F is the game's main sprite draw routine --- it
 is called from about 40 places (projectiles, entities, UI sprites, the
 attract logo, extra-life animation). It OR-blits a rectangular sprite
 onto the currently-hidden hi-res page, using
-[[ZP\_PAGE\_FLAG]] (bit~7) to choose between page~1 (addresses
-\$2000-\$3FFF, row-high table at [[SCREEN\_ROW\_ADDR\_HI]] = \$72C0) and
+[[ZP_PAGE_FLAG]] (bit~7) to choose between page~1 (addresses
+\$2000-\$3FFF, row-high table at [[SCREEN_ROW_ADDR_HI]] = \$72C0) and
 page~2 (addresses \$4000-\$5FFF, row-high table at
-[[SCREEN\_ROW\_ADDR\_HI2]] = \$7440). Row-low bytes always come from
-[[SCREEN\_ROW\_ADDR\_LO]] at \$7380.
+[[SCREEN_ROW_ADDR_HI2]] = \$7440). Row-low bytes always come from
+[[SCREEN_ROW_ADDR_LO]] at \$7380.
 
 Inputs are the usual sprite-parameter quartet:
 \begin{itemize}
-\item [[ZP\_SPRITE\_W]] (\$56) --- width in bytes.
-\item [[ZP\_SPRITE\_H]] (\$57) --- height in rows.
-\item [[ZP\_SPRITE\_Y]] (\$5B) --- starting screen row.
-\item [[ZP\_SPRITE\_X]] (\$5D) --- starting column (right edge).
-\item [[SPRITE\_PTR\_LO]]/[[SPRITE\_PTR\_HI]] (\$65B3/\$65B4,
+\item [[ZP_SPRITE_W]] (\$56) --- width in bytes.
+\item [[ZP_SPRITE_H]] (\$57) --- height in rows.
+\item [[ZP_SPRITE_Y]] (\$5B) --- starting screen row.
+\item [[ZP_SPRITE_X]] (\$5D) --- starting column (right edge).
+\item [[SPRITE_PTR_LO]]/[[SPRITE_PTR_HI]] (\$65B3/\$65B4,
   self-modifying operand bytes of the sprite-data fetch) --- source
   pointer into sprite data.
 \end{itemize}
@@ -5185,7 +5185,7 @@ The routine is heavily self-modifying. On entry it patches three
 absolute-address operands with the current screen row address:
 \begin{itemize}
 \item The [[LDA xxxx,X]] at \$6592 selects the row-high-byte table
-  (\$72C0 or~\$7440), based on [[ZP\_PAGE\_FLAG]].
+  (\$72C0 or~\$7440), based on [[ZP_PAGE_FLAG]].
 \item The [[ORA xxxx,X]] at \$65B9 and [[STA xxxx,X]] at \$65BC both
   get patched with the current row's base screen address on every
   outer-loop iteration.
@@ -5194,14 +5194,14 @@ absolute-address operands with the current screen row address:
 The outer loop (one iteration per row) walks the sprite data byte-by-byte
 using Y. The inner loop walks X from the right edge of the sprite
 toward the left, decrementing the byte counter in ZP~\$5A. For each
-byte: if the destination column is out of range ([[X >= \$28]]), the
+byte: if the destination column is out of range ([[X >= $28]]), the
 sprite byte is skipped but Y is still advanced. Otherwise the sprite
 byte is fetched; if it is zero the source byte is skipped (transparency);
 otherwise the byte is OR'd into the screen memory at the row/column
 position.
 
 There is a short dead-code tail at \$65CC-\$65D4 that is only reachable
-from an unreachable [[CPX \#\$00 / BCS]] fall-through at \$65AE-\$65B1
+from an unreachable [[CPX #$00 / BCS]] fall-through at \$65AE-\$65B1
 (the [[BCS]] is always taken because X is unsigned). The bytes are kept
 verbatim so that the binary stays byte-perfect.
 
@@ -5321,7 +5321,7 @@ SMC_STA_HI = *+2                  ; High of STA abs,X operand --- patched
 
 ; --- Dead-code tail ($65CC-$65D4, 9 bytes) ---
 ; Reached only from the unreachable "INY / JMP" at $65AE-$65B1
-; (since [[CPX \#\$00 / BCS]] is always taken).  Retained verbatim
+; (since [[CPX #$00 / BCS]] is always taken).  Retained verbatim
 ; for byte-faithful assembly.
 .dead_tail:
         DEX
@@ -5340,8 +5340,8 @@ SMC_STA_HI = *+2                  ; High of STA abs,X operand --- patched
         ;   \$65D5: OR-blit restricted to a narrow column range
         ;     ($0B..$1B) --- likely the score/status strip.
         ;   \$662C: opaque (STA) tile blit --- already aliased as
-        ;     [[BLIT\_TILE]] and used by [[DISPLAY\_UPDATE]] and
-        ;     [[POST\_FRAME]] for digit/tile rendering.
+        ;     [[BLIT_TILE]] and used by [[DISPLAY_UPDATE]] and
+        ;     [[POST_FRAME]] for digit/tile rendering.
         ; Raw data --- 159 bytes.
 
         HEX 24 00 30 0D A9 C0 8D F9 65 A9 72 8D FA 65 4C F0

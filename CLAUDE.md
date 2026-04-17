@@ -155,7 +155,7 @@ The `/annotate` skill automates these passes for an existing routine.
 
 ### Noweb / LaTeX
 
-- Do not escape underscores or dollar signs inside `[[ ]]` noweb code refs.
+- Do not escape underscores or dollar signs inside `[[ ]]` noweb code refs. Write `[[$4000]]` and `[[GAME_INIT]]`, not `[[\$4000]]` or `[[GAME\_INIT]]` — `[[ ]]` content is literal code, and weave.py LaTeX-escapes it automatically; any author-written `\` prefix will render as a visible backslash in the PDF. (weave.py strips `\_`, `\$`, `\&`, `\#`, `\%`, `\{`, `\}` inside `[[ ]]` as a safety net, but keep the source clean.)
 - Never put `<<chunk>>` inside assembly comments — the tangler expands them.
 - Never put LaTeX math inside `[[ ]]` noweb code refs.
 - `@ %def` must not have duplicate identifiers across chunks.

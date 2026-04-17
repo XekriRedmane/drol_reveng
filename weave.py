@@ -312,8 +312,16 @@ class Weaver:
         )
         return s.translate(trans_table)
 
+    # LaTeX-escaped specials that may erroneously appear inside [[...]] code
+    # refs. Noweb treats [[...]] content as literal code, so author-written
+    # escapes like \_ or \$ should be normalized to the bare character before
+    # LaTeX re-encoding (otherwise make_safe_string re-escapes the backslash
+    # and the \-prefix shows up literally in the PDF).
+    TT_ESCAPE_STRIP = re.compile(r"\\([_$&#%{}])")
+
     def tt(self, m: re.Match[str]) -> str:
-        return r"{\Tt{}" + self.make_safe_string(m.group(1)) + r"\nwendquote}"
+        content = self.TT_ESCAPE_STRIP.sub(r"\1", m.group(1))
+        return r"{\Tt{}" + self.make_safe_string(content) + r"\nwendquote}"
 
     def weave_doc_line(self, line: str, f: TextIOWrapper) -> None:
         """Handles code fragments quoted with double brackets.

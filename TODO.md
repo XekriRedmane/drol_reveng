@@ -1,5 +1,69 @@
 # TODO
 
+## Milestone: `CLEAR_PAGE1`/`CLEAR_PAGE2` carved + entity-table data split (2026-04-17)
+
+First cut into the 2288-byte `<<game code 03A8>>` hex blob:
+
+- **Entity state tables** at $03A8-$03F7 (80 bytes) carved as data chunk
+  `<<entity tables 03A8>>`.  Rounds out the 8-table entity record
+  block (first 4 tables at $0358-$03A7 were already in
+  `<<game data 02C6>>`).  The `ENTITY_ACTIVE = $03A8` EQU is
+  retired; the address is now the module-level label `ENTITY_ACTIVE`
+  at the top of the data chunk.  Disk bytes at $03BC, $03D0, and
+  $03E4-$03EF carry non-zero initial values on-disk --- these are
+  stale/residue; game-init zeros the block.
+- **FLOOR_Y_TABLE** 8 bytes at $03F8-$03FF carved as `<<floor y table data>>`.
+  Disk bytes are all zero; FIRST_BOOT writes the sentinel values
+  ($00, $43, $6B, $93, $BB).
+- **CLEAR_PAGE1** ($0400-$04A6, 167 bytes): zero-paints hi-res
+  page 1 ($2000-$3FFF) across playfield column range
+  `[ZP_CLEAR_COL_END+1 .. ZP_CLEAR_COL]` and then copies the 40-byte
+  text-row buffer at $0300,X into 12 interlaced hi-res bottom rows.
+  Called from player-tick code at $61E8.
+- **CLEAR_PAGE2** ($04A7-$054D, 167 bytes): page-2 counterpart
+  ($4000-$5FFF).  Exposes two sub-entries: `CLEAR_PAGE2_ENTRY`
+  ($04AB, skip register setup) and `CLEAR_PAGE2_TEXT_ENTRY` ($051E,
+  skip hi-res paint loop, used by reset-screen code at $4719/$474A).
+  Called from $61EC.
+
+Both CLEAR routines call out to `INTERLACE_FILL_P1` at $0A0F and
+`INTERLACE_FILL_P2` at $0B5C; these are declared as EQU stubs
+(not yet carved).  New ZP EQU: `ZP_CLEAR_COL_END = $2D`
+(low-column terminator; game-time alias `ZP_SCORE_2`).
+
+**Remaining hex tail** `<<game code 03A8>>` now covers $054E-$0C97
+(1866 bytes).  It is entirely hi-res framebuffer library code:
+
+- $054E-$070A: `STRIPE_COPY_PAGE1` --- copies `($FE),Y` into
+  hi-res page 1 stripe columns.  Y indexes source bytes; X counts
+  from `$59` down to `$58`.  Inner body is a 33-way stripe fanout
+  matching the row-decimation pattern of CLEAR_PAGE1.
+- $070B-$08C7: `STRIPE_COPY_PAGE2` --- page-2 twin.
+- $08C8-$08DE: `ROW_PAINT_P1_38` --- small painter (4-row stripe at
+  col 38).  Single caller: $62DA.
+- $08DF-$08F5: `ROW_PAINT_P2_38` --- page-2 twin.  Single caller: $62DE.
+- $08F6-$0979: `TEXT_ROW_FROM_A30D_P1` --- paints from a fixed source
+  at $A30D,Y into page 1 text-area rows.  Called from $6370.
+- $097A-$09FD: `TEXT_ROW_FROM_A30D_P2` --- page-2 twin.  Called from $6374.
+- $09FE-$0B4A: `INTERLACE_RESTORE_P1` --- restores text bytes from
+  $0300,X via `INTERLACE_FILL_P1` ($0A0F) helper.
+- $0B4B-$0C97: `INTERLACE_RESTORE_P2` --- page-2 twin; $0B5C is the
+  `INTERLACE_FILL_P2` helper used by CLEAR_PAGE2.
+
+Next-session priorities (in order):
+
+1. Carve `INTERLACE_FILL_P1` ($0A0F) and `INTERLACE_FILL_P2` ($0B5C)
+   first --- retires the EQU stubs and unblocks full understanding of
+   the other 6 routines.
+2. Carve the two stripe-copy routines ($054E + $070B) --- 942 bytes
+   of near-identical twinned code.
+3. The 4 smaller routines ($08C8/$08DF/$08F6/$097A) and the two
+   restore routines ($09FE/$0B4B).
+
+Any aligned entry point I can reach from the game engine A tail
+($614B-$64CA) calls one of these routines, so the whole region is
+used during level transitions and screen refreshes, not per-frame.
+
 ## Milestone: `RESCUE_DRAW` carved from `<<projectile handler>>` (2026-04-17)
 
 The 441-byte `<<projectile handler>>` HEX blob at $0C98-$0E50 (the

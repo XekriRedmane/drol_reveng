@@ -11,3 +11,4 @@
 - [Drol special-sprite slot](drol-special-slot.md) — $6ABA SPECIAL_TICK + $6B39 SPECIAL_DRAW, bonus creature kills 4 floor-enemies then falls for +500 BCD
 - [Drol companion slot](drol-companion-slot.md) — $6CFE COMPANION_UPDATE; two-slot hostile walker, $B3/$B1/$11/$13/$15,X parallel arrays, gate $33, auto-activates on tier unlock
 - [Drol rescue subsystem](drol-rescue-subsystem.md) — $6F9C RESCUE_UPDATE ticks; $0C98 RESCUE_DRAW awards +$0035 BCD AND can spawn hostile projectiles on player floor (odd row + free $C5,X slot)
+- [Drol hi-res library](drol-hires-library.md) — $0400-$0C97 is 2200 bytes of hi-res page 1/2 framebuffer routines (clear/copy/paint), NOT game logic; twin page 1/page 2 pairs

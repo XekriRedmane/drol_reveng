@@ -5036,299 +5036,498 @@ SCREEN_ROW_HELPER:
         HEX 01 FF
 @
 
-<<game code 03A8>>=
+<<entity tables 03A8>>=
 
         ORG $03A8
+ENTITY_ACTIVE:
         SUBROUTINE
-        ; Game code (\$03A8-\$0C97): entity management, physics, rendering
-        ; Raw data --- 2288 bytes
+        ; Entity state tables ($03A8-$03F7, 80 bytes, 20 slots x 4 tables).
+        ; Rounds out the 8-table entity-record block that begins at $0358
+        ; (first 4 tables live in the game-data-02C6 chunk).  On disk these
+        ; initial bytes are loaded with the level, but the game zeros the
+        ; entire block during normal play; the non-zero bytes at $03BC and
+        ; $03E4-$03EF are stale disk-image residue and never observed at
+        ; runtime.
 
+        ; ENTITY_ACTIVE ($03A8-$03BB): per-slot state byte.
+        ;   $00 inactive / +ve walking / $FF drift / $FE exit-anim.
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 07 07 00 00
+        HEX 00 00 00 00
+
+        ; RESCUE_ANIM ($03BC-$03CF): step animation counter (8..1; 0 = advance).
+        HEX 07 07 00 00
         HEX 07 07 00 07 07 00 00 07
         HEX 07 00 07 00 07 00 07 00
+
+        ; RESCUE_FLOOR ($03D0-$03E3): per-slot assigned floor index (static).
+        ;   Seven slots on floor 2, seven on floor 3, six on floor 4.
         HEX 02 02 02 02 02 02 02 03
         HEX 03 03 03 03 03 03 04 04
-        HEX 04 04 04 04 C2 AA AC C1
+        HEX 04 04 04 04
+
+        ; RESCUE_COUNTDOWN ($03E4-$03F7): drift-mode countdown
+        ; (1..4 every-other-frame).  Disk bytes $03E4-$03EF are stale
+        ; data-image residue (never read at runtime --- cleared by
+        ; the level-init zero-pass).
+        HEX C2 AA AC C1
         HEX AA 60 4C 51 A8 EA EA 4C
         HEX 00 00 00 00 00 00 00 00
+@
+
+<<floor y table data>>=
+
+        ORG $03F8
+FLOOR_Y_TABLE_DATA:
+        SUBROUTINE
+        ; Floor Y-coordinate table ($03F8-$03FC) plus 3 pad bytes.
+        ; Written at first-boot by FIRST_BOOT to the sentinel
+        ; values ($00, $43, $6B, $93, $BB).  Disk image is all zeros.
         HEX 00 00 00 00 00 00 00 00
-        HEX A6 2E A9 00 9D 00 26 9D
-        HEX 00 2A 9D 00 2E 9D 00 32
-        HEX 9D 00 36 9D 00 3A 9D 00
-        HEX 3E 9D 80 22 9D 80 26 9D
-        HEX 80 2A 9D 80 2E 9D 80 32
-        HEX 9D 80 36 9D 80 3A 9D 80
-        HEX 3E 9D 00 23 9D 00 27 9D
-        HEX 00 2B 9D 00 2F 9D 00 33
-        HEX 9D 00 37 9D 00 3B 9D 00
-        HEX 3F 9D 80 23 9D 80 27 9D
-        HEX 80 2B 9D 80 2F 9D 80 33
-        HEX 9D 80 37 9D 80 3B 9D 80
-        HEX 3F 9D 28 20 9D 28 24 9D
-        HEX 28 28 20 0F 0A E4 2D F0
-        HEX 04 CA 4C 04 04 A2 27 BD
-        HEX 00 03 9D 28 30 9D 28 34
-        HEX 9D 28 38 9D 28 3C 9D A8
-        HEX 32 9D A8 36 9D A8 3A 9D
-        HEX A8 3E 9D 50 31 9D 50 35
-        HEX 9D 50 39 9D 50 3D E0 00
-        HEX F0 04 CA 4C 77 04 60 A6
-        HEX 2E A9 00 9D 00 46 9D 00
-        HEX 4A 9D 00 4E 9D 00 52 9D
-        HEX 00 56 9D 00 5A 9D 00 5E
-        HEX 9D 80 42 9D 80 46 9D 80
-        HEX 4A 9D 80 4E 9D 80 52 9D
-        HEX 80 56 9D 80 5A 9D 80 5E
-        HEX 9D 00 43 9D 00 47 9D 00
-        HEX 4B 9D 00 4F 9D 00 53 9D
-        HEX 00 57 9D 00 5B 9D 00 5F
-        HEX 9D 80 43 9D 80 47 9D 80
-        HEX 4B 9D 80 4F 9D 80 53 9D
-        HEX 80 57 9D 80 5B 9D 80 5F
-        HEX 9D 28 40 9D 28 44 9D 28
-        HEX 48 20 5C 0B E4 2D F0 04
-        HEX CA 4C AB 04 A2 27 BD 00
-        HEX 03 9D 28 50 9D 28 54 9D
-        HEX 28 58 9D 28 5C 9D A8 52
-        HEX 9D A8 56 9D A8 5A 9D A8
-        HEX 5E 9D 50 51 9D 50 55 9D
-        HEX 50 59 9D 50 5D E0 00 F0
-        HEX 04 CA 4C 1E 05 60 A0 00
-        HEX A6 59 E0 28 90 08 98 18
-        HEX 69 23 A8 4C 02 07 B1 FE
-        HEX 9D A8 20 9D 28 23 9D D0
-        HEX 21 C8 B1 FE 9D A8 24 9D
-        HEX 28 27 9D D0 25 C8 B1 FE
-        HEX 9D A8 28 9D 28 2B 9D D0
-        HEX 29 C8 B1 FE 9D A8 2C 9D
-        HEX 28 2F 9D D0 2D C8 B1 FE
-        HEX 9D A8 30 9D 28 33 9D D0
-        HEX 31 C8 B1 FE 9D A8 34 9D
-        HEX 28 37 9D D0 35 C8 B1 FE
-        HEX 9D A8 38 9D 28 3B 9D D0
-        HEX 39 C8 B1 FE 9D A8 3C 9D
-        HEX 28 3F 9D D0 3D C8 B1 FE
-        HEX 9D 28 21 9D A8 23 9D 50
-        HEX 22 C8 B1 FE 9D 28 25 9D
-        HEX A8 27 9D 50 26 C8 B1 FE
-        HEX 9D 28 29 9D A8 2B 9D 50
-        HEX 2A C8 B1 FE 9D 28 2D 9D
-        HEX A8 2F 9D 50 2E C8 B1 FE
-        HEX 9D 28 31 9D A8 33 9D 50
-        HEX 32 C8 B1 FE 9D 28 35 9D
-        HEX A8 37 9D 50 36 C8 B1 FE
-        HEX 9D 28 39 9D A8 3B 9D 50
-        HEX 3A C8 B1 FE 9D 28 3D 9D
-        HEX A8 3F 9D 50 3E C8 B1 FE
-        HEX 9D A8 21 9D 50 20 9D D0
-        HEX 22 C8 B1 FE 9D A8 25 9D
-        HEX 50 24 9D D0 26 C8 B1 FE
-        HEX 9D A8 29 9D 50 28 9D D0
-        HEX 2A C8 B1 FE 9D A8 2D 9D
-        HEX 50 2C 9D D0 2E C8 B1 FE
-        HEX 9D A8 31 9D 50 30 9D D0
-        HEX 32 C8 B1 FE 9D A8 35 9D
-        HEX 50 34 9D D0 36 C8 B1 FE
-        HEX 9D A8 39 9D 50 38 9D D0
-        HEX 3A C8 B1 FE 9D A8 3D 9D
-        HEX 50 3C 9D D0 3E C8 B1 FE
-        HEX 9D 28 22 9D D0 20 9D 50
-        HEX 23 C8 B1 FE 9D 28 26 9D
-        HEX D0 24 9D 50 27 C8 B1 FE
-        HEX 9D 28 2A 9D D0 28 9D 50
-        HEX 2B C8 B1 FE 9D 28 2E 9D
-        HEX D0 2C 9D 50 2F C8 B1 FE
-        HEX 9D 28 32 9D D0 30 9D 50
-        HEX 33 C8 B1 FE 9D 28 36 9D
-        HEX D0 34 9D 50 37 C8 B1 FE
-        HEX 9D 28 3A 9D D0 38 9D 50
-        HEX 3B C8 B1 FE 9D 28 3E 9D
-        HEX D0 3C 9D 50 3F C8 B1 FE
-        HEX 9D A8 22 9D 50 21 9D D0
-        HEX 23 C8 B1 FE 9D A8 26 9D
-        HEX 50 25 9D D0 27 C8 B1 FE
-        HEX 9D A8 2A 9D 50 29 9D D0
-        HEX 2B C8 CA E4 58 F0 03 4C
-        HEX 52 05 60 A0 00 A6 59 E0
-        HEX 28 90 08 98 18 69 23 A8
-        HEX 4C BF 08 B1 FE 9D A8 40
-        HEX 9D 28 43 9D D0 41 C8 B1
-        HEX FE 9D A8 44 9D 28 47 9D
-        HEX D0 45 C8 B1 FE 9D A8 48
-        HEX 9D 28 4B 9D D0 49 C8 B1
-        HEX FE 9D A8 4C 9D 28 4F 9D
-        HEX D0 4D C8 B1 FE 9D A8 50
-        HEX 9D 28 53 9D D0 51 C8 B1
-        HEX FE 9D A8 54 9D 28 57 9D
-        HEX D0 55 C8 B1 FE 9D A8 58
-        HEX 9D 28 5B 9D D0 59 C8 B1
-        HEX FE 9D A8 5C 9D 28 5F 9D
-        HEX D0 5D C8 B1 FE 9D 28 41
-        HEX 9D A8 43 9D 50 42 C8 B1
-        HEX FE 9D 28 45 9D A8 47 9D
-        HEX 50 46 C8 B1 FE 9D 28 49
-        HEX 9D A8 4B 9D 50 4A C8 B1
-        HEX FE 9D 28 4D 9D A8 4F 9D
-        HEX 50 4E C8 B1 FE 9D 28 51
-        HEX 9D A8 53 9D 50 52 C8 B1
-        HEX FE 9D 28 55 9D A8 57 9D
-        HEX 50 56 C8 B1 FE 9D 28 59
-        HEX 9D A8 5B 9D 50 5A C8 B1
-        HEX FE 9D 28 5D 9D A8 5F 9D
-        HEX 50 5E C8 B1 FE 9D A8 41
-        HEX 9D 50 40 9D D0 42 C8 B1
-        HEX FE 9D A8 45 9D 50 44 9D
-        HEX D0 46 C8 B1 FE 9D A8 49
-        HEX 9D 50 48 9D D0 4A C8 B1
-        HEX FE 9D A8 4D 9D 50 4C 9D
-        HEX D0 4E C8 B1 FE 9D A8 51
-        HEX 9D 50 50 9D D0 52 C8 B1
-        HEX FE 9D A8 55 9D 50 54 9D
-        HEX D0 56 C8 B1 FE 9D A8 59
-        HEX 9D 50 58 9D D0 5A C8 B1
-        HEX FE 9D A8 5D 9D 50 5C 9D
-        HEX D0 5E C8 B1 FE 9D 28 42
-        HEX 9D D0 40 9D 50 43 C8 B1
-        HEX FE 9D 28 46 9D D0 44 9D
-        HEX 50 47 C8 B1 FE 9D 28 4A
-        HEX 9D D0 48 9D 50 4B C8 B1
-        HEX FE 9D 28 4E 9D D0 4C 9D
-        HEX 50 4F C8 B1 FE 9D 28 52
-        HEX 9D D0 50 9D 50 53 C8 B1
-        HEX FE 9D 28 56 9D D0 54 9D
-        HEX 50 57 C8 B1 FE 9D 28 5A
-        HEX 9D D0 58 9D 50 5B C8 B1
-        HEX FE 9D 28 5E 9D D0 5C 9D
-        HEX 50 5F C8 B1 FE 9D A8 42
-        HEX 9D 50 41 9D D0 43 C8 B1
-        HEX FE 9D A8 46 9D 50 45 9D
-        HEX D0 47 C8 B1 FE 9D A8 4A
-        HEX 9D 50 49 9D D0 4B C8 CA
-        HEX E4 58 F0 03 4C 0F 07 60
-        HEX A0 00 A2 27 B1 FE 9D 28
-        HEX 2C 9D A8 2E 9D 50 2D 9D
-        HEX D0 2F C8 CA 10 EE 60 A0
-        HEX 00 A2 27 B1 FE 9D 28 4C
-        HEX 9D A8 4E 9D 50 4D 9D D0
-        HEX 4F C8 CA 10 EE 60 A2 0F
-        HEX A0 00 B9 0D A3 9D 0C 24
-        HEX 9D 0C 28 9D 0C 2C 9D 0C
-        HEX 30 9D 0C 34 9D 0C 38 9D
-        HEX 0C 3C C8 B9 0D A3 9D 8C
-        HEX 20 C8 B9 0D A3 9D 8C 24
-        HEX 9D 8C 28 9D 8C 2C 9D 8C
-        HEX 30 9D 8C 34 9D 8C 38 9D
-        HEX 8C 3C C8 B9 0D A3 9D 0C
-        HEX 21 C8 B9 0D A3 9D 0C 25
-        HEX 9D 0C 29 9D 0C 2D 9D 0C
-        HEX 31 9D 0C 35 9D 0C 39 9D
-        HEX 0C 3D C8 B9 0D A3 9D 8C
-        HEX 21 C8 B9 0D A3 9D 8C 25
-        HEX 9D 8C 29 9D 8C 2D 9D 8C
-        HEX 31 9D 8C 35 9D 8C 39 9D
-        HEX 8C 3D C8 CA 30 03 4C FA
-        HEX 08 60 A2 0F A0 00 B9 0D
-        HEX A3 9D 0C 44 9D 0C 48 9D
-        HEX 0C 4C 9D 0C 50 9D 0C 54
-        HEX 9D 0C 58 9D 0C 5C C8 B9
-        HEX 0D A3 9D 8C 40 C8 B9 0D
-        HEX A3 9D 8C 44 9D 8C 48 9D
-        HEX 8C 4C 9D 8C 50 9D 8C 54
-        HEX 9D 8C 58 9D 8C 5C C8 B9
-        HEX 0D A3 9D 0C 41 C8 B9 0D
-        HEX A3 9D 0C 45 9D 0C 49 9D
-        HEX 0C 4D 9D 0C 51 9D 0C 55
-        HEX 9D 0C 59 9D 0C 5D C8 B9
-        HEX 0D A3 9D 8C 41 C8 B9 0D
-        HEX A3 9D 8C 45 9D 8C 49 9D
-        HEX 8C 4D 9D 8C 51 9D 8C 55
-        HEX 9D 8C 59 9D 8C 5D C8 CA
-        HEX 30 03 4C 7E 09 60 A6 2B
-        HEX E4 2C D0 01 60 BD 00 03
-        HEX 20 0F 0A CA 4C 00 0A 9D
-        HEX A8 20 9D 28 23 9D D0 21
-        HEX 9D A8 24 9D 28 27 9D D0
-        HEX 25 9D A8 28 9D 28 2B 9D
-        HEX D0 29 9D A8 2C 9D 28 2F
-        HEX 9D D0 2D 9D A8 30 9D 28
-        HEX 33 9D D0 31 9D A8 34 9D
-        HEX 28 37 9D D0 35 9D A8 38
-        HEX 9D 28 3B 9D D0 39 9D A8
-        HEX 3C 9D 28 3F 9D D0 3D 9D
-        HEX 28 21 9D A8 23 9D 50 22
-        HEX 9D 28 25 9D A8 27 9D 50
-        HEX 26 9D 28 29 9D A8 2B 9D
-        HEX 50 2A 9D 28 2D 9D A8 2F
-        HEX 9D 50 2E 9D 28 31 9D A8
-        HEX 33 9D 50 32 9D 28 35 9D
-        HEX A8 37 9D 50 36 9D 28 39
-        HEX 9D A8 3B 9D 50 3A 9D 28
-        HEX 3D 9D A8 3F 9D 50 3E 9D
-        HEX A8 21 9D 50 20 9D D0 22
-        HEX 9D A8 25 9D 50 24 9D D0
-        HEX 26 9D A8 29 9D 50 28 9D
-        HEX D0 2A 9D A8 2D 9D 50 2C
-        HEX 9D D0 2E 9D A8 31 9D 50
-        HEX 30 9D D0 32 9D A8 35 9D
-        HEX 50 34 9D D0 36 9D A8 39
-        HEX 9D 50 38 9D D0 3A 9D A8
-        HEX 3D 9D 50 3C 9D D0 3E 9D
-        HEX 28 22 9D D0 20 9D 50 23
-        HEX 9D 28 26 9D D0 24 9D 50
-        HEX 27 9D 28 2A 9D D0 28 9D
-        HEX 50 2B 9D 28 2E 9D D0 2C
-        HEX 9D 50 2F 9D 28 32 9D D0
-        HEX 30 9D 50 33 9D 28 36 9D
-        HEX D0 34 9D 50 37 9D 28 3A
-        HEX 9D D0 38 9D 50 3B 9D 28
-        HEX 3E 9D D0 3C 9D 50 3F 9D
-        HEX A8 22 9D 50 21 9D D0 23
-        HEX 9D A8 26 9D 50 25 9D D0
-        HEX 27 9D A8 2A 9D 50 29 9D
-        HEX D0 2B 60 A6 2B E4 2C D0
-        HEX 01 60 BD 00 03 20 5C 0B
-        HEX CA 4C 4D 0B 9D A8 40 9D
-        HEX 28 43 9D D0 41 9D A8 44
-        HEX 9D 28 47 9D D0 45 9D A8
-        HEX 48 9D 28 4B 9D D0 49 9D
-        HEX A8 4C 9D 28 4F 9D D0 4D
-        HEX 9D A8 50 9D 28 53 9D D0
-        HEX 51 9D A8 54 9D 28 57 9D
-        HEX D0 55 9D A8 58 9D 28 5B
-        HEX 9D D0 59 9D A8 5C 9D 28
-        HEX 5F 9D D0 5D 9D 28 41 9D
-        HEX A8 43 9D 50 42 9D 28 45
-        HEX 9D A8 47 9D 50 46 9D 28
-        HEX 49 9D A8 4B 9D 50 4A 9D
-        HEX 28 4D 9D A8 4F 9D 50 4E
-        HEX 9D 28 51 9D A8 53 9D 50
-        HEX 52 9D 28 55 9D A8 57 9D
-        HEX 50 56 9D 28 59 9D A8 5B
-        HEX 9D 50 5A 9D 28 5D 9D A8
-        HEX 5F 9D 50 5E 9D A8 41 9D
-        HEX 50 40 9D D0 42 9D A8 45
-        HEX 9D 50 44 9D D0 46 9D A8
-        HEX 49 9D 50 48 9D D0 4A 9D
-        HEX A8 4D 9D 50 4C 9D D0 4E
-        HEX 9D A8 51 9D 50 50 9D D0
-        HEX 52 9D A8 55 9D 50 54 9D
-        HEX D0 56 9D A8 59 9D 50 58
-        HEX 9D D0 5A 9D A8 5D 9D 50
-        HEX 5C 9D D0 5E 9D 28 42 9D
-        HEX D0 40 9D 50 43 9D 28 46
-        HEX 9D D0 44 9D 50 47 9D 28
-        HEX 4A 9D D0 48 9D 50 4B 9D
-        HEX 28 4E 9D D0 4C 9D 50 4F
-        HEX 9D 28 52 9D D0 50 9D 50
-        HEX 53 9D 28 56 9D D0 54 9D
-        HEX 50 57 9D 28 5A 9D D0 58
-        HEX 9D 50 5B 9D 28 5E 9D D0
-        HEX 5C 9D 50 5F 9D A8 42 9D
-        HEX 50 41 9D D0 43 9D A8 46
-        HEX 9D 50 45 9D D0 47 9D A8
-        HEX 4A 9D 50 49 9D D0 4B 60
+@
+
+<<clear page1 defines>>=
+
+; --- Hi-res screen-clear column bounds (used by CLEAR_PAGE1/CLEAR_PAGE2) ---
+; The screen-clear routines loop X from ZP_CLEAR_COL down to
+; ZP_CLEAR_COL_END+1 (inclusive), painting $00 across 35 interlaced
+; hi-res row-base addresses per iteration.  The column terminators
+; are repurposed as score-HUD digit slots ($2B/$2C/$2D) during
+; gameplay; only the screen-clear prologue uses them as col bounds.
+ZP_CLEAR_COL_END = $2D          ; Low-column terminator (inclusive)
+                                ; (game-time alias: ZP_SCORE_2)
+
+; --- Interlace-fill helpers (not yet carved; stubs) ---
+; Called once per CLEAR_PAGE1/CLEAR_PAGE2 outer iteration.  Paints
+; A=$00 across a further ~63 interlaced hi-res positions per page.
+; Full disassembly awaits a subsequent RE pass.
+INTERLACE_FILL_P1 = $0A0F       ; Hi-res page 1 interlace filler
+INTERLACE_FILL_P2 = $0B5C       ; Hi-res page 2 interlace filler
+@
+
+<<clear page1>>=
+
+        ORG $0400
+CLEAR_PAGE1:
+        SUBROUTINE
+        ; Zero-paints hi-res page 1 ($2000-$3FFF) across the
+        ; playfield column range [ZP_CLEAR_COL_END+1 .. ZP_CLEAR_COL]
+        ; and then copies a 40-byte text-area buffer from $0300,X into
+        ; 12 interlaced hi-res rows.  Used to clear the game framebuffer
+        ; between level transitions and after full redraws.
+        ;
+        ; Inputs:
+        ;   ZP_CLEAR_COL      ($2E) --- high (starting) column.
+        ;   ZP_CLEAR_COL_END  ($2D) --- low terminator (inclusive: stop when X==this).
+        ;   $0300,X  --- 40-byte ($28) bottom-text-row source strip.
+        ;
+        ; Behavior:
+        ;   1. Outer X-loop (ZP_CLEAR_COL..ZP_CLEAR_COL_END): zero every
+        ;      column of the stripe-decimated 32-row playfield region
+        ;      (STA $2600,X + 34 partner rows) and call INTERLACE_FILL_P1
+        ;      ($0A0F) to fill another 63 rows with A=$00 per iteration.
+        ;   2. After X==ZP_CLEAR_COL_END, LDX #$27 and loop the $0300
+        ;      text-buffer bytes into 12 interlaced rows (bottom four
+        ;      text lines, $3028.. $3D50).
+        ;
+        ; Clobbers: A, X
+        LDX ZP_CLEAR_COL                ; $0400: outer-loop column start
+        LDA #$00                        ; $0402: paint value
+.paint_loop:
+        STA $2600,X                     ; $0404: hi-res page 1 row stripes
+        STA $2A00,X
+        STA $2E00,X
+        STA $3200,X
+        STA $3600,X
+        STA $3A00,X
+        STA $3E00,X
+        STA $2280,X
+        STA $2680,X
+        STA $2A80,X
+        STA $2E80,X
+        STA $3280,X
+        STA $3680,X
+        STA $3A80,X
+        STA $3E80,X
+        STA $2300,X
+        STA $2700,X
+        STA $2B00,X
+        STA $2F00,X
+        STA $3300,X
+        STA $3700,X
+        STA $3B00,X
+        STA $3F00,X
+        STA $2380,X
+        STA $2780,X
+        STA $2B80,X
+        STA $2F80,X
+        STA $3380,X
+        STA $3780,X
+        STA $3B80,X
+        STA $3F80,X
+        STA $2028,X                     ; top HUD-row stripes (row 0/4/8)
+        STA $2428,X
+        STA $2828,X
+        JSR INTERLACE_FILL_P1           ; $046A: fill remaining 63 rows
+        CPX ZP_CLEAR_COL_END            ; $046D: loop terminator
+        BEQ .text_restore
+        DEX
+        JMP .paint_loop
+.text_restore:
+        LDX #$27                        ; $0475: restore bottom text area
+.text_loop:
+        LDA $0300,X                     ; $0477: buffered text-row bytes
+        STA $3028,X                     ; 12 interlaced bottom rows
+        STA $3428,X
+        STA $3828,X
+        STA $3C28,X
+        STA $32A8,X
+        STA $36A8,X
+        STA $3AA8,X
+        STA $3EA8,X
+        STA $3150,X
+        STA $3550,X
+        STA $3950,X
+        STA $3D50,X
+        CPX #$00
+        BEQ .done
+        DEX
+        JMP .text_loop
+.done:
+        RTS                             ; $04A6
+@ %def CLEAR_PAGE1
+
+<<clear page2>>=
+
+        ORG $04A7
+CLEAR_PAGE2:
+        SUBROUTINE
+        ; Zero-paints hi-res page 2 ($4000-$5FFF) across the
+        ; playfield column range [ZP_CLEAR_COL_END+1 .. ZP_CLEAR_COL]
+        ; and then copies a 40-byte text-area buffer from $0300,X into
+        ; 12 interlaced hi-res rows.  Page-2 counterpart of CLEAR_PAGE1;
+        ; otherwise identical structure.
+        ;
+        ; Additional entry:
+        ;   CLEAR_PAGE2_ENTRY ($04AB, inside paint_loop) --- allows an
+        ;   external caller (reset-screen code at $4719) to jump in
+        ;   with X/A already set up, skipping the register prologue.
+        ;
+        ; Inputs:
+        ;   ZP_CLEAR_COL      ($2E) --- outer-loop column start.
+        ;   ZP_CLEAR_COL_END  ($2D) --- inclusive terminator.
+        ;   $0300,X --- 40-byte text-area source.
+        ;
+        ; Clobbers: A, X
+        LDX ZP_CLEAR_COL                ; $04A7
+        LDA #$00                        ; $04A9
+CLEAR_PAGE2_ENTRY:
+        STA $4600,X                     ; $04AB: page-2 row stripes
+        STA $4A00,X
+        STA $4E00,X
+        STA $5200,X
+        STA $5600,X
+        STA $5A00,X
+        STA $5E00,X
+        STA $4280,X
+        STA $4680,X
+        STA $4A80,X
+        STA $4E80,X
+        STA $5280,X
+        STA $5680,X
+        STA $5A80,X
+        STA $5E80,X
+        STA $4300,X
+        STA $4700,X
+        STA $4B00,X
+        STA $4F00,X
+        STA $5300,X
+        STA $5700,X
+        STA $5B00,X
+        STA $5F00,X
+        STA $4380,X
+        STA $4780,X
+        STA $4B80,X
+        STA $4F80,X
+        STA $5380,X
+        STA $5780,X
+        STA $5B80,X
+        STA $5F80,X
+        STA $4028,X
+        STA $4428,X
+        STA $4828,X
+        JSR INTERLACE_FILL_P2           ; $0511: fill remaining 63 rows
+        CPX ZP_CLEAR_COL_END            ; $0514
+        BEQ .text_restore
+        DEX
+        JMP CLEAR_PAGE2_ENTRY           ; $0519
+.text_restore:
+        LDX #$27                        ; $051C
+CLEAR_PAGE2_TEXT_ENTRY:
+        LDA $0300,X                     ; $051E: sub-entry used by $474A
+        STA $5028,X                     ; 12 interlaced bottom rows (page 2)
+        STA $5428,X
+        STA $5828,X
+        STA $5C28,X
+        STA $52A8,X
+        STA $56A8,X
+        STA $5AA8,X
+        STA $5EA8,X
+        STA $5150,X
+        STA $5550,X
+        STA $5950,X
+        STA $5D50,X
+        CPX #$00
+        BEQ .done
+        DEX
+        JMP CLEAR_PAGE2_TEXT_ENTRY      ; $054A
+.done:
+        RTS                             ; $054D
+@ %def CLEAR_PAGE2 CLEAR_PAGE2_ENTRY CLEAR_PAGE2_TEXT_ENTRY
+
+<<game code 03A8>>=
+
+        ORG $054E
+        SUBROUTINE
+        ; Hi-res framebuffer library tail ($054E-$0C97, 1866 bytes):
+        ; stripe-copy into/out of both pages, row painters, and
+        ; interlace-fill helpers INTERLACE_FILL_P1 (at $0A0F) and
+        ; INTERLACE_FILL_P2 (at $0B5C).  Still awaiting full carve-out.
+
+        HEX A0 00 A6 59 E0 28 90 08
+        HEX 98 18 69 23 A8 4C 02 07
+        HEX B1 FE 9D A8 20 9D 28 23
+        HEX 9D D0 21 C8 B1 FE 9D A8
+        HEX 24 9D 28 27 9D D0 25 C8
+        HEX B1 FE 9D A8 28 9D 28 2B
+        HEX 9D D0 29 C8 B1 FE 9D A8
+        HEX 2C 9D 28 2F 9D D0 2D C8
+        HEX B1 FE 9D A8 30 9D 28 33
+        HEX 9D D0 31 C8 B1 FE 9D A8
+        HEX 34 9D 28 37 9D D0 35 C8
+        HEX B1 FE 9D A8 38 9D 28 3B
+        HEX 9D D0 39 C8 B1 FE 9D A8
+        HEX 3C 9D 28 3F 9D D0 3D C8
+        HEX B1 FE 9D 28 21 9D A8 23
+        HEX 9D 50 22 C8 B1 FE 9D 28
+        HEX 25 9D A8 27 9D 50 26 C8
+        HEX B1 FE 9D 28 29 9D A8 2B
+        HEX 9D 50 2A C8 B1 FE 9D 28
+        HEX 2D 9D A8 2F 9D 50 2E C8
+        HEX B1 FE 9D 28 31 9D A8 33
+        HEX 9D 50 32 C8 B1 FE 9D 28
+        HEX 35 9D A8 37 9D 50 36 C8
+        HEX B1 FE 9D 28 39 9D A8 3B
+        HEX 9D 50 3A C8 B1 FE 9D 28
+        HEX 3D 9D A8 3F 9D 50 3E C8
+        HEX B1 FE 9D A8 21 9D 50 20
+        HEX 9D D0 22 C8 B1 FE 9D A8
+        HEX 25 9D 50 24 9D D0 26 C8
+        HEX B1 FE 9D A8 29 9D 50 28
+        HEX 9D D0 2A C8 B1 FE 9D A8
+        HEX 2D 9D 50 2C 9D D0 2E C8
+        HEX B1 FE 9D A8 31 9D 50 30
+        HEX 9D D0 32 C8 B1 FE 9D A8
+        HEX 35 9D 50 34 9D D0 36 C8
+        HEX B1 FE 9D A8 39 9D 50 38
+        HEX 9D D0 3A C8 B1 FE 9D A8
+        HEX 3D 9D 50 3C 9D D0 3E C8
+        HEX B1 FE 9D 28 22 9D D0 20
+        HEX 9D 50 23 C8 B1 FE 9D 28
+        HEX 26 9D D0 24 9D 50 27 C8
+        HEX B1 FE 9D 28 2A 9D D0 28
+        HEX 9D 50 2B C8 B1 FE 9D 28
+        HEX 2E 9D D0 2C 9D 50 2F C8
+        HEX B1 FE 9D 28 32 9D D0 30
+        HEX 9D 50 33 C8 B1 FE 9D 28
+        HEX 36 9D D0 34 9D 50 37 C8
+        HEX B1 FE 9D 28 3A 9D D0 38
+        HEX 9D 50 3B C8 B1 FE 9D 28
+        HEX 3E 9D D0 3C 9D 50 3F C8
+        HEX B1 FE 9D A8 22 9D 50 21
+        HEX 9D D0 23 C8 B1 FE 9D A8
+        HEX 26 9D 50 25 9D D0 27 C8
+        HEX B1 FE 9D A8 2A 9D 50 29
+        HEX 9D D0 2B C8 CA E4 58 F0
+        HEX 03 4C 52 05 60 A0 00 A6
+        HEX 59 E0 28 90 08 98 18 69
+        HEX 23 A8 4C BF 08 B1 FE 9D
+        HEX A8 40 9D 28 43 9D D0 41
+        HEX C8 B1 FE 9D A8 44 9D 28
+        HEX 47 9D D0 45 C8 B1 FE 9D
+        HEX A8 48 9D 28 4B 9D D0 49
+        HEX C8 B1 FE 9D A8 4C 9D 28
+        HEX 4F 9D D0 4D C8 B1 FE 9D
+        HEX A8 50 9D 28 53 9D D0 51
+        HEX C8 B1 FE 9D A8 54 9D 28
+        HEX 57 9D D0 55 C8 B1 FE 9D
+        HEX A8 58 9D 28 5B 9D D0 59
+        HEX C8 B1 FE 9D A8 5C 9D 28
+        HEX 5F 9D D0 5D C8 B1 FE 9D
+        HEX 28 41 9D A8 43 9D 50 42
+        HEX C8 B1 FE 9D 28 45 9D A8
+        HEX 47 9D 50 46 C8 B1 FE 9D
+        HEX 28 49 9D A8 4B 9D 50 4A
+        HEX C8 B1 FE 9D 28 4D 9D A8
+        HEX 4F 9D 50 4E C8 B1 FE 9D
+        HEX 28 51 9D A8 53 9D 50 52
+        HEX C8 B1 FE 9D 28 55 9D A8
+        HEX 57 9D 50 56 C8 B1 FE 9D
+        HEX 28 59 9D A8 5B 9D 50 5A
+        HEX C8 B1 FE 9D 28 5D 9D A8
+        HEX 5F 9D 50 5E C8 B1 FE 9D
+        HEX A8 41 9D 50 40 9D D0 42
+        HEX C8 B1 FE 9D A8 45 9D 50
+        HEX 44 9D D0 46 C8 B1 FE 9D
+        HEX A8 49 9D 50 48 9D D0 4A
+        HEX C8 B1 FE 9D A8 4D 9D 50
+        HEX 4C 9D D0 4E C8 B1 FE 9D
+        HEX A8 51 9D 50 50 9D D0 52
+        HEX C8 B1 FE 9D A8 55 9D 50
+        HEX 54 9D D0 56 C8 B1 FE 9D
+        HEX A8 59 9D 50 58 9D D0 5A
+        HEX C8 B1 FE 9D A8 5D 9D 50
+        HEX 5C 9D D0 5E C8 B1 FE 9D
+        HEX 28 42 9D D0 40 9D 50 43
+        HEX C8 B1 FE 9D 28 46 9D D0
+        HEX 44 9D 50 47 C8 B1 FE 9D
+        HEX 28 4A 9D D0 48 9D 50 4B
+        HEX C8 B1 FE 9D 28 4E 9D D0
+        HEX 4C 9D 50 4F C8 B1 FE 9D
+        HEX 28 52 9D D0 50 9D 50 53
+        HEX C8 B1 FE 9D 28 56 9D D0
+        HEX 54 9D 50 57 C8 B1 FE 9D
+        HEX 28 5A 9D D0 58 9D 50 5B
+        HEX C8 B1 FE 9D 28 5E 9D D0
+        HEX 5C 9D 50 5F C8 B1 FE 9D
+        HEX A8 42 9D 50 41 9D D0 43
+        HEX C8 B1 FE 9D A8 46 9D 50
+        HEX 45 9D D0 47 C8 B1 FE 9D
+        HEX A8 4A 9D 50 49 9D D0 4B
+        HEX C8 CA E4 58 F0 03 4C 0F
+        HEX 07 60 A0 00 A2 27 B1 FE
+        HEX 9D 28 2C 9D A8 2E 9D 50
+        HEX 2D 9D D0 2F C8 CA 10 EE
+        HEX 60 A0 00 A2 27 B1 FE 9D
+        HEX 28 4C 9D A8 4E 9D 50 4D
+        HEX 9D D0 4F C8 CA 10 EE 60
+        HEX A2 0F A0 00 B9 0D A3 9D
+        HEX 0C 24 9D 0C 28 9D 0C 2C
+        HEX 9D 0C 30 9D 0C 34 9D 0C
+        HEX 38 9D 0C 3C C8 B9 0D A3
+        HEX 9D 8C 20 C8 B9 0D A3 9D
+        HEX 8C 24 9D 8C 28 9D 8C 2C
+        HEX 9D 8C 30 9D 8C 34 9D 8C
+        HEX 38 9D 8C 3C C8 B9 0D A3
+        HEX 9D 0C 21 C8 B9 0D A3 9D
+        HEX 0C 25 9D 0C 29 9D 0C 2D
+        HEX 9D 0C 31 9D 0C 35 9D 0C
+        HEX 39 9D 0C 3D C8 B9 0D A3
+        HEX 9D 8C 21 C8 B9 0D A3 9D
+        HEX 8C 25 9D 8C 29 9D 8C 2D
+        HEX 9D 8C 31 9D 8C 35 9D 8C
+        HEX 39 9D 8C 3D C8 CA 30 03
+        HEX 4C FA 08 60 A2 0F A0 00
+        HEX B9 0D A3 9D 0C 44 9D 0C
+        HEX 48 9D 0C 4C 9D 0C 50 9D
+        HEX 0C 54 9D 0C 58 9D 0C 5C
+        HEX C8 B9 0D A3 9D 8C 40 C8
+        HEX B9 0D A3 9D 8C 44 9D 8C
+        HEX 48 9D 8C 4C 9D 8C 50 9D
+        HEX 8C 54 9D 8C 58 9D 8C 5C
+        HEX C8 B9 0D A3 9D 0C 41 C8
+        HEX B9 0D A3 9D 0C 45 9D 0C
+        HEX 49 9D 0C 4D 9D 0C 51 9D
+        HEX 0C 55 9D 0C 59 9D 0C 5D
+        HEX C8 B9 0D A3 9D 8C 41 C8
+        HEX B9 0D A3 9D 8C 45 9D 8C
+        HEX 49 9D 8C 4D 9D 8C 51 9D
+        HEX 8C 55 9D 8C 59 9D 8C 5D
+        HEX C8 CA 30 03 4C 7E 09 60
+        HEX A6 2B E4 2C D0 01 60 BD
+        HEX 00 03 20 0F 0A CA 4C 00
+        HEX 0A 9D A8 20 9D 28 23 9D
+        HEX D0 21 9D A8 24 9D 28 27
+        HEX 9D D0 25 9D A8 28 9D 28
+        HEX 2B 9D D0 29 9D A8 2C 9D
+        HEX 28 2F 9D D0 2D 9D A8 30
+        HEX 9D 28 33 9D D0 31 9D A8
+        HEX 34 9D 28 37 9D D0 35 9D
+        HEX A8 38 9D 28 3B 9D D0 39
+        HEX 9D A8 3C 9D 28 3F 9D D0
+        HEX 3D 9D 28 21 9D A8 23 9D
+        HEX 50 22 9D 28 25 9D A8 27
+        HEX 9D 50 26 9D 28 29 9D A8
+        HEX 2B 9D 50 2A 9D 28 2D 9D
+        HEX A8 2F 9D 50 2E 9D 28 31
+        HEX 9D A8 33 9D 50 32 9D 28
+        HEX 35 9D A8 37 9D 50 36 9D
+        HEX 28 39 9D A8 3B 9D 50 3A
+        HEX 9D 28 3D 9D A8 3F 9D 50
+        HEX 3E 9D A8 21 9D 50 20 9D
+        HEX D0 22 9D A8 25 9D 50 24
+        HEX 9D D0 26 9D A8 29 9D 50
+        HEX 28 9D D0 2A 9D A8 2D 9D
+        HEX 50 2C 9D D0 2E 9D A8 31
+        HEX 9D 50 30 9D D0 32 9D A8
+        HEX 35 9D 50 34 9D D0 36 9D
+        HEX A8 39 9D 50 38 9D D0 3A
+        HEX 9D A8 3D 9D 50 3C 9D D0
+        HEX 3E 9D 28 22 9D D0 20 9D
+        HEX 50 23 9D 28 26 9D D0 24
+        HEX 9D 50 27 9D 28 2A 9D D0
+        HEX 28 9D 50 2B 9D 28 2E 9D
+        HEX D0 2C 9D 50 2F 9D 28 32
+        HEX 9D D0 30 9D 50 33 9D 28
+        HEX 36 9D D0 34 9D 50 37 9D
+        HEX 28 3A 9D D0 38 9D 50 3B
+        HEX 9D 28 3E 9D D0 3C 9D 50
+        HEX 3F 9D A8 22 9D 50 21 9D
+        HEX D0 23 9D A8 26 9D 50 25
+        HEX 9D D0 27 9D A8 2A 9D 50
+        HEX 29 9D D0 2B 60 A6 2B E4
+        HEX 2C D0 01 60 BD 00 03 20
+        HEX 5C 0B CA 4C 4D 0B 9D A8
+        HEX 40 9D 28 43 9D D0 41 9D
+        HEX A8 44 9D 28 47 9D D0 45
+        HEX 9D A8 48 9D 28 4B 9D D0
+        HEX 49 9D A8 4C 9D 28 4F 9D
+        HEX D0 4D 9D A8 50 9D 28 53
+        HEX 9D D0 51 9D A8 54 9D 28
+        HEX 57 9D D0 55 9D A8 58 9D
+        HEX 28 5B 9D D0 59 9D A8 5C
+        HEX 9D 28 5F 9D D0 5D 9D 28
+        HEX 41 9D A8 43 9D 50 42 9D
+        HEX 28 45 9D A8 47 9D 50 46
+        HEX 9D 28 49 9D A8 4B 9D 50
+        HEX 4A 9D 28 4D 9D A8 4F 9D
+        HEX 50 4E 9D 28 51 9D A8 53
+        HEX 9D 50 52 9D 28 55 9D A8
+        HEX 57 9D 50 56 9D 28 59 9D
+        HEX A8 5B 9D 50 5A 9D 28 5D
+        HEX 9D A8 5F 9D 50 5E 9D A8
+        HEX 41 9D 50 40 9D D0 42 9D
+        HEX A8 45 9D 50 44 9D D0 46
+        HEX 9D A8 49 9D 50 48 9D D0
+        HEX 4A 9D A8 4D 9D 50 4C 9D
+        HEX D0 4E 9D A8 51 9D 50 50
+        HEX 9D D0 52 9D A8 55 9D 50
+        HEX 54 9D D0 56 9D A8 59 9D
+        HEX 50 58 9D D0 5A 9D A8 5D
+        HEX 9D 50 5C 9D D0 5E 9D 28
+        HEX 42 9D D0 40 9D 50 43 9D
+        HEX 28 46 9D D0 44 9D 50 47
+        HEX 9D 28 4A 9D D0 48 9D 50
+        HEX 4B 9D 28 4E 9D D0 4C 9D
+        HEX 50 4F 9D 28 52 9D D0 50
+        HEX 9D 50 53 9D 28 56 9D D0
+        HEX 54 9D 50 57 9D 28 5A 9D
+        HEX D0 58 9D 50 5B 9D 28 5E
+        HEX 9D D0 5C 9D 50 5F 9D A8
+        HEX 42 9D 50 41 9D D0 43 9D
+        HEX A8 46 9D 50 45 9D D0 47
+        HEX 9D A8 4A 9D 50 49 9D D0
+        HEX 4B 60
 @
 
 \section{Rescue-child draw, collision, and projectile-spawn}
@@ -9503,7 +9702,7 @@ HIT_BG_BYTE1    = $0340         ; Saved BG byte at offset +1
 HIT_BG_BYTE0    = $034C         ; Saved BG byte at offset +0
 
 ; --- 20-slot entity draw tables (phase 5) ---
-ENTITY_ACTIVE   = $03A8         ; Entity activity table ($03A8-$03BB, 20 slots)
+; ENTITY_ACTIVE is defined as a label at $03A8 in the entity-tables chunk.
 ENTITY_FLOOR_COL = $0358        ; Entity floor-column index table
 ENTITY_XOFF_IDX = $036C          ; Entity X-offset index table
 ENTITY_FLOOR_POS = $0380         ; Entity floor-row index table
@@ -12773,7 +12972,16 @@ RESCUE_UPDATE:
 <<screen row helper>>
 ; --- ORG $02C6: Game data tables ---
 <<game data 02C6>>
-; --- ORG $03A8: Game code ---
+; --- ORG $03A8: Entity state tables (active/anim/floor/countdown) ---
+<<entity tables 03A8>>
+; --- ORG $03F8: Floor Y-coordinate table (disk-zero, FIRST_BOOT writes) ---
+<<floor y table data>>
+; --- ORG $0400: Hi-res page 1 clear + text-row restore ---
+<<clear page1 defines>>
+<<clear page1>>
+; --- ORG $04A7: Hi-res page 2 clear + text-row restore ---
+<<clear page2>>
+; --- ORG $054E: Hi-res framebuffer library tail (hex) ---
 <<game code 03A8>>
 ; --- ORG $0C98: Rescue draw + collision + projectile-spawn ---
 <<rescue draw defines>>

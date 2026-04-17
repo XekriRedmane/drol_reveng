@@ -1,6 +1,7 @@
 __pycache__/
 *.lock*
 output/
+.venv/
 
 # Ghidra project transient files
 AliBaba.rep/**/tmp*.ps

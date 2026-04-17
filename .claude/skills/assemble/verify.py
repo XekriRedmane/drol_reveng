@@ -25,6 +25,7 @@ TARGETS: dict[str, tuple[str, str, int]] = {
     'loader': ('output/loader.bin', 'reference/loader.bin', 0x5000),
     'rwts':   ('output/rwts.bin',   'reference/rwts.bin',   0xBE00),
     'drol':   ('output/drol.bin',   'reference/drol.bin',   0x0100),
+    'level1': ('output/level1.bin', 'reference/level1.bin', 0x0000),
 }
 
 

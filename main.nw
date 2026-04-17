@@ -2202,7 +2202,7 @@ LEVEL_LOGIC     = $6F9C         ; Level logic (game engine B hex)
 ; (ENEMY_C_ADVANCE is the label at ORG $1646; was misnamed PLAYER_STATE.)
 ; (ENEMY_C_DRAW is the label at ORG $16AC inside sprite-player-code-16AC;
 ;  formerly mislabelled PLAYER_RENDER.)
-; (SPRITE_DRAW_1 is the label at ORG $1423 inside sprite-player-code chunk)
+; (ENEMY_A_DRAW is the label at ORG $1423, formerly SPRITE_DRAW_1.)
 ; (ENEMY_B_ADVANCE is the label at ORG $1536 in enemy-b-advance chunk)
 ; (ENEMY_B_DRAW is the label at ORG $1591 in enemy-b-draw chunk)
 ; (BEAM_UPDATE at $130A has its own ORG chunk)
@@ -3486,7 +3486,7 @@ SMC_RENDER = *
         JSR ENEMY_C_ADVANCE     ; Enemy-C advance timer + respawn
         JSR ENEMY_C_DRAW        ; Enemy-C draw + enemy-slot collision
         JSR ENEMY_A_ADVANCE     ; Enemy-A advance timer + respawn
-        JSR SPRITE_DRAW_1       ; Enemy-A draw
+        JSR ENEMY_A_DRAW        ; Enemy-A draw + player-hit detection
         JSR ENEMY_B_ADVANCE     ; Enemy-B advance timer + respawn
         JSR ENEMY_B_DRAW        ; Enemy-B draw + player-hit detection
         JSR BEAM_UPDATE         ; Player laser-beam subsystem
@@ -5697,7 +5697,7 @@ slot's four-byte record is:
 [[ZP_ENEMY_A_POS]] (\$DD/\$DE) & 16-bit phase counter, decremented each
                                  tick by [[ZP_ADVANCE_RATE]]. \\
 [[ZP_ENEMY_A_ROW]] (\$DF) & Sprite starting row for the draw pass at
-                            [[SPRITE_PLAYER_REST]]. \\
+                            [[ENEMY_A_DRAW]]. \\
 \end{tabular}
 \end{center}
 
@@ -5753,9 +5753,15 @@ enemy-C.
 
 \paragraph{Cross-references.}  [[ZP_ADVANCE_RATE]] is also consumed at
 \$1675 by the enemy-C tick; the two entities share a single
-difficulty-controlled advance rate.  The draw counterpart at
-\$1423 reads [[ZP_ENEMY_A_STATE]], [[ZP_ENEMY_A_POS]] and
-[[ZP_ENEMY_A_ROW]] directly.
+difficulty-controlled advance rate.  The draw counterpart
+[[ENEMY_A_DRAW]] at \$1423 reads [[ZP_ENEMY_A_STATE]],
+[[ZP_ENEMY_A_POS]] and [[ZP_ENEMY_A_ROW]] directly, uses bit~7 of
+[[ZP_ENEMY_A_STATE]] to gate walking animation, and on player-overlap
+writes \$00 back to [[ZP_ENEMY_A_STATE]] to deactivate the slot
+(cf.\ [[ENEMY_B_DRAW]] which writes \$FF for drift-mode deferred
+deactivation).  The \texttt{DEC \$39} at \$1528 inside
+[[ENEMY_A_DRAW]] is what consumes a player-life credit on
+enemy-A/player overlap.
 
 <<enemy a defines>>=
 
@@ -5858,51 +5864,367 @@ ENEMY_A_ADVANCE:
 @ %def ZP_ENEMY_A_SND_CTR ZP_ENEMY_A_STATE ZP_ENEMY_A_POS ZP_ENEMY_A_ROW
 @ %def ZP_ENEMY_C_STATE ZP_ENEMY_C_ROW SND_PITCH_TBL_A
 
-<<sprite player code>>=
+\section{Enemy-A draw and player-collision}
+
+[[ENEMY_A_DRAW]] at \$1423 is the draw+hit routine for the enemy-A
+slot --- the third and final member of the entity-draw triplet that
+mirrors [[ENEMY_B_DRAW]] (enemy-B) and [[ENEMY_C_DRAW]] (enemy-C).
+Called from [[MAIN_LOOP]] every frame after [[ENEMY_A_ADVANCE]] has
+ticked the slot, this routine completes the three-slot entity
+system.  Previously emitted as the [[SPRITE_DRAW_1]] HEX stub; that
+name is retired here.
+
+\paragraph{Shape.}  Same state-gate / perspective-clip / main-draw /
+hit-test frame as [[ENEMY_B_DRAW]] and [[ENEMY_C_DRAW]], but with a
+distinctive \emph{two-sprite composite body} and a \emph{walking-frame
+animation} on the steady path.  The overall layout is:
+\begin{enumerate}
+\item State gate: if [[ZP_ENEMY_A_STATE]] is \$00, exit immediately.
+\item Perspective clip: same Y-indexed transform as B/C (subtract
+  [[ZP_SPRITE_XREF]] from [[PERSPECTIVE_XOFF_LO]][[[ZP_PLAYER_Y]]],
+  then subtract that from [[ZP_ENEMY_A_POS]]); store the result in
+  [[ZP_CLIP_X_LO]]/[[ZP_CLIP_X_HI]]; exit if high byte non-zero.
+  Right-edge clip is \$9A (vs.\ enemy-B's \$9C and enemy-C's \$94).
+\item Common sprite-parameter setup: column from [[PROJ_SCREEN_COL]],
+  frame index from [[PROJ_FRAME_IDX]], width \$03, height \$13.
+\item \emph{State-polarity dispatch} (\texttt{BPL}): positive state
+  (steady tick) branches to the animated path at \$14A0; negative
+  state (drift, set externally by [[ENEMY_C_DRAW]]'s hit broadcast)
+  falls through to the un-animated stance path at \$1463.  Note:
+  this polarity is the \emph{opposite} of the convention used by
+  [[ENEMY_B_DRAW]] and [[ENEMY_C_DRAW]], where negative-state jumps
+  to a drift \emph{puff} and positive-state takes the main steady
+  draw.  Enemy-A has no puff; drift just collapses the animation.
+\item Un-animated stance (\$1463, reached when drift \emph{or} when
+  steady+animation-phase-0/2): draw main body at row~[[ZP_ENEMY_A_ROW]]
+  from [[SPRITE_TABLE_A_BODY_LO]]/[[SPRITE_TABLE_A_BODY_HI]]
+  (\$B009/\$B089), then draw a $\$03\times\$03$ ``feet'' sprite at
+  row~+~\$13 from [[SPRITE_TABLE_A_FEET_LO]]/[[SPRITE_TABLE_A_FEET_HI]]
+  (\$B017/\$B097), then \texttt{JMP} to the hit test.
+\item Animated walking (\$14A0, reached only on steady state):
+  extract a 2-bit phase from [[ZP_FRAME_COUNTER]] (mask \$06, LSR);
+  if the phase is \$00 or \$02, rejoin the stance path at \$1463;
+  otherwise (phase \$01 or \$03, two out of every four frames)
+  stash the phase in [[ZP_ENEMY_A_LEG_PHASE]] (\$0F) and draw the
+  body at row~$-$1 plus one of two \emph{walking-feet} sprite
+  variants at row~+~\$12 (height~\$04 instead of \$03):
+  phase \$01 selects [[SPRITE_TABLE_A_STEP2_LO]] (\$B01E/\$B09E),
+  phase \$03 selects [[SPRITE_TABLE_A_STEP1_LO]] (\$B010/\$B090).
+  Both variants then rejoin the hit test via fall-through or
+  \texttt{JMP}.
+\item Player-hit test (\$1506): check if [[ZP_CLIP_X_LO]] is in the
+  window [\$42,\$4F) \emph{and} if [[ZP_ENEMY_A_ROW]] lies in the
+  $[\textrm{player}-\$14,\,\textrm{player}+\$10]$ band (\$24 rows
+  tall, 4 rows taller than enemy-B's \$1B).
+\item On hit: \emph{immediately} deactivate enemy-A (\$00 to
+  [[ZP_ENEMY_A_STATE]], \emph{not} \$FF-drift like enemy-B), reload
+  [[ZP_ENEMY_A_SND_CTR]] to \$07 (one final death click), decrement
+  [[ZP_GAME_OVER]] (\$39) to consume a player-life credit, award
+  +\$0300 BCD via [[SCORE_ADD]] (same 300~points as enemy-B), and
+  exit.
+\end{enumerate}
+
+\paragraph{Why four sprite-table bases?}  Enemy-A is rendered as a
+humanoid figure with distinct head/body and feet components.  The
+four bases used (\$09, \$10, \$17, \$1E in the 128-entry
+[[SPRITE_TABLE_LO]]/[[SPRITE_TABLE_HI]] at \$B000/\$B080) correspond
+to four sprite families all indexed by [[PROJ_FRAME_IDX]]:
+\begin{center}
+\begin{tabular}{ll}
+Base \$09 & Main body (head/torso, $\$03\times\$13$) --- all paths \\
+Base \$17 & Stance feet ($\$03\times\$03$) --- un-animated drift / stance frames \\
+Base \$10 & Walking feet variant~1 ($\$03\times\$04$) --- steady phase \$03 \\
+Base \$1E & Walking feet variant~2 ($\$03\times\$04$) --- steady phase \$01 \\
+\end{tabular}
+\end{center}
+Cycling phase through \$01 $\to$ \$03 on consecutive frames (with
+stance frames between) produces a four-frame walking gait
+(stance / step~1 / stance / step~2) tied to [[ZP_FRAME_COUNTER]]
+rather than to a dedicated animation clock.
+
+\paragraph{Cross-slot consequences.}  Enemy-A's hit path makes the
+\emph{third} write to [[ZP_GAME_OVER]] in the triplet: both enemy-B
+\emph{and} enemy-A count as player-life hazards, while enemy-C does
+not touch \$39 at all (its hit target is the floor-enemy list, not
+the player).  The \texttt{DEC \$39} at \$1528 is what
+[[ENEMY_B_DRAW]]'s prior prose referenced; see the entity-triplet
+cross-reference table below.  Enemy-A's hit does not broadcast any
+handshake writes to other slots --- it only zeroes its own state.
+
+\paragraph{Contrast with the rest of the triplet:}
+\begin{center}
+\begin{tabular}{llll}
+                        & Enemy-A                        & Enemy-B                        & Enemy-C               \\ \hline
+Slot state              & \$DC                          & \$E0                          & \$D4                  \\
+16-bit pos              & \$DD/\$DE                     & \$E1/\$E2                     & \$D5/\$D6             \\
+Row                     & \$DF                          & \$E3                          & \$D7                  \\
+Main body size          & $\$03\times\$13$              & $\$05\times\$11$              & $\$02\times\$0B$      \\
+Main body table         & \$B009/\$B089                 & \$B025/\$B0A5                 & \$AFE1/\$B061         \\
+Secondary sprite        & feet ($\$03\times\$03$) or walk ($\$03\times\$04$) & \emph{none} & tail ($\$01\times\$07$) \\
+Animation               & \$FD-gated walking frames      & \emph{none}                  & \emph{none}           \\
+Drift puff              & \emph{none} (drift = stance)   & $\$02\times\$06$ at \$755A/\$765A & $\$02\times\$06$ at \$7559/\$7659 \\
+State polarity dispatch & \texttt{BPL} $\to$ steady animates  & \texttt{BPL} $\to$ steady    & \texttt{BPL} $\to$ steady \\
+Right X clip            & \$9A                          & \$9C                          & \$94                  \\
+Hit target              & player (\$06/\$4A)            & player (\$06/\$4A)            & 4-slot enemy (\$9F/\$A3) \\
+Hit X window            & [\$42, \$4F)                  & [\$42, \$55)                  & (clip\_X$-$8, clip\_X] \\
+Hit Y window            & $[\textrm{player}-\$14, \textrm{player}+\$10]$ & $[\textrm{player}-\$0E, \textrm{player}+\$0D]$ & $[\textrm{row}-\$03, \textrm{row}+\$09]$ \\
+Score awarded           & +\$0300 (300)                 & +\$0300 (300)                 & +\$0100 (100)         \\
+Game-over decrement     & yes                           & yes                           & \emph{no}             \\
+Post-hit state write    & \$DC~$\leftarrow$~\$00 (immediate) & \$E0~$\leftarrow$~\$FF (drift) & \$D4~$\leftarrow$~\$FF; \$DC~$\leftarrow$~\$FF; \$9B,X~$\leftarrow$~\$00 \\
+Sound counter reload    & \$B8~$\leftarrow$~\$07        & \$E4~$\leftarrow$~\$05        & \$B7~$\leftarrow$~\$04 \\
+\end{tabular}
+\end{center}
+
+\paragraph{Fast sprite-table base arithmetic.}  The code at
+\$1467--\$1470 writes \texttt{LDA \$B009,X; STA \$65B3; LDA \$B089,X;
+STA \$65B4} in the stance path.  All four bases used by enemy-A are
+\emph{one byte apart per pair}: \$B009/\$B089 for the body, \$B010/\$B090
+for walk-variant~1, \$B017/\$B097 for the stance feet, \$B01E/\$B09E
+for walk-variant~2.  Because the paired (lo,\,hi) tables are exactly
+\$80 apart, the two \texttt{STA} instructions patch
+[[SMC_DS_SRC_LO]] and [[SMC_DS_SRC_HI]] from a single X index.
+
+<<enemy a draw defines>>=
+
+; --- Scratch ZP used only by the walking-frame animation ---
+; Holds the LSR'd two-bit phase (value in {$01, $03}) that selects
+; which walking-feet sprite base to use for the current frame.
+ZP_ENEMY_A_LEG_PHASE = $0F      ; Walking phase scratch (ENEMY_A_DRAW)
+
+; --- Enemy-A sprite families (within SPRITE_TABLE_LO/HI at $B000/$B080) ---
+; All four families are indexed by PROJ_FRAME_IDX (X after the clip).
+SPRITE_TABLE_A_BODY_LO  = $B009 ; Main body pointers, low
+SPRITE_TABLE_A_BODY_HI  = $B089 ; Main body pointers, high
+SPRITE_TABLE_A_STEP1_LO = $B010 ; Walking feet variant 1 (phase $03), low
+SPRITE_TABLE_A_STEP1_HI = $B090 ; Walking feet variant 1, high
+SPRITE_TABLE_A_FEET_LO  = $B017 ; Stance feet pointers, low (drift / phase $00/$02)
+SPRITE_TABLE_A_FEET_HI  = $B097 ; Stance feet, high
+SPRITE_TABLE_A_STEP2_LO = $B01E ; Walking feet variant 2 (phase $01), low
+SPRITE_TABLE_A_STEP2_HI = $B09E ; Walking feet variant 2, high
+
+@
+
+<<enemy a draw>>=
 
         ORG $1423
-SPRITE_DRAW_1:
+ENEMY_A_DRAW:
         SUBROUTINE
-        ; Enemy-A draw ($1423-$1535): sibling of ENEMY_B_DRAW
-        ; (enemy-B draw) and ENEMY_C_DRAW (enemy-C draw).  Not yet
-        ; fully RE'd; emitted as a 275-byte HEX blob.
+        ; Per-frame draw + player-collision for the enemy-A slot.
+        ; Completes the entity-draw triplet (with ENEMY_B_DRAW and
+        ; ENEMY_C_DRAW).  Unlike B/C, enemy-A is rendered as a
+        ; two-sprite composite (body + feet) with a four-frame
+        ; walking animation driven by ZP_FRAME_COUNTER bits 1-2;
+        ; drift state simply collapses the animation to a fixed
+        ; stance (there is no drift puff).  Player-hit awards +$0300
+        ; BCD and decrements ZP_GAME_OVER, matching enemy-B.
+        ;
+        ; Inputs:
+        ;   ZP_ENEMY_A_STATE    --- $00 off; +steady (animates); -drift (stance).
+        ;   ZP_ENEMY_A_POS      --- 16-bit world X for enemy-A.
+        ;   ZP_ENEMY_A_ROW      --- Body-sprite starting screen row.
+        ;   ZP_PLAYER_Y ($4A)   --- Player Y (index into perspective tables).
+        ;   ZP_PLAYER_COL ($06) --- Player column (collision X reference).
+        ;   ZP_SPRITE_XREF ($4C) --- Level-fixed X reference.
+        ;   ZP_FRAME_COUNTER ($FD) --- Frame-counter source for walk gate.
+        ;   PERSPECTIVE_XOFF_LO/HI --- Y-to-X transform tables.
+        ;   SPRITE_TABLE_A_BODY_LO/HI   --- Body-sprite pointer table.
+        ;   SPRITE_TABLE_A_FEET_LO/HI   --- Stance-feet pointer table.
+        ;   SPRITE_TABLE_A_STEP1_LO/HI  --- Walk feet variant 1 (phase $03).
+        ;   SPRITE_TABLE_A_STEP2_LO/HI  --- Walk feet variant 2 (phase $01).
+        ;
+        ; Behavior:
+        ;   1. State gate: $00 exits.
+        ;   2. Clip: compute screen-relative X into ZP_CLIP_X_LO/HI;
+        ;      exit if high byte non-zero or low byte >= $9A.
+        ;   3. Set up common sprite params: $5D = screen col,
+        ;      $56 = 3, $57 = $13 (body dims).
+        ;   4. State-polarity dispatch: positive -> .walk_phase
+        ;      (animation scan); negative -> fall through to .stance.
+        ;   5. .stance (also reached when walk_phase = 0 or 2):
+        ;      draw body at ZP_ENEMY_A_ROW from SPRITE_TABLE_A_BODY;
+        ;      draw $03x$03 feet at row+$13 from SPRITE_TABLE_A_FEET;
+        ;      JMP to hit test.
+        ;   6. .walk_phase: extract ZP_FRAME_COUNTER & $06 >> 1 into A;
+        ;      if 0 or 2 jump to .stance; else stash in
+        ;      ZP_ENEMY_A_LEG_PHASE and draw body at row-1 from
+        ;      SPRITE_TABLE_A_BODY, then a $03x$04 walking-feet
+        ;      sprite at row+$12 chosen by the stashed phase
+        ;      (phase 3 = STEP1 / $B010; phase 1 = STEP2 / $B01E).
+        ;   7. Hit test: ZP_CLIP_X_LO in [$42, $4F) AND
+        ;      ZP_ENEMY_A_ROW in [player-$14, player+$10].
+        ;   8. On hit (.hit): $00 -> ZP_ENEMY_A_STATE (deactivate
+        ;      immediately; no drift), $07 -> ZP_ENEMY_A_SND_CTR
+        ;      (one death click), DEC ZP_GAME_OVER, award +$0300
+        ;      BCD via SCORE_ADD, RTS.
+        ;
+        ; Modifies:
+        ;   ZP_CLIP_X_LO/HI, ZP_ENEMY_A_LEG_PHASE, ZP_SAVE_X,
+        ;   sprite-param ZPs ($56/$57/$5B/$5D), ZP_SCORE_ADD_LO/HI,
+        ;   ZP_ENEMY_A_STATE, ZP_ENEMY_A_SND_CTR, ZP_GAME_OVER,
+        ;   SMC_DS_SRC_LO/HI.
+        ; Clobbers: A, X, Y
 
-        HEX A5 DC D0 01 60 A6 4A BD
-        HEX 8F 1A 38 E5 4C 85 AF BD
-        HEX 8F 19 E9 00 85 B0 38 A5
-        HEX DD E5 AF 85 AF A5 DE E5
-        HEX B0 F0 01 60 A5 AF C9 9A
-        HEX B0 F9 AA BD 34 1C 85 5D
-        HEX BD 8F 1B AA A9 03 85 56
-        HEX A9 13 85 57 A5 DC 10 3D
-        HEX A5 DF 85 5B BD 09 B0 8D
-        HEX B3 65 BD 89 B0 8D B4 65
-        HEX 86 5C 20 6F 65 A9 03 85
-        HEX 56 85 57 A6 AF BD 34 1C
-        HEX 85 5D A5 DF 18 69 13 85
-        HEX 5B A6 5C BD 17 B0 8D B3
-        HEX 65 BD 97 B0 8D B4 65 20
-        HEX 6F 65 4C 06 15 A5 FD 29
-        HEX 06 4A F0 BC C9 02 F0 B8
-        HEX 85 0F A5 DF 38 E9 01 85
-        HEX 5B BD 09 B0 8D B3 65 BD
-        HEX 89 B0 8D B4 65 86 5C 20
-        HEX 6F 65 A9 03 85 56 A9 04
-        HEX 85 57 A6 AF BD 34 1C 85
-        HEX 5D A5 DF 18 69 12 85 5B
-        HEX A4 0F C0 01 F0 14 A6 5C
-        HEX BD 10 B0 8D B3 65 BD 90
-        HEX B0 8D B4 65 20 6F 65 4C
-        HEX 06 15 A6 5C BD 1E B0 8D
-        HEX B3 65 BD 9E B0 8D B4 65
-        HEX 20 6F 65 A5 AF C9 42 90
-        HEX 29 C9 4F B0 25 A5 06 38
-        HEX E9 14 C5 DF B0 1C 18 69
-        HEX 24 C5 DF 90 15 A9 00 85
-        HEX DC A9 07 85 B8 C6 39 A9
-        HEX 00 85 1A A9 03 85 1B 20
-        HEX 1A 12 60
-@ %def SPRITE_DRAW_1
+; --- State gate: $00 -> exit ---
+        LDA ZP_ENEMY_A_STATE
+        BNE .active                     ; $00: slot inactive
+        RTS
+
+; --- Clip: compute screen-relative X from world X ---
+.active:
+        LDX ZP_PLAYER_Y
+        LDA PERSPECTIVE_XOFF_LO,X       ; Y-indexed X offset (low)
+        SEC
+        SBC ZP_SPRITE_XREF              ; ... minus fixed X-reference
+        STA ZP_CLIP_X_LO
+        LDA PERSPECTIVE_XOFF_HI,X       ; (high byte propagation)
+        SBC #$00
+        STA ZP_CLIP_X_HI
+        SEC
+        LDA ZP_ENEMY_A_POS              ; Subtract from enemy world X
+        SBC ZP_CLIP_X_LO
+        STA ZP_CLIP_X_LO                ; ZP_CLIP_X_LO = screen-relative X (lo)
+        LDA ZP_ENEMY_A_POS+1
+        SBC ZP_CLIP_X_HI
+        BEQ .in_bounds                  ; hi diff == 0: on-screen
+.exit:
+        RTS                             ; hi diff != 0: off-screen, exit
+.in_bounds:
+        LDA ZP_CLIP_X_LO
+        CMP #$9A
+        BCS .exit                       ; clipped X >= $9A: off right edge
+
+; --- Common sprite-parameter setup (body dimensions) ---
+        TAX                             ; X := clipped screen-X
+        LDA PROJ_SCREEN_COL,X           ; -> screen column index
+        STA ZP_SPRITE_X
+        LDA PROJ_FRAME_IDX,X            ; -> sprite frame index
+        TAX                             ; X := frame index
+        LDA #$03
+        STA ZP_SPRITE_W                 ; Body width = 3 bytes
+        LDA #$13
+        STA ZP_SPRITE_H                 ; Body height = $13 rows
+
+; --- State-polarity dispatch: +steady animates; -drift = stance ---
+        LDA ZP_ENEMY_A_STATE
+        BPL .walk_phase                 ; positive: try walking animation
+;       fall through to .stance         ; negative: no animation
+
+; --- Stance draw: body at row + 03x03 feet at row+$13 (no animation) ---
+.stance:
+        LDA ZP_ENEMY_A_ROW
+        STA ZP_SPRITE_Y                 ; Body row = enemy row
+        LDA SPRITE_TABLE_A_BODY_LO,X    ; Patch DRAW_SPRITE src (body lo)
+        STA SMC_DS_SRC_LO
+        LDA SPRITE_TABLE_A_BODY_HI,X    ; Patch DRAW_SPRITE src (body hi)
+        STA SMC_DS_SRC_HI
+        STX ZP_SAVE_X                   ; Preserve frame idx across JSR
+        JSR DRAW_SPRITE                 ; Blit body
+
+        LDA #$03
+        STA ZP_SPRITE_W                 ; Feet width = 3 bytes
+        STA ZP_SPRITE_H                 ; Feet height = 3 rows
+        LDX ZP_CLIP_X_LO                ; Re-derive screen column
+        LDA PROJ_SCREEN_COL,X
+        STA ZP_SPRITE_X
+        LDA ZP_ENEMY_A_ROW
+        CLC
+        ADC #$13
+        STA ZP_SPRITE_Y                 ; Feet row = body row + $13
+        LDX ZP_SAVE_X                   ; Restore frame idx
+        LDA SPRITE_TABLE_A_FEET_LO,X    ; Patch src (stance feet lo)
+        STA SMC_DS_SRC_LO
+        LDA SPRITE_TABLE_A_FEET_HI,X    ; Patch src (stance feet hi)
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE                 ; Blit stance feet
+        JMP .hit_test
+
+; --- Walking animation phase gate: $FD bits 1-2 -> {0,1,2,3} ---
+.walk_phase:
+        LDA ZP_FRAME_COUNTER
+        AND #$06                        ; Keep bits 2,1 -> {0,2,4,6}
+        LSR                             ; -> phase in {0,1,2,3}
+        BEQ .stance                     ; phase 0: use stance frame
+        CMP #$02
+        BEQ .stance                     ; phase 2: use stance frame
+        STA ZP_ENEMY_A_LEG_PHASE        ; phase 1 or 3: animate
+
+; --- Animated walking: body at row-1 + 03x04 feet at row+$12 ---
+        LDA ZP_ENEMY_A_ROW
+        SEC
+        SBC #$01
+        STA ZP_SPRITE_Y                 ; Body row = enemy row - 1
+        LDA SPRITE_TABLE_A_BODY_LO,X    ; Same body base as stance
+        STA SMC_DS_SRC_LO
+        LDA SPRITE_TABLE_A_BODY_HI,X
+        STA SMC_DS_SRC_HI
+        STX ZP_SAVE_X                   ; Preserve frame idx
+        JSR DRAW_SPRITE                 ; Blit body
+
+        LDA #$03
+        STA ZP_SPRITE_W                 ; Walking feet width = 3 bytes
+        LDA #$04
+        STA ZP_SPRITE_H                 ; Walking feet height = 4 rows
+        LDX ZP_CLIP_X_LO                ; Re-derive screen column
+        LDA PROJ_SCREEN_COL,X
+        STA ZP_SPRITE_X
+        LDA ZP_ENEMY_A_ROW
+        CLC
+        ADC #$12
+        STA ZP_SPRITE_Y                 ; Feet row = body row + $12
+        LDY ZP_ENEMY_A_LEG_PHASE        ; Phase: 1 or 3
+        CPY #$01
+        BEQ .walk_step2                 ; phase 1 -> STEP2 table ($B01E)
+        LDX ZP_SAVE_X                   ; phase 3 -> STEP1 table ($B010)
+        LDA SPRITE_TABLE_A_STEP1_LO,X
+        STA SMC_DS_SRC_LO
+        LDA SPRITE_TABLE_A_STEP1_HI,X
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE                 ; Blit walk variant 1
+        JMP .hit_test
+.walk_step2:
+        LDX ZP_SAVE_X
+        LDA SPRITE_TABLE_A_STEP2_LO,X
+        STA SMC_DS_SRC_LO
+        LDA SPRITE_TABLE_A_STEP2_HI,X
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE                 ; Blit walk variant 2
+
+; --- Player-hit test: narrow X window + wide Y band ---
+.hit_test:
+        LDA ZP_CLIP_X_LO
+        CMP #$42
+        BCC .no_hit                     ; clipped X < $42: no overlap
+        CMP #$4F
+        BCS .no_hit                     ; clipped X >= $4F: no overlap
+        LDA ZP_PLAYER_COL
+        SEC
+        SBC #$14
+        CMP ZP_ENEMY_A_ROW
+        BCS .no_hit                     ; enemy-row < player-$14: no overlap
+        CLC
+        ADC #$24                        ; (player-$14) + $24 = player+$10
+        CMP ZP_ENEMY_A_ROW
+        BCC .no_hit                     ; enemy-row >= player+$10: no overlap
+
+; --- Hit: deactivate A, rearm death click, DEC $39, +$0300 BCD ---
+.hit:
+        LDA #$00
+        STA ZP_ENEMY_A_STATE            ; Immediate deactivation (not drift)
+        LDA #$07
+        STA ZP_ENEMY_A_SND_CTR          ; One last death click
+        DEC ZP_GAME_OVER                ; Consume a player-hit credit
+        LDA #$00
+        STA ZP_SCORE_ADD_LO             ; addend lo = $00
+        LDA #$03
+        STA ZP_SCORE_ADD_HI             ; addend hi = $03 ($0300 BCD = 300)
+        JSR SCORE_ADD                   ; ... score += 300
+.no_hit:
+        RTS
+@ %def ENEMY_A_DRAW ZP_ENEMY_A_LEG_PHASE
+@ %def SPRITE_TABLE_A_BODY_LO SPRITE_TABLE_A_BODY_HI
+@ %def SPRITE_TABLE_A_STEP1_LO SPRITE_TABLE_A_STEP1_HI
+@ %def SPRITE_TABLE_A_FEET_LO SPRITE_TABLE_A_FEET_HI
+@ %def SPRITE_TABLE_A_STEP2_LO SPRITE_TABLE_A_STEP2_HI
 
 \section{Enemy-B advance timer}
 
@@ -6124,7 +6446,7 @@ SMC_ENEMY_B_ADD = *+1                   ; ADC operand byte (patched below)
 
 [[ENEMY_B_DRAW]] at \$1591 is the draw+hit routine for the enemy-B
 slot, and the third member of the sprite-draw family that mirrors
-[[SPRITE_DRAW_1]] (enemy-A) and [[ENEMY_C_DRAW]] (enemy-C).  It is
+[[ENEMY_A_DRAW]] (enemy-A) and [[ENEMY_C_DRAW]] (enemy-C).  It is
 called from [[MAIN_LOOP]] every frame after [[ENEMY_B_ADVANCE]] has
 ticked the slot; the two routines together implement the enemy-B
 cycle.
@@ -6158,8 +6480,8 @@ drift-mode draw tail.  The overall layout is:
 \end{enumerate}
 
 \paragraph{Per-frame hit cost.}  The \texttt{DEC \$39} inside the
-overlap body is the same shape as the one at the end of
-[[SPRITE_DRAW_1]] (\$1528).  \$39 is initialized to \$01 by
+overlap body is the same shape as the one inside
+[[ENEMY_A_DRAW]] (at \$1528).  \$39 is initialized to \$01 by
 [[INIT_LEVEL_STATE]] and reset to \$01 by the player-reincarnation
 code at \$5EC3 (see [[MAIN_LOOP]]'s game-over check at \$6832).  Each
 enemy-A or enemy-B overlap decrements \$39; once it goes negative the
@@ -6171,7 +6493,7 @@ to enter drift mode and lets the drift-path wrap in
 [[ENEMY_B_ADVANCE]] complete the deactivation.
 
 \paragraph{Screen-relative X via perspective lookup.}  Both
-[[SPRITE_DRAW_1]] and [[ENEMY_B_DRAW]] compute
+[[ENEMY_A_DRAW]] and [[ENEMY_B_DRAW]] compute
 $$
   X_{\rm screen} = {\rm pos\_lo} - ({\rm PERSPECTIVE\_XOFF\_LO}[{\rm player\_Y}] - {\rm ZP\_SPRITE\_XREF}),
 $$
@@ -6191,8 +6513,9 @@ indexes [[SPRITE_TABLE_LO]] / [[SPRITE_TABLE_HI]] at base \$25
 (addresses \$B025 / \$B0A5).  Indexed by the sprite frame from
 [[PROJ_FRAME_IDX]], this selects one of seven enemy-B body sprites
 (7 frames per sprite family at this base index); compare
-[[SPRITE_DRAW_1]] which uses bases \$09, \$10, \$17, \$1E for
-enemy-A's multiple sprite variants.
+[[ENEMY_A_DRAW]] which uses bases \$09, \$10, \$17, \$1E for
+enemy-A's multiple sprite variants (body / walk-1 / stance-feet /
+walk-2).
 
 \paragraph{Drift-mode puff at \$755A/\$765A.}  When
 [[ZP_ENEMY_B_STATE]] is negative the draw path jumps to the short
@@ -6207,7 +6530,7 @@ tables at \$B000.
 
 <<enemy b draw defines>>=
 
-; --- Zero-page used by enemy-B draw (shared with SPRITE_DRAW_1) ---
+; --- Zero-page used by enemy-B draw (shared with ENEMY_A_DRAW) ---
 ; $AF / $B0 are 16-bit scratch for the screen-clip subtract.  They
 ; hold the perspective-corrected low/high bytes of the enemy's
 ; world X minus the perspective-X reference, and after the subtract
@@ -6244,7 +6567,7 @@ ENEMY_B_PUFF_HI = $765A         ; Drift-mode puff sprite pointer, high byte
 ; --- Game-over/hit-remaining flag ($39) ---
 ; Initialized to $01 by INIT_LEVEL_STATE and reset to $01 by the
 ; player-reincarnation code at $5EC3.  Each overlap-hit in
-; SPRITE_DRAW_1 / ENEMY_B_DRAW decrements this counter; once it
+; ENEMY_A_DRAW / ENEMY_B_DRAW decrements this counter; once it
 ; goes negative the main-loop tail branches to GAME_OVER.
 ZP_GAME_OVER    = $39           ; Game-over / hits-remaining counter
 
@@ -6616,7 +6939,7 @@ ENEMY_C_ADVANCE:
 
 [[ENEMY_C_DRAW]] at \$16AC is the draw+hit routine for the enemy-C
 slot --- the third member of the sprite-draw family alongside
-[[SPRITE_DRAW_1]] (enemy-A, still stubbed) and [[ENEMY_B_DRAW]].
+[[ENEMY_A_DRAW]] (enemy-A) and [[ENEMY_B_DRAW]] (enemy-B).
 Called from [[MAIN_LOOP]] immediately after [[ENEMY_C_ADVANCE]] has
 ticked the slot.  (Previously mislabeled \texttt{PLAYER\_RENDER} in
 the stub; that name was a misnomer and is retired here --- this
@@ -9942,8 +10265,9 @@ LEVEL_INTRO_TICK:
 ; --- ORG $13D6: Enemy-A advance ---
 <<enemy a defines>>
 <<enemy a advance>>
-; --- ORG $1423: Sprite/player code (enemy-A draw) ---
-<<sprite player code>>
+; --- ORG $1423: Enemy-A draw + player-collision ---
+<<enemy a draw defines>>
+<<enemy a draw>>
 ; --- ORG $1536: Enemy-B advance ---
 <<enemy b defines>>
 <<enemy b advance>>

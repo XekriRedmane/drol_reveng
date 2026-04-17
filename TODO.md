@@ -1,5 +1,23 @@
 # TODO
 
+## Status snapshot (2026-04-17)
+
+The **entity-draw triplet is complete**: all three enemy advance
+routines and all three enemy draw routines are byte-perfect RE'd
+(`$13D6`, `$1423`, `$1536`, `$1591`, `$1646`, `$16AC`).  See the
+"Entity-slot triplet" section below for the topology summary.
+With the triplet, `BEAM_UPDATE` ($130A), `DRAW_ENTITIES` ($683C),
+`DISPLAY_UPDATE` ($10AB), `DIFFICULTY_UPDATE` ($719D),
+`LEVEL_INTRO_TICK` ($699C), `SFX_TONE` ($67C1), `INPUT_DISPATCH`
+($6000), and the three blitters (`DRAW_SPRITE`,
+`DRAW_SPRITE_PLAYFIELD`, `DRAW_SPRITE_OPAQUE`) all documented,
+the MAIN_LOOP dispatch is now almost entirely covered.  The
+remaining high-priority `MAIN_LOOP`-reachable work is: the player
+render routines (gated on $0E, called inside `DRAW_ENTITIES`
+phase~2), `GAME_START_INIT` ($13A4), and the large
+`$6ABA-$719C` "game engine B tail" blob (sound/animation/entity
+processing/level logic, 1763 bytes still as HEX).
+
 ## Immediate: apply new code chunk rules
 
 CLAUDE.md now requires raw hex addresses in code to use labels or EQUs.
@@ -67,7 +85,9 @@ Review existing chunks for violations:
       built so that bit 4 of $36 toggles between $C030 (speaker, sound
       on) and $C020 (silent cassette output, sound off).  Renamed
       `ZP_SOUND_A`/`_B` to `ZP_SFX_CLICK` / `ZP_SFX_CLICK_SAVED`.
-- [ ] `$10AB` — Display update
+- [x] `$10AB` — `DISPLAY_UPDATE`: timer-animation HUD tile draw.
+      Draws the timer element via `DRAW_SPRITE_OPAQUE`, gated on
+      `ZP_ANIM_COUNTER` ($1F).
 - [x] `$13D6` — `ENEMY_A_ADVANCE`: per-frame tick for the first of
       three ``moving hazard'' slots at $D4--$EC.  Emits an SFX click
       from `SND_PITCH_TBL_A` ($0229) gated on `ZP_ENEMY_A_SND_CTR`
@@ -78,13 +98,38 @@ Review existing chunks for violations:
       $09, ~3.5% per frame).  On narrow-band crossing ($0000..$003D),
       rearms: promotes drift->steady, writes $01 to
       `ZP_ENEMY_C_STATE` ($D4 --- cross-slot handshake that wakes the
-      companion slot handled by `ENEMY_C_ADVANCE`/`PLAYER_RENDER`),
+      companion slot handled by `ENEMY_C_ADVANCE`/`ENEMY_C_DRAW`),
       reloads counter to $0361, and sets `ZP_ENEMY_A_ROW` ($DF) :=
       `ZP_ENEMY_C_ROW` ($D7) + 7.  Retires the `BG_RESTORE`
       misnomer --- this routine does no background restore.  Carved
       $13D6--$1422 out of the old 976-byte `<<sprite player code>>`
-      HEX blob; the tail at $1423 is now labelled `SPRITE_DRAW_1`
-      (stub EQU removed).
+      HEX blob; the tail at $1423 is now `ENEMY_A_DRAW`.
+- [x] `$1423` — `ENEMY_A_DRAW`: per-frame draw + player-collision
+      for the enemy-A slot, completing the entity-draw triplet
+      alongside `ENEMY_B_DRAW` and `ENEMY_C_DRAW`.  Two-sprite
+      composite (body + feet) with a four-frame walking animation
+      driven by `ZP_FRAME_COUNTER` bits 1-2 (phases 0,2 = stance;
+      phases 1,3 = walk variants drawn at row-1 with 3x4 feet
+      sprites from `SPRITE_TABLE_A_STEP1/2`).  Drift mode
+      (state < 0, set externally by `ENEMY_C_DRAW`'s hit broadcast)
+      collapses the animation to a fixed stance; there is no drift
+      puff, unlike B and C.  Right-edge X clip is $9A (vs.\ B's $9C,
+      C's $94); hit window is [$42, $4F) for X and
+      [player-$14, player+$10] for Y (a $24-row band, 4 rows taller
+      than B's $1B).  On player-overlap: writes $00 to
+      `ZP_ENEMY_A_STATE` (immediate deactivation, not $FF drift like
+      B), loads `ZP_ENEMY_A_SND_CTR` with $07 (one death click),
+      decrements `ZP_GAME_OVER` ($39) --- the `DEC $39` at $1528
+      that prior docs referenced --- and awards +$0300 BCD via
+      `SCORE_ADD`, matching B's 300-point reward.  No cross-slot
+      handshake writes.  Retires the `SPRITE_DRAW_1 = $1423` EQU
+      stub and carves the last of the old `<<sprite player code>>`
+      HEX blob.  Introduces ZP EQU `ZP_ENEMY_A_LEG_PHASE` ($0F,
+      scratch alias distinct from the RWTS `ZP_TGT_TRACK`) and
+      sprite-table EQUs `SPRITE_TABLE_A_BODY_LO/HI` ($B009/$B089),
+      `SPRITE_TABLE_A_STEP1_LO/HI` ($B010/$B090),
+      `SPRITE_TABLE_A_FEET_LO/HI` ($B017/$B097),
+      `SPRITE_TABLE_A_STEP2_LO/HI` ($B01E/$B09E).
 - [x] `$1646` — `ENEMY_C_ADVANCE`: per-frame tick for the third
       ``moving hazard'' slot, sibling of `ENEMY_A_ADVANCE` with the
       same tick+rearm shape but three notable differences.  (1)
@@ -183,9 +228,41 @@ Review existing chunks for violations:
       bytes exported as `SMC_TILE_SRC_LO/HI` ($6662/$6663) ---
       replaces the old `TILE_DATA_LO/HI` + `BLIT_TILE` EQU stubs.
 
-### Triplet of entity-slot tick routines
+### Entity-slot triplet (tick + draw) --- COMPLETE
 
-- [x] `$13D6` `ENEMY_A_ADVANCE` --- enemy-A slot ($DC/$DD/$DE/$DF, $B8 sound).
+All three advance (tick) routines and all three draw routines are
+now fully RE'd.  Together they form the `entity-draw triplet`
+dispatched from `MAIN_LOOP` in the sequence:
+
+```
+ENEMY_C_ADVANCE -> ENEMY_C_DRAW
+ENEMY_A_ADVANCE -> ENEMY_A_DRAW
+ENEMY_B_ADVANCE -> ENEMY_B_DRAW
+```
+
+with `BEAM_UPDATE` immediately after.  The three slots share the
+perspective clip + `DRAW_SPRITE`-with-SMC idiom but differ in
+sprite structure, hit target, and score reward:
+
+| Slot  | Tick              | Draw              | Hit target        | Score | `$39` |
+|-------|-------------------|-------------------|-------------------|-------|-------|
+| A     | `$13D6` SBC       | `$1423` walk-anim | player            | +300  | yes   |
+| B     | `$1536` ADC (up)  | `$1591` single    | player            | +300  | yes   |
+| C     | `$1646` SBC       | `$16AC` body+tail | 4-slot floor-enemy | +100  | no    |
+
+Handshake topology (enemy-X writing to enemy-Y's state byte):
+
+```
+A --wake $01--> C       (in ENEMY_A_ADVANCE rearm)
+C --drift $FF--> A, C   (in ENEMY_C_DRAW hit)
+A --zero $00--> A       (in ENEMY_A_DRAW hit, immediate deactivation)
+B --drift $FF--> B      (in ENEMY_B_DRAW hit, deferred deactivation)
+```
+
+Individual TODO entries:
+
+- [x] `$13D6` `ENEMY_A_ADVANCE` --- see detailed entry above.
+- [x] `$1423` `ENEMY_A_DRAW` --- see detailed entry above.
 - [x] `$1536` `ENEMY_B_ADVANCE` --- enemy-B slot ($E0/$E1/$E2/$E3, $E4
       sound, $0231 pitch table).  Counts UP (ADC, not SBC), with the
       per-frame increment patched by self-modifying code at
@@ -195,18 +272,15 @@ Review existing chunks for violations:
       next frame adds 1 or 3 (tripling the advance when the player is
       in anim frame 3).  Rearm triggers when counter >= $035A: reload
       to $003E, reseat row from $84,X with X = $1F & 3 (four-entry
-      table, vs.\ enemy-C which uses only three entries).  No handshake
-      in rearm --- the B->{A,C} firing write ($FF to $D4 and $DC) lives
-      in the draw routine at $1757-$1763 inside SPRITE_DRAW_3.  Drift
+      table, vs.\ enemy-C which uses only three entries).  Drift
       mode INCs lo-byte only and self-deactivates on 256-frame wrap.
-      Carved $1536-$1590 out of the old SPRITE_DRAW_1 HEX blob; new
-      chunk `<<sprite player code 1591>>` holds SPRITE_DRAW_3 ($1591-$1645)
-      as HEX.  Retired `SPRITE_DRAW_2 = $1536` EQU stub.  Introduces
+      Retired `SPRITE_DRAW_2 = $1536` EQU stub.  Introduces
       ZPs `ZP_ENEMY_B_STATE` ($E0), `ZP_ENEMY_B_POS` ($E1/$E2),
       `ZP_ENEMY_B_ROW` ($E3), `ZP_ENEMY_B_SND_CTR` ($E4), and
       `SND_PITCH_TBL_B` ($0231).
-- [x] `$1646` `ENEMY_C_ADVANCE` --- enemy-C slot ($D4/$D5/$D6/$D7, $B7
-      sound).  Done; see above.
+- [x] `$1591` `ENEMY_B_DRAW` --- see detailed entry above.
+- [x] `$1646` `ENEMY_C_ADVANCE` --- see detailed entry above.
+- [x] `$16AC` `ENEMY_C_DRAW` --- see detailed entry above.
 
 ### Game flow routines
 
@@ -216,7 +290,8 @@ Review existing chunks for violations:
 
 ### Attract-mode subroutines
 
-- [ ] `$17A6`, `$17E1`, `$1813`, `$1844` — Attract animation routines
+- [x] `$17A6`, `$17E1`, `$1813`, `$1844` — Attract animation routines
+      (all four `ATTRACT_ANIM_1..4` documented as prose + assembly).
 - [ ] `$67D7` entry through BIT instructions — document the dual-entry pattern
 
 ### Undocumented regions

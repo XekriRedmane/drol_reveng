@@ -78,13 +78,40 @@ Review existing chunks for violations:
       $09, ~3.5% per frame).  On narrow-band crossing ($0000..$003D),
       rearms: promotes drift->steady, writes $01 to
       `ZP_ENEMY_C_STATE` ($D4 --- cross-slot handshake that wakes the
-      companion slot handled by `PLAYER_STATE`/`PLAYER_RENDER`),
+      companion slot handled by `ENEMY_C_ADVANCE`/`PLAYER_RENDER`),
       reloads counter to $0361, and sets `ZP_ENEMY_A_ROW` ($DF) :=
       `ZP_ENEMY_C_ROW` ($D7) + 7.  Retires the `BG_RESTORE`
       misnomer --- this routine does no background restore.  Carved
       $13D6--$1422 out of the old 976-byte `<<sprite player code>>`
       HEX blob; the tail at $1423 is now labelled `SPRITE_DRAW_1`
       (stub EQU removed).
+- [x] `$1646` — `ENEMY_C_ADVANCE`: per-frame tick for the third
+      ``moving hazard'' slot, sibling of `ENEMY_A_ADVANCE` with the
+      same tick+rearm shape but three notable differences.  (1)
+      Click is `SND_DELAY_DOWN` ($1091) at duration $08 reading from
+      `SND_PITCH_TBL_C` ($0224) gated on `ZP_ENEMY_C_SND_CTR` ($B7)
+      --- a softer descending-tone chirp distinct from enemy-A's
+      `SFX_TONE`.  (2) Drift mode (state bit~7 set) does NOT
+      PRNG-gate the tick; instead it bobs `ZP_ENEMY_C_ROW` $\pm$1 on
+      1-in-4 frames using `ZP_FRAME_COUNTER` bit~4 as the up/down
+      phase, producing a vertical wobble.  Drift entry at $16A5
+      counts the lo counter UP and falls into rearm on overflow.
+      (3) Rearm writes $00 to `ZP_ENEMY_C_STATE` (deactivates
+      itself) --- there is NO C$\rightarrow$\{A,B\} handshake, so
+      enemy-C is purely a one-shot puff awakened by enemy-A's rearm
+      ($1411 writes $01 to $D4) or by enemy-B's firing path
+      ($1759 writes $FF for drift mode).  This confirms the
+      three-slot entity model with topology A$\rightarrow$C and
+      B$\rightarrow$\{A,C\}.  Reload value $0352, rearm window
+      $0000..$003B, row reload reads from a 3-entry table at
+      $85/$86/$87 (addressed as $84,X for X $\in \{1,2,3\}$ with
+      X~=~1 selected 2/4 of the time).  Carved $1646--$16AB out of
+      the surviving `<<sprite player code>>` HEX blob; the tail at
+      $16AC is now `<<sprite player code 16AC>>` with `PLAYER_RENDER`
+      label (the misnomer remains pending RE of the draw routine).
+      Retires `PLAYER_STATE = $1646` EQU stub.  Introduces ZPs
+      `ZP_ENEMY_C_SND_CTR` ($B7), `ZP_ENEMY_C_POS` ($D5),
+      `SND_PITCH_TBL_C` ($0224), `ENEMY_C_ROW_TBL` ($84).
 - [x] `$130A` — `BEAM_UPDATE`: player laser-beam subsystem, gated on
       `ZP_PROJ_GATE` ($32).  Inactive at difficulty tiers minimum and
       moderate ($32 = $FF); active at standard and maximum ($32 = $01).
@@ -117,6 +144,19 @@ Review existing chunks for violations:
       `<<game engine A tail>>` HEX blob.  SMC source-pointer operand
       bytes exported as `SMC_TILE_SRC_LO/HI` ($6662/$6663) ---
       replaces the old `TILE_DATA_LO/HI` + `BLIT_TILE` EQU stubs.
+
+### Triplet of entity-slot tick routines
+
+- [x] `$13D6` `ENEMY_A_ADVANCE` --- enemy-A slot ($DC/$DD/$DE/$DF, $B8 sound).
+- [ ] `$1536` `SPRITE_DRAW_2` (likely `ENEMY_B_ADVANCE`) --- enemy-B slot
+      ($E0/$E1/$E2/$E3, $E4 sound, $0231 pitch table).  Disassembled bytes
+      are structurally similar (LDX $E4; BMI; LDA $0231,X; LDX #$0A; JSR
+      $67C1; DEC $E4; LDA $E0; ...) but the tick ADDS $01 instead of
+      subtracting `ZP_ADVANCE_RATE`, suggesting a slow free-running counter
+      with a different rearm trigger ($E1 >= $5A and $1F == 0/2 gate).
+      Worth full RE next to confirm.
+- [x] `$1646` `ENEMY_C_ADVANCE` --- enemy-C slot ($D4/$D5/$D6/$D7, $B7
+      sound).  Done; see above.
 
 ### Game flow routines
 

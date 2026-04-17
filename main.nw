@@ -2199,10 +2199,10 @@ ANIM_UPDATE     = $6B39         ; Animation update (game engine B hex)
 ENTITY_PROCESS  = $6CFE         ; Entity processing (game engine B hex)
 LEVEL_LOGIC     = $6F9C         ; Level logic (game engine B hex)
 ; (HAZARD_CHECK has its own ORG chunk)
-PLAYER_STATE    = $1646         ; Player state update (sprite player hex)
-PLAYER_RENDER   = $16AC         ; Player rendering (sprite player hex)
+; (ENEMY_C_ADVANCE is the label at ORG $1646; was misnamed PLAYER_STATE.)
+; (PLAYER_RENDER is the label at ORG $16AC inside sprite-player-code-16AC.)
 ; (SPRITE_DRAW_1 is the label at ORG $1423 inside sprite-player-code chunk)
-SPRITE_DRAW_2   = $1536         ; Sprite draw part 2 (sprite player hex)
+SPRITE_DRAW_2   = $1536         ; Enemy-B advance tick (formerly "sprite draw part 2")
 SPRITE_DRAW_3   = $1591         ; Sprite draw part 3 (sprite player hex)
 ; (BEAM_UPDATE at $130A has its own ORG chunk)
 GAME_OVER       = $BDA0         ; Game over handler (outside drol.bin range)
@@ -3482,12 +3482,12 @@ SMC_RENDER = *
         JSR LEVEL_LOGIC         ; Level logic
         JSR PROJECTILE_HANDLER  ; Projectile handling
         JSR HAZARD_CHECK        ; Hazard checking
-        JSR PLAYER_STATE        ; Player state update
-        JSR PLAYER_RENDER       ; Player rendering
+        JSR ENEMY_C_ADVANCE     ; Enemy-C advance timer + respawn
+        JSR PLAYER_RENDER       ; Enemy-C draw (label is a misnomer)
         JSR ENEMY_A_ADVANCE     ; Enemy-A advance timer + respawn
-        JSR SPRITE_DRAW_1       ; Sprite draw (part 1)
-        JSR SPRITE_DRAW_2       ; Sprite draw (part 2)
-        JSR SPRITE_DRAW_3       ; Sprite draw (part 3)
+        JSR SPRITE_DRAW_1       ; Enemy-A draw
+        JSR SPRITE_DRAW_2       ; Enemy-B advance tick (label is a misnomer)
+        JSR SPRITE_DRAW_3       ; Enemy-B draw
         JSR BEAM_UPDATE         ; Player laser-beam subsystem
         JSR DISPLAY_UPDATE      ; Display update
         JSR DRAW_ENTITIES       ; Entity draw dispatcher
@@ -5734,7 +5734,7 @@ Rearm then:
   current state value unchanged.
 \item Unconditionally writes \$01 into [[ZP_ENEMY_C_STATE]] (\$D4)~---
   reactivating the ground-level companion slot owned by
-  [[PLAYER_STATE]] / [[PLAYER_RENDER]].  This is the cross-slot
+  [[ENEMY_C_ADVANCE]] / [[PLAYER_RENDER]].  This is the cross-slot
   handshake: every enemy-A reload wakes up enemy-C.
 \item Reloads [[ZP_ENEMY_A_POS]] to \$0361.  At the fastest tier
   (\$40~=~\$03) the next reload is~$\lceil 0x0361/3\rceil\approx 289$
@@ -5862,10 +5862,9 @@ ENEMY_A_ADVANCE:
         ORG $1423
 SPRITE_DRAW_1:
         SUBROUTINE
-        ; Sprite/player code tail (\$1423-\$17A5): enemy-A draw (this
-        ; routine), plus entity-B tick+draw and entity-C tick+draw
-        ; reached via SPRITE_DRAW_2, SPRITE_DRAW_3, PLAYER_STATE and
-        ; PLAYER_RENDER entry points inside this hex blob.
+        ; Sprite/player code (\$1423-\$1645): enemy-A draw (this
+        ; routine) plus the enemy-B tick+draw at SPRITE_DRAW_2 and
+        ; SPRITE_DRAW_3 entry points inside this hex blob.
 
         HEX A5 DC D0
         HEX 01 60 A6 4A BD 8F 1A 38
@@ -5936,51 +5935,255 @@ SPRITE_DRAW_1:
         HEX 5B A6 E2 BD 34 1C 85 5D
         HEX AD 5A 75 8D B3 65 AD 5A
         HEX 76 8D B4 65 20 6F 65 60
-        HEX A6 B7 30 0A BD 24 02 A2
-        HEX 08 20 91 10 C6 B7 A5 D4
-        HEX F0 29 10 03 4C A5 16 A5
-        HEX FD 29 03 C9 03 D0 0D A5
-        HEX FD 29 10 D0 05 E6 D7 4C
-        HEX 72 16 C6 D7 A5 D5 38 E5
-        HEX 40 85 D5 A5 D6 E9 00 85
-        HEX D6 F0 01 60 A5 D5 C9 3C
-        HEX B0 F9 A9 52 85 D5 A9 03
-        HEX 85 D6 A5 5F 29 03 D0 02
-        HEX A9 01 AA B5 84 38 E9 0A
-        HEX 85 D7 A9 00 85 D4 60 E6
-        HEX D5 D0 D8 4C 88 16 A5 D4
-        HEX F0 23 10 03 4C 83 17 A6
-        HEX 4A BD 8F 1A 38 E5 4C 85
-        HEX AF BD 8F 19 E9 00 85 B0
-        HEX 38 A5 D5 E5 AF 85 AF A5
-        HEX D6 E5 B0 F0 01 60 A5 AF
-        HEX C9 94 B0 F9 AA BD 34 1C
-        HEX 85 5D BD 8F 1B AA A9 02
-        HEX 85 56 A9 0B 85 57 A5 D7
-        HEX 85 5B BD E1 AF 8D B3 65
-        HEX BD 61 B0 8D B4 65 20 6F
-        HEX 65 A5 AF 38 E9 01 C9 94
-        HEX B0 31 AA BD 34 1C 85 5D
-        HEX BD 8F 1B AA A9 01 85 56
-        HEX A9 07 85 57 A5 D7 18 69
-        HEX 0B 85 5B BD 49 75 8D B3
-        HEX 65 BD 49 76 8D B4 65 20
-        HEX 6F 65 A2 03 B5 9B D0 04
-        HEX CA 10 F9 60 A5 AF D5 9F
-        HEX 90 F6 38 E9 08 D5 9F B0
-        HEX EF A5 D7 38 E9 04 D5 A3
-        HEX B0 E6 18 69 0E D5 A3 90
-        HEX DF A9 FF 85 D4 A5 DC F0
-        HEX 04 A9 FF 85 DC A9 D0 85
-        HEX D5 A9 00 95 9B A5 AF 85
-        HEX D6 E6 D7 E6 D7 A9 04 85
-        HEX B7 A9 00 85 1A A9 01 85
-        HEX 1B 20 1A 12 60 A9 02 85
-        HEX 56 A9 06 85 57 A6 D6 BD
-        HEX 34 1C 85 5D A5 D7 85 5B
-        HEX AD 59 75 8D B3 65 AD 59
-        HEX 76 8D B4 65 20 6F 65 60
 @ %def SPRITE_DRAW_1
+
+\section{Enemy-C advance timer}
+
+[[ENEMY_C_ADVANCE]] at \$1646 is the per-frame tick for the
+``ground-companion'' enemy slot in the contiguous entity block
+\$D4--\$EC.  It is the third member of the
+[[ENEMY_A_ADVANCE]]/[[ENEMY_B_ADVANCE]] family --- structurally
+parallel but distinct in three notable ways.  See \S Enemy-A advance
+timer for the shared template; this section documents only the
+differences.
+
+\paragraph{Slot mapping.}  Where enemy-A uses
+[[ZP_ENEMY_A_SND_CTR]]~=~\$B8, [[ZP_ENEMY_A_STATE]]~=~\$DC,
+[[ZP_ENEMY_A_POS]]~=~\$DD/\$DE and [[ZP_ENEMY_A_ROW]]~=~\$DF, enemy-C
+uses [[ZP_ENEMY_C_SND_CTR]]~=~\$B7, [[ZP_ENEMY_C_STATE]]~=~\$D4,
+[[ZP_ENEMY_C_POS]]~=~\$D5/\$D6 and [[ZP_ENEMY_C_ROW]]~=~\$D7.  The
+sound-pitch table is [[SND_PITCH_TBL_C]] at \$0224 (8 entries) and
+the click is emitted with duration~\$08 via [[SND_DELAY_DOWN]] at
+\$1091 --- \emph{not} via [[SFX_TONE]] like enemy-A and enemy-B.  The
+descending-tone delay produces a softer, lower-pitched percussive
+chirp distinguishable from enemy-A's sharp click.
+
+\paragraph{Drift mode is a vertical bobble, not a PRNG gate.}  Enemy-A
+and enemy-B treat ``drift mode'' (state bit~7 set) as a probability
+gate that simply skips the tick most frames.  Enemy-C interprets
+drift mode entirely differently:
+
+\begin{enumerate}
+\item On the drift path, the routine inspects [[ZP_FRAME_COUNTER]]
+  ($\$$FD): on the 1-in-4 frames where the low two bits are both set,
+  it nudges [[ZP_ENEMY_C_ROW]] up by one row when bit~4 of \$FD is
+  clear, or down by one row when bit~4 is set.  This makes the
+  on-screen sprite bob vertically by one row at a $\sim$1-Hz cadence
+  (bit~4 flips every 16 frames).
+\item The 16-bit advance counter then ticks normally on the steady
+  path (subtracting [[ZP_ADVANCE_RATE]]).
+\item There is a separate drift entry at \$16A5 reached via
+  [[JMP]]~\$16A5 from the drift dispatch: it \emph{adds} 1 to
+  [[ZP_ENEMY_C_POS]] each frame and on overflow falls into the rearm
+  reload code at \$1688 (skipping the \$3C-window check).  This is a
+  slow upward count rather than the fast downward count used in
+  steady mode.
+\end{enumerate}
+
+\paragraph{Rearm does not wake another slot.}  Enemy-A's rearm writes
+\$01 to [[ZP_ENEMY_C_STATE]], waking enemy-C (the cross-slot
+A$\rightarrow$C handshake).  Enemy-C's rearm instead writes \$00 to
+[[ZP_ENEMY_C_STATE]]~--- \emph{deactivating itself}.  There is no
+C$\rightarrow$\{A,B\} handshake: each enemy-C cycle is a one-shot
+puff that retires the slot, and the next activation must come from
+elsewhere (enemy-A's rearm or the enemy-B firing path at \$1757
+which writes \$FF to \$D4 to put C in drift mode).  This confirms a
+\emph{three-slot} entity model with the topology
+A$\rightarrow$C and B$\rightarrow$\{A,C\}~--- not a four-slot model.
+
+\paragraph{Other constants.}  The reload value is \$0352 (vs.\ enemy-A's
+\$0361), the rearm window is \$0000..\$003B (vs.\ \$0000..\$003D), and
+the row reload reads from a three-slot table at \$85/\$86/\$87
+(addressed as $\$$84,X with X derived from [[ZP_PRNG_A]]).  The index
+is computed as $X = ({\rm PRNG\_A}~\&~3)$ if non-zero, else $X = 1$~---
+so X $\in \{1,2,3\}$ with X~=~1 selected~$2/4$ of the time and X~=~2
+or 3 each~$1/4$ of the time.  The row is then $\$84,X - $\$0A.  Slots
+\$83--\$87 are also used by [[LEVEL_INTRO_TICK]] (per-level intro Y
+seed at \$84) and by [[BEAM_TARGET_DRAW]] (per-floor Y threshold
+[[FLOOR_THRESH]] at \$83): enemy-C reuses three of these scenery-anchor
+Y rows as spawn-row choices.
+
+\paragraph{Cross-references.}  [[ZP_ADVANCE_RATE]] is shared with
+[[ENEMY_A_ADVANCE]] (and presumably [[ENEMY_B_ADVANCE]]).  The draw
+counterpart at \$16AC reads [[ZP_ENEMY_C_STATE]],
+[[ZP_ENEMY_C_POS]] and [[ZP_ENEMY_C_ROW]] directly.  External
+producers of [[ZP_ENEMY_C_STATE]] are: [[ENEMY_A_ADVANCE]]
+($\$1411$, writes~\$01) and the enemy-B firing path inside
+SPRITE\_DRAW\_3 ($\$1759$, writes~\$FF for drift mode).
+
+<<enemy c defines>>=
+
+; --- Zero-page (enemy-C advance slot) ---
+ZP_ENEMY_C_SND_CTR = $B7        ; 8-step sound-click counter (BMI = idle)
+ZP_ENEMY_C_POS     = $D5        ; 16-bit advance counter ($D5/$D6)
+; (ZP_ENEMY_C_STATE = $D4 and ZP_ENEMY_C_ROW = $D7 are exported by enemy-A.)
+; Sound pitch table for enemy-C, packed inside SCREEN_ROW_HELPER.
+SND_PITCH_TBL_C    = $0224      ; 8 pitch bytes indexed by ZP_ENEMY_C_SND_CTR
+; Three-entry Y-anchor table read as $84,X with X in {1,2,3}; subtract $0A.
+; The base $84 is also used as the per-level intro Y seed (LEVEL_INTRO_TICK)
+; and adjacent slots at $83/$85/$86/$87 are FLOOR_THRESH and other per-level
+; scenery anchors --- enemy-C reuses three of those rows as spawn anchors.
+ENEMY_C_ROW_TBL    = $84        ; Read as $84,X with X in {1,2,3}
+
+<<enemy c advance>>=
+
+        ORG $1646
+ENEMY_C_ADVANCE:
+        SUBROUTINE
+        ; Per-frame tick for the enemy-C ``ground companion'' slot.
+        ; Mirrors ENEMY_A_ADVANCE's tick+rearm template with three
+        ; key differences (see \S Enemy-C advance timer):
+        ;   1. Click is SND_DELAY_DOWN (descending), not SFX_TONE.
+        ;   2. Drift mode bobs ZP_ENEMY_C_ROW vertically using the
+        ;      frame-counter bit-4 phase, not a PRNG skip gate.
+        ;   3. Rearm deactivates the slot (writes $00 to state) and
+        ;      reseats the row from the two-entry $83/$84 table ---
+        ;      it does NOT wake another slot.
+        ;
+        ; Inputs:
+        ;   ZP_ENEMY_C_SND_CTR  --- click-pitch index (BMI = idle).
+        ;   ZP_ENEMY_C_STATE    --- $00 off / +steady / -drift.
+        ;   ZP_ENEMY_C_POS      --- 16-bit counter.
+        ;   ZP_ADVANCE_RATE     --- per-frame decrement ($01/$02/$03).
+        ;   ZP_FRAME_COUNTER    --- drives drift-mode row bobble.
+        ;   ZP_PRNG_A           --- selects which row anchor on rearm.
+        ;   ENEMY_C_ROW_TBL     --- 3-entry row anchor table at $85/$86/$87
+        ;                          (addressed as $84,X for X in {1,2,3}).
+        ;
+        ; Behavior:
+        ;   1. Emit a click from SND_PITCH_TBL_C[ZP_ENEMY_C_SND_CTR]
+        ;      via SND_DELAY_DOWN with duration $08; skip when idle.
+        ;   2. Exit if state is $00.  Steady ($+$): tick now.  Drift
+        ;      ($-$): jump to .drift_tick and INC the lo counter only.
+        ;   3. Steady tick: 1-in-4 frames (FD&3==3), nudge ROW $\pm$1
+        ;      based on FD bit~4; then SBC ZP_ADVANCE_RATE on the
+        ;      16-bit counter; rearm only if $D5 < $3C and $D6 == 0.
+        ;   4. Rearm: reload counter to $0352, pick X = (PRNG_A&3)
+        ;      if non-zero else 1, set ROW := $84,X - $0A, write $00
+        ;      to state.
+        ;
+        ; Modifies:
+        ;   ZP_ENEMY_C_SND_CTR, ZP_ENEMY_C_STATE, ZP_ENEMY_C_POS,
+        ;   ZP_ENEMY_C_ROW
+        ; Clobbers: A, X, Y
+
+; --- Emit click from pitch table ---
+        LDX ZP_ENEMY_C_SND_CTR
+        BMI .after_click                ; Negative = idle
+        LDA SND_PITCH_TBL_C,X           ; Pitch byte
+        LDX #$08                        ; Duration = 8 clicks
+        JSR SND_DELAY_DOWN
+        DEC ZP_ENEMY_C_SND_CTR
+.after_click:
+
+; --- State gate: $00 idle, $+$ steady, $-$ drift ---
+        LDA ZP_ENEMY_C_STATE
+        BEQ .exit                       ; $00 = inactive (RTS at $1681)
+        BPL .steady                     ; Positive = steady tick
+        JMP .drift_tick                 ; Negative = drift tick (counter +1)
+
+; --- Steady path: drift-mode row bobble runs on 1-in-4 frames ---
+.steady:
+        LDA ZP_FRAME_COUNTER
+        AND #$03
+        CMP #$03
+        BNE .tick                       ; Other 3/4 frames: skip bobble
+        LDA ZP_FRAME_COUNTER
+        AND #$10                        ; Phase: bit 4 flips every 16 frames
+        BNE .row_dec
+        INC ZP_ENEMY_C_ROW              ; Phase 0: bobble down
+        JMP .tick
+.row_dec:
+        DEC ZP_ENEMY_C_ROW              ; Phase 1: bobble up
+
+; --- 16-bit decrement; rearm only on the narrow $0000..$003B band ---
+.tick:
+        LDA ZP_ENEMY_C_POS
+        SEC
+        SBC ZP_ADVANCE_RATE
+        STA ZP_ENEMY_C_POS
+        LDA ZP_ENEMY_C_POS+1
+        SBC #$00
+        STA ZP_ENEMY_C_POS+1
+        BEQ .check_lo                   ; hi == 0: maybe rearm
+.exit:
+        RTS                             ; hi != 0: still ticking, exit
+.check_lo:
+        LDA ZP_ENEMY_C_POS
+        CMP #$3C
+        BCS .exit                       ; lo >= $3C: not yet in window
+
+; --- Rearm: reload counter, pick row anchor, deactivate self ---
+.rearm:
+        LDA #$52
+        STA ZP_ENEMY_C_POS              ; Reload lo to $52
+        LDA #$03
+        STA ZP_ENEMY_C_POS+1            ; Reload hi to $03 (counter = $0352)
+        LDA ZP_PRNG_A
+        AND #$03
+        BNE .have_idx                   ; PRNG&3 != 0: X := 1, 2, or 3
+        LDA #$01                        ; PRNG&3 == 0: force X := 1
+.have_idx:
+        TAX                             ; X in {1, 2, 3}
+        LDA ENEMY_C_ROW_TBL,X           ; $85, $86, or $87: row anchor
+        SEC
+        SBC #$0A
+        STA ZP_ENEMY_C_ROW              ; Row := anchor - $0A
+        LDA #$00
+        STA ZP_ENEMY_C_STATE            ; Deactivate self (state := $00)
+        RTS
+
+; --- Drift path: counter counts UP; on lo-byte overflow fall to .rearm ---
+.drift_tick:
+        INC ZP_ENEMY_C_POS
+        BNE .exit                       ; No overflow: exit
+        JMP .rearm                      ; Lo wrapped: jump to rearm reload
+@ %def ENEMY_C_ADVANCE
+@ %def ZP_ENEMY_C_SND_CTR ZP_ENEMY_C_POS SND_PITCH_TBL_C ENEMY_C_ROW_TBL
+
+<<sprite player code 16AC>>=
+
+        ORG $16AC
+PLAYER_RENDER:
+        SUBROUTINE
+        ; Sprite/player code (\$16AC-\$17A5): enemy-C draw
+        ; (PLAYER_RENDER, misnamed --- this is the enemy-C draw,
+        ; mirror of SPRITE_DRAW_1 / SPRITE_DRAW_3) plus tail code.
+        ; Not yet disassembled.
+
+        HEX A5 D4 F0 23 10 03 4C 83
+        HEX 17 A6 4A BD 8F 1A 38 E5
+        HEX 4C 85 AF BD 8F 19 E9 00
+        HEX 85 B0 38 A5 D5 E5 AF 85
+        HEX AF A5 D6 E5 B0 F0 01 60
+        HEX A5 AF C9 94 B0 F9 AA BD
+        HEX 34 1C 85 5D BD 8F 1B AA
+        HEX A9 02 85 56 A9 0B 85 57
+        HEX A5 D7 85 5B BD E1 AF 8D
+        HEX B3 65 BD 61 B0 8D B4 65
+        HEX 20 6F 65 A5 AF 38 E9 01
+        HEX C9 94 B0 31 AA BD 34 1C
+        HEX 85 5D BD 8F 1B AA A9 01
+        HEX 85 56 A9 07 85 57 A5 D7
+        HEX 18 69 0B 85 5B BD 49 75
+        HEX 8D B3 65 BD 49 76 8D B4
+        HEX 65 20 6F 65 A2 03 B5 9B
+        HEX D0 04 CA 10 F9 60 A5 AF
+        HEX D5 9F 90 F6 38 E9 08 D5
+        HEX 9F B0 EF A5 D7 38 E9 04
+        HEX D5 A3 B0 E6 18 69 0E D5
+        HEX A3 90 DF A9 FF 85 D4 A5
+        HEX DC F0 04 A9 FF 85 DC A9
+        HEX D0 85 D5 A9 00 95 9B A5
+        HEX AF 85 D6 E6 D7 E6 D7 A9
+        HEX 04 85 B7 A9 00 85 1A A9
+        HEX 01 85 1B 20 1A 12 60 A9
+        HEX 02 85 56 A9 06 85 57 A6
+        HEX D6 BD 34 1C 85 5D A5 D7
+        HEX 85 5B AD 59 75 8D B3 65
+        HEX AD 59 76 8D B4 65 20 6F
+        HEX 65 60
+@ %def PLAYER_RENDER
 
 <<game logic 188A>>=
 
@@ -8985,6 +9188,11 @@ LEVEL_INTRO_TICK:
 <<enemy a advance>>
 ; --- ORG $1423: Sprite/player code ---
 <<sprite player code>>
+; --- ORG $1646: Enemy-C advance ---
+<<enemy c defines>>
+<<enemy c advance>>
+; --- ORG $16AC: Sprite/player code (cont.) ---
+<<sprite player code 16AC>>
 ; --- ORG $17A6: Attract anim 1 ---
 <<attract anim 1>>
 ; --- ORG $17E1: Attract anim 2 ---

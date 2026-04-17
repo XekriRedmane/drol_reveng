@@ -228,22 +228,81 @@ For each data region:
 
 ### Fonts and images
 
-Game binaries contain hi-res bitmap data — sprites, font glyphs, title screen art, border decorations. When you identify a graphics data region:
+See the "Standing rule: render any graphics data you uncover" section below
+for the process. Graphics rendering is not a Round-5-specific task — it
+applies whenever a session uncovers pixel data, code or data round alike.
 
-1. **Decode the pixel data** using Apple II hi-res graphics rules (see the appendix on hi-res graphics). Remember: bits are drawn LSB first, the high bit selects the color palette, and `11` = white, `010` = colored pixel.
-2. **Render the image** to a PNG file. Write a Python script that converts the raw bytes to pixels, applying the hi-res color rules. Save rendered images to `images/` in the repository.
-3. **Include the image in the document** using `\includegraphics`:
-   ```latex
-   \begin{center}
-   \includegraphics[scale=2]{images/sprite_player.png}
-   \end{center}
-   ```
-   Scale up small sprites (fonts and sprites are typically 7-14 pixels wide) so they're visible in the PDF.
-4. **Document the format** — record size, dimensions, whether the data is stored row-major or column-major, how many frames of animation, what the high bits control.
-5. **For font data**, render the full character set as a grid image. Document the glyph dimensions and any encoding (ASCII offset, custom character order).
-6. **For sprite sheets**, render each frame and label them. Note which frames belong to the same animation sequence.
+Round-5-specific notes: when fonts and sprite sheets are the primary focus
+of a session, render the full character set as a grid and label each frame
+of each sprite-animation sequence. Note the ASCII offset or custom character
+order for fonts. Cross-reference the tile dimensions against the draw
+routines that consume them (often the draw routine's `ZP_SPRITE_W`/`_H`
+values or SMC-patched operands encode these).
 
-The title screen is a special case — it's typically unpacked by an initialization routine (like GAME_INIT) into the hi-res page. You can render it by running the unpacker logic in Python against the packed data stream, or by capturing the hi-res page from an emulator.
+## Standing rule: render any graphics data you uncover
+
+This is a **continuous** behavior, not a Round-5-only task. Any time a session
+uncovers graphics data — a sprite, font glyph, tile, title/HUD image, unpacker
+stream, or any byte region that is used as pixel data by a draw routine —
+render it to a PNG and embed it in the document in the same commit as the RE.
+
+The rule applies even when the graphics are a byproduct of RE'ing a code
+routine (e.g. you RE a draw routine and it reveals where its sprite table
+lives, or you decode a self-modifying sprite pointer and resolve where it
+points). Don't defer the image work to a separate pass; do it in the same
+session while the data layout is fresh.
+
+### Steps
+
+1. **Figure out the record format** — dimensions (W×H in bytes or columns×rows),
+   data ordering (row-major vs column-major, forward vs reversed), how many
+   frames, what palette bits do.
+2. **Write or extend a Python renderer.** Save to `.claude/scripts/render_<name>.py`.
+   The template is `/project/drol_re/.claude/scripts/render_hud_frame.py`:
+   it opens `reference/drol.bin`, reads the data at a known offset, applies
+   Apple~II hi-res palette rules, and writes a scaled PNG. Re-use its
+   `render_row` helper (or a close variant) rather than rewriting palette
+   logic from scratch. For sprite tables, iterate each frame and either save
+   one PNG per frame or assemble them into a grid image.
+3. **Run the renderer** with `/project/drol_re/.venv/bin/python`. Pillow
+   (`PIL`) is already installed in the project-scoped venv; do not install
+   packages globally. If PIL is missing in a future environment, reinstall
+   into the existing venv: `.venv/bin/pip install Pillow`.
+4. **Save the output under `images/`** at the repo root. Filenames should
+   describe the content: `sprite_player_walk_frame3.png`, `font_glyphs.png`,
+   `enemy_a_sprites.png`, `hud_frame.png`, etc. Use lowercase with
+   underscores.
+5. **Embed the image in `main.nw`**, right where the data is documented.
+   Use a `figure` environment with a caption and a `\label{fig:...}`
+   referenced from the prose. For tiny sprites (7-14 px wide), scale up so
+   they're visible — `\includegraphics[scale=2]{...}` or
+   `\includegraphics[width=0.3\textwidth]{...}`. Put the `\includegraphics`
+   path as `{images/<name>.png}` (LaTeX runs from `output/`; the gen-pdf
+   skill copies `images/` there before `pdflatex`).
+6. **Describe the decoding in prose** immediately before or after the
+   figure: record size, dimensions, frame count, how the game indexes into
+   the table, any palette/color quirks specific to this data.
+7. **Verify visually.** Read the PNG back (or trust the `Read` tool's
+   display) and confirm it looks like recognizable game content. If it
+   renders as noise or garbage, the format guess is wrong — don't ship a
+   useless image; iterate until the picture makes sense.
+8. **Commit in the same commit as the RE.** The image file, the renderer
+   script, and the `main.nw` edits all go together.
+
+### When the data format is genuinely unknown
+
+If you find sprite-table entries referenced by a self-modifying pointer but
+can't yet decode the format (e.g. RLE, stream-based, or tiled), note the
+address, dimensions guess, and a TODO in the commit message. Don't force a
+broken render.
+
+### Don't skip this
+
+Rendered images are the single highest-bandwidth communication between the
+document and the reader — far more than prose describing byte layouts. Every
+session that finds graphics without rendering them is leaving the document
+less useful than it should be. Treat graphics rendering with the same
+priority as writing prose or annotating assembly.
 
 ## Chunk hygiene
 

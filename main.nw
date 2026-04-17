@@ -3449,7 +3449,7 @@ MAIN_LOOP:
 
 ; --- Per-frame subroutine calls ---
         JSR LEVEL_INTRO_TICK    ; Level intro / countdown state tick
-        JSR SCROLL_CAMERA       ; Scroll / camera
+        JSR DIFFICULTY_UPDATE   ; Ramp difficulty tier from score
 SMC_INPUT = *
         JSR INPUT_DISPATCH      ; Input handler (BIT during attract)
         JSR INPUT_PROCESS       ; Input processing
@@ -3667,15 +3667,15 @@ POST_FRAME:
         ; Score and status display — draws BCD digits each frame.
         ;
         ; Inputs:
-        ;   ZP $D1, $D2, $D3 — BCD score/state
-        ;   ZP $5E — level state flag
+        ;   ZP_SCORE_HI/MID/LO ($D1/$D2/$D3) — BCD score
+        ;   ZP_LEVEL_STATE ($5E) — level state flag
         ;
         ; Modifies:
         ;   Sprite parameters, SMC_TILE_SRC_LO/HI
         ; Clobbers: A, X
 
 ; --- Digit 1: low nibble of $D1, column 2 ---
-        LDA ZP_ENTITY_D1
+        LDA ZP_SCORE_HI
         AND #$0F
         TAX
         LDA #$02
@@ -3683,7 +3683,7 @@ POST_FRAME:
         JSR DRAW_DIGIT_SHORT
 
 ; --- Digit 2: low nibble of $D2, column 6 ---
-        LDA ZP_ENTITY_D2
+        LDA ZP_SCORE_MID
         AND #$0F
         TAX
         LDA #$06
@@ -3691,7 +3691,7 @@ POST_FRAME:
         JSR DRAW_DIGIT_SHORT
 
 ; --- Digit 3: high nibble of $D2, column 4 ---
-        LDA ZP_ENTITY_D2
+        LDA ZP_SCORE_MID
         AND #$F0
         LSR
         LSR
@@ -3703,7 +3703,7 @@ POST_FRAME:
         JSR DRAW_DIGIT_SHORT
 
 ; --- Digit 4: low nibble of $D3, column $0A ---
-        LDA ZP_ENTITY_D3
+        LDA ZP_SCORE_LO
         AND #$0F
         TAX
         LDA #$0A
@@ -3711,7 +3711,7 @@ POST_FRAME:
         JSR DRAW_DIGIT_SHORT
 
 ; --- Digit 5: high nibble of $D3, column 8 ---
-        LDA ZP_ENTITY_D3
+        LDA ZP_SCORE_LO
         AND #$F0
         LSR
         LSR
@@ -3813,8 +3813,8 @@ LEVEL_TRANSITION:
         ; High score check — updates high score and copies display rows.
         ;
         ; Inputs:
-        ;   $D1/$D2/$D3 — current score (BCD)
-        ;   $20/$21/$22 — stored high score (BCD)
+        ;   ZP_SCORE_HI/MID/LO ($D1/$D2/$D3) — current score (BCD)
+        ;   ZP_HIGH_SCORE_0/1/2 ($20/$21/$22) — stored high score (BCD)
         ;
         ; Modifies:
         ;   $20-$22 (if new high score), hi-res page 2 rows
@@ -3824,22 +3824,22 @@ LEVEL_TRANSITION:
         SED
         SEC
         LDA ZP_HIGH_SCORE_2      ; Compare byte 2 (low digits)
-        SBC ZP_ENTITY_D3
+        SBC ZP_SCORE_LO
         LDA ZP_HIGH_SCORE_1      ; Compare byte 1
-        SBC ZP_ENTITY_D2
+        SBC ZP_SCORE_MID
         LDA ZP_HIGH_SCORE_0      ; Compare byte 0 (high digits)
-        SBC ZP_ENTITY_D1
+        SBC ZP_SCORE_HI
         CLD
         BCC .new_high_score       ; Carry clear = current > high
         RTS                       ; No new high score
 
 ; --- Update high score ---
 .new_high_score:
-        LDA ZP_ENTITY_D1
+        LDA ZP_SCORE_HI
         STA ZP_HIGH_SCORE_0
-        LDA ZP_ENTITY_D2
+        LDA ZP_SCORE_MID
         STA ZP_HIGH_SCORE_1
-        LDA ZP_ENTITY_D3
+        LDA ZP_SCORE_LO
         STA ZP_HIGH_SCORE_2
 
 ; --- Copy score display rows from page 1 to page 2 ---
@@ -3999,24 +3999,23 @@ SCORE_ADD:
         ; Score add — adds BCD value to 3-byte score.
         ;
         ; Inputs:
-        ;   ZP $1A — addend low byte (BCD)
-        ;   ZP $1B — addend high byte (BCD)
+        ;   ZP_SCORE_ADD_LO/HI ($1A/$1B) — BCD addend
         ;
         ; Modifies:
-        ;   ZP $D1/$D2/$D3 (score)
+        ;   ZP_SCORE_HI/MID/LO ($D1/$D2/$D3)
         ; Clobbers: A
 
         SED                       ; BCD mode
         CLC
-        LDA ZP_ENTITY_D3          ; Score low byte
+        LDA ZP_SCORE_LO          ; Score low byte
         ADC ZP_SCORE_ADD_LO       ; Add low addend
-        STA ZP_ENTITY_D3
-        LDA ZP_ENTITY_D2          ; Score mid byte
+        STA ZP_SCORE_LO
+        LDA ZP_SCORE_MID          ; Score mid byte
         ADC ZP_SCORE_ADD_HI       ; Add high addend + carry
-        STA ZP_ENTITY_D2
-        LDA ZP_ENTITY_D1          ; Score high byte
+        STA ZP_SCORE_MID
+        LDA ZP_SCORE_HI          ; Score high byte
         ADC #$00                  ; Propagate carry only
-        STA ZP_ENTITY_D1
+        STA ZP_SCORE_HI
         CLD                       ; Exit BCD mode
         RTS
 @ %def SCORE_ADD
@@ -4027,7 +4026,7 @@ SCORE_ADD:
 player presses a key or button. It resets the player position to the
 starting Y-coordinate (\$6B), zeros the three score digits (\$2B--\$2D),
 sets the initial lives count, calls two initialization subroutines
-([[INIT_ENTITY_STATE]] and [[INIT_LEVEL_STATE]]), and then tail-calls
+([[DIFFICULTY_RESET]] and [[INIT_LEVEL_STATE]]), and then tail-calls
 [[LOAD_LEVEL]] to load the first level.
 
 <<game start init defines>>=
@@ -4045,9 +4044,9 @@ ZP_HIGH_SCORE_FLAG = $44        ; High score flag ($FF = no high score)
 ; --- Game state ---
 SCORE_DISPLAY_VAL = $65AB       ; Score display value
 LIVES_DISPLAY_VAL = $65A7       ; Lives display value
-ZP_ENTITY_D1    = $D1           ; Entity state 1
-ZP_ENTITY_D2    = $D2           ; Entity state 2
-ZP_ENTITY_D3    = $D3           ; Entity state 3
+ZP_SCORE_HI     = $D1           ; BCD score, high byte (ten-thousands / hundred-thousands)
+ZP_SCORE_MID    = $D2           ; BCD score, middle byte (thousands / hundreds)
+ZP_SCORE_LO     = $D3           ; BCD score, low byte (tens / ones)
 
 ; --- Subroutine stubs (game start) ---
 ; (INIT_LEVEL_STATE has its own ORG chunk)
@@ -4068,8 +4067,9 @@ GAME_START_INIT:
         ;   Tail-calls LOAD_LEVEL to begin first level.
         ;
         ; Modifies:
-        ;   ZP $2B-$2E, $44, $46, $4A, $5E, $D1-$D3,
-        ;   $65A7, $65AB
+        ;   ZP_SCORE_0..2, ZP_LIVES, ZP_HIGH_SCORE_FLAG, ZP_LEVEL_NUM,
+        ;   ZP_PLAYER_Y, ZP_LEVEL_STATE, ZP_SCORE_HI/MID/LO,
+        ;   SCORE_DISPLAY_VAL, LIVES_DISPLAY_VAL
         ; Clobbers: A, X
 
 ; --- Player start position ---
@@ -4090,16 +4090,16 @@ GAME_START_INIT:
         STA LIVES_DISPLAY_VAL    ; Initial lives display value
 
 ; --- Initialize subsystems ---
-        JSR INIT_ENTITY_STATE    ; Reset entity ZP state
+        JSR DIFFICULTY_RESET     ; Set minimum difficulty preset
         JSR INIT_LEVEL_STATE     ; Reset level state tables
 
 ; --- Set level state ---
         LDA #$04
         STA ZP_LEVEL_STATE       ; Initial level state
         LDX #$00
-        STX ZP_ENTITY_D1         ; Clear entity state 1
-        STX ZP_ENTITY_D2         ; Clear entity state 2
-        STX ZP_ENTITY_D3         ; Clear entity state 3
+        STX ZP_SCORE_HI          ; Clear score high byte
+        STX ZP_SCORE_MID         ; Clear score mid byte
+        STX ZP_SCORE_LO          ; Clear score low byte
         STX ZP_LEVEL_NUM         ; Start at level 0
         DEX
         STX ZP_HIGH_SCORE_FLAG   ; No high score yet ($FF)
@@ -4108,125 +4108,173 @@ GAME_START_INIT:
         JMP LOAD_LEVEL           ; Tail-call: load level data
 @ %def GAME_START_INIT
 
-\section{Difficulty configuration update}
+\section{Difficulty update}
 
-[[SCROLL_CAMERA]] at \$719D runs once every 256 frames (when the frame
-counter wraps to zero). It reads two game-progress bytes (\$D1 and \$D2),
-nibble-swaps and combines them into a single difficulty index, then
-selects one of four configuration presets for ZP variables \$31--\$35
-and~\$40. These variables control enemy spawn counts and behavior
-thresholds used by the per-frame AI and hazard routines.
+[[DIFFICULTY_UPDATE]] at \$719D is called once per frame from
+[[MAIN_LOOP]], but only does work on the frame where the free-running
+counter [[ZP_FRAME_COUNTER]] wraps to zero --- i.e.\ about every
+256~frames ($\sim$4~seconds at 60~Hz).  On that frame it promotes the
+game to a harder difficulty tier whenever the player's score has
+climbed into a new bracket.
 
-The four presets correspond to increasing difficulty:
-\begin{itemize}
-\item Index $<$ 4: all entity slots disabled (\$31--\$33 = \$FF), minimal activity.
-\item Index 4--15: one slot enabled, moderate activity.
-\item Index 16--23: all slots enabled with standard thresholds.
-\item Index $\ge$ 24: maximum difficulty with the highest thresholds.
-\end{itemize}
+The tier index is built by combining two BCD digits of
+[[ZP_SCORE_HI]]/[[ZP_SCORE_MID]]: the ten-thousands digit goes in the
+high nibble and the thousands digit in the low nibble.  (These are the
+two leftmost digits of the on-screen 5-digit score; see [[POST_FRAME]]
+for how they are drawn.)  The resulting byte is compared against three
+thresholds that pick one of four presets.  Each preset writes into six
+shared ZP variables that other per-frame routines consult:
 
-The sub-entry at [[INIT_ENTITY_STATE]] (\$71D6) is also called directly
-by [[GAME_START_INIT]] to reset entity state when starting a new game.
+\begin{center}
+\begin{tabular}{l|l|l|l|l|l|l|l}
+Tier (score)       & Index & \$31 & \$32 & \$33 & \$34 & \$35 & \$40 \\
+\hline
+Minimum (<4000)    & <\$04   & \$FF & \$FF & \$FF & \$00 & \$50 & \$01 \\
+Moderate (4000--9999) & \$04--\$0F & \$00 & \$FF & \$01 & \$40 & ---  & ---  \\
+Standard (10000--17999) & \$10--\$17 & \$01 & \$01 & \$01 & \$80 & ---  & \$02 \\
+Maximum (18000+)   & \$18+  & \$03 & \$01 & \$01 & \$F0 & \$30 & \$03 \\
+\end{tabular}
+\end{center}
 
-<<scroll camera>>=
+A cell of~--- means that preset does not touch that variable, so it
+retains the value left by the previous tier or by [[DIFFICULTY_RESET]].
+The three ``slot count'' variables ($31, $32, $33) are maxima for
+indexed loops elsewhere in the engine: \$FF flags the BMI-guarded
+loops as empty (see [[HAZARD_CHECK]] at \$0E5A, which reads
+[[ZP_PROJ_MAX]] ($31), and the [[DRAW_ENTITIES]] phase-4 companion
+draw, which gates on [[ZP_COMPANION_GATE]] ($33)).  \$40
+([[ZP_ADVANCE_RATE]]) is the per-tick decrement applied to the
+16-bit counters at \$DD/\$DE and \$D5/\$D6 by the as-yet-unlabelled
+routines at \$13F4 and \$1670 --- a larger rate means those events
+fire more often.
+
+The sub-entry at [[DIFFICULTY_RESET]] (\$71D6) also serves as the
+minimum-tier preset and is called directly by [[GAME_START_INIT]] when
+a new game begins.  Note that nothing in this routine scrolls or
+touches the camera: the previous label [[SCROLL_CAMERA]] was a
+placeholder guess and has been retired.
+
+<<difficulty update defines>>=
+
+; --- Zero-page (difficulty tiers) ---
+ZP_DIFF_TMP     = $5C           ; Scratch: holds D2 high nibble shifted right
+ZP_PROJ_GATE    = $32           ; Enemy-slot gate (BPL=active; $FF=suppress)
+                                ; Read by routine at $130A.
+ZP_DIFF_THRESH_A = $34          ; Primary tier threshold (varies: $00/$40/$80/$F0)
+ZP_DIFF_THRESH_B = $35          ; Secondary tier threshold ($50 min, $30 max)
+ZP_ADVANCE_RATE = $40           ; Per-tick decrement for 16-bit event timers
+                                ; Read by $13F7 SBC $40 and $1675 SBC $40.
+ZP_FRAME_COUNTER = $FD          ; Free-running frame counter (incremented in MAIN_LOOP)
+
+@
+
+<<difficulty update>>=
 
         ORG $719D
-SCROLL_CAMERA:
+DIFFICULTY_UPDATE:
         SUBROUTINE
-        ; Difficulty configuration update — adjusts entity parameters.
-        ;
-        ; Runs every 256 frames (when ZP $FD wraps to zero).
-        ; Computes difficulty index from $D1/$D2, selects preset.
+        ; Per-frame difficulty ramp.  When the free-running frame
+        ; counter wraps to zero, promotes game parameters to the tier
+        ; dictated by the current score.
         ;
         ; Inputs:
-        ;   $FD — frame counter (only acts when zero)
-        ;   $D1, $D2 — game progress state
+        ;   ZP_FRAME_COUNTER ($FD)          --- run only when zero.
+        ;   ZP_SCORE_HI ($D1) low nibble    --- ten-thousands digit.
+        ;   ZP_SCORE_MID ($D2) high nibble  --- thousands digit.
+        ;
+        ; Behavior:
+        ;   Builds tier index = (D1_lo << 4) | (D2_hi >> 4), dispatches
+        ;   to one of four presets by comparing against $04/$10/$18.
+        ;   Each preset writes slot-count maxima ($31, $32, $33), tier
+        ;   thresholds ($34, $35), and timer-advance rate ($40).
         ;
         ; Modifies:
-        ;   ZP $31-$35, $40
+        ;   ZP_PROJ_MAX ($31), ZP_PROJ_GATE ($32), ZP_COMPANION_GATE ($33),
+        ;   ZP_DIFF_THRESH_A ($34), ZP_DIFF_THRESH_B ($35),
+        ;   ZP_ADVANCE_RATE ($40), ZP_DIFF_TMP ($5C).
         ; Clobbers: A, X
 
-; --- Guard: only run when frame counter = 0 ---
-        LDA $FD
+; --- Guard: only run on frame-counter wrap ---
+        LDA ZP_FRAME_COUNTER
         BNE .done
 
-; --- Compute difficulty index ---
-        LDA ZP_ENTITY_D2         ; High nibble of D2
+; --- Build tier index from BCD score ---
+        LDA ZP_SCORE_MID                ; Thousands digit in high nibble
         AND #$F0
         LSR
         LSR
         LSR
         LSR
-        STA $5C                  ; Temp: D2 high nibble → low
-        LDA ZP_ENTITY_D1         ; Low nibble of D1
+        STA ZP_DIFF_TMP                 ; ...shifted to low nibble
+        LDA ZP_SCORE_HI                 ; Ten-thousands digit in low nibble
         AND #$0F
         ASL
         ASL
         ASL
-        ASL                      ; D1 low nibble → high
-        ORA $5C                  ; Combine: (D1_lo << 4) | (D2_hi >> 4)
+        ASL                             ; ...shifted to high nibble
+        ORA ZP_DIFF_TMP                 ; Index = (D1_lo << 4) | (D2_hi >> 4)
 
-; --- Select preset based on index ---
+; --- Dispatch by tier threshold ---
         CMP #$04
-        BCC INIT_ENTITY_STATE    ; < 4: minimal
+        BCC DIFFICULTY_RESET            ; <$04: minimum tier (tail-call)
         CMP #$10
-        BCC .preset_moderate     ; 4-15: moderate
+        BCC .tier_moderate              ; $04..$0F: moderate tier
         CMP #$18
-        BCC .preset_standard     ; 16-23: standard
+        BCC .tier_standard              ; $10..$17: standard tier
 
-; --- Preset: maximum difficulty (index >= 24) ---
+; --- Tier: maximum (index >= $18, score >= 18000) ---
         LDA #$03
-        STA $40
-        STA $31
+        STA ZP_ADVANCE_RATE             ; Fast 16-bit timer advance
+        STA ZP_PROJ_MAX                 ; 4 projectile slots (index 0..3)
         LDA #$01
-        STA $32
-        STA $33
+        STA ZP_PROJ_GATE                ; Enemy slot active
+        STA ZP_COMPANION_GATE           ; Companion slot active
         LDA #$F0
-        STA $34
+        STA ZP_DIFF_THRESH_A            ; Max primary threshold
         LDA #$30
-        STA $35
+        STA ZP_DIFF_THRESH_B            ; Max secondary threshold
 .done:
         RTS
 
-; --- Preset: minimal (index < 4) ---
-; Also called by GAME_START_INIT to reset entity state.
-INIT_ENTITY_STATE:
+; --- Tier: minimum (index < $04, score < 4000) ---
+; Also entered directly by GAME_START_INIT to reset difficulty.
+DIFFICULTY_RESET:
         LDX #$FF
-        STX $31                  ; Disable all entity slots
-        STX $32
-        STX $33
-        INX
-        STX $34                  ; Clear threshold
-        INX
-        STX $40                  ; Set count to 1
+        STX ZP_PROJ_MAX                 ; No projectiles
+        STX ZP_PROJ_GATE                ; Enemy slot suppressed
+        STX ZP_COMPANION_GATE           ; Companion slot suppressed
+        INX                             ; X=$00
+        STX ZP_DIFF_THRESH_A            ; Zero primary threshold
+        INX                             ; X=$01
+        STX ZP_ADVANCE_RATE             ; Slow 16-bit timer advance
         LDA #$50
-        STA $35                  ; Low difficulty threshold
+        STA ZP_DIFF_THRESH_B            ; Min secondary threshold
         RTS
 
-; --- Preset: moderate (index 4-15) ---
-.preset_moderate:
+; --- Tier: moderate (index $04..$0F, score 4000-9999) ---
+.tier_moderate:
         LDX #$FF
-        STX $32                  ; Disable slot 2
-        INX
-        STX $31                  ; Enable slot 1
-        INX
-        STX $33                  ; Enable slot 3
+        STX ZP_PROJ_GATE                ; Enemy slot suppressed
+        INX                             ; X=$00
+        STX ZP_PROJ_MAX                 ; 1 projectile slot
+        INX                             ; X=$01
+        STX ZP_COMPANION_GATE           ; Companion slot active
         LDA #$40
-        STA $34                  ; Moderate threshold
+        STA ZP_DIFF_THRESH_A            ; Moderate primary threshold
         RTS
 
-; --- Preset: standard (index 16-23) ---
-.preset_standard:
+; --- Tier: standard (index $10..$17, score 10000-17999) ---
+.tier_standard:
         LDX #$01
-        STX $31                  ; Enable all slots
-        STX $32
-        STX $33
-        INX
-        STX $40                  ; Set count to 2
+        STX ZP_PROJ_MAX                 ; 2 projectile slots
+        STX ZP_PROJ_GATE                ; Enemy slot active
+        STX ZP_COMPANION_GATE           ; Companion slot active
+        INX                             ; X=$02
+        STX ZP_ADVANCE_RATE             ; Medium 16-bit timer advance
         LDA #$80
-        STA $34                  ; Standard threshold
+        STA ZP_DIFF_THRESH_A            ; Standard primary threshold
         RTS
-@ %def SCROLL_CAMERA INIT_ENTITY_STATE
+@ %def DIFFICULTY_UPDATE DIFFICULTY_RESET
 
 \section{Level complete handler}
 
@@ -8399,6 +8447,7 @@ LEVEL_INTRO_TICK:
 <<hazard check defines>>
 <<draw entities defines>>
 <<level intro defines>>
+<<difficulty update defines>>
 ; --- ORG $0100: Screen row copy ---
 <<screen row copy>>
 ; --- ORG $012B: Joystick handler ---
@@ -8493,8 +8542,8 @@ LEVEL_INTRO_TICK:
 <<level intro tick>>
 ; --- ORG $6ABA: Game engine B tail ---
 <<game engine B tail>>
-; --- ORG $719D: Scroll camera ---
-<<scroll camera>>
+; --- ORG $719D: Difficulty update ---
+<<difficulty update>>
 ; --- ORG $7208: Level complete ---
 <<level complete>>
 ; --- ORG $7263: Attract loop ---

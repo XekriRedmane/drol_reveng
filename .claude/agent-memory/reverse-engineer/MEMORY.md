@@ -1,2 +1,4 @@
 - [Drol SFX architecture](drol-sfx-architecture.md) — speaker-click via indirect ZP pointer; bit-4 toggle selects $C030 vs $C020
 - [Drol $37 assumption](drol-zp-37-assumption.md) — $37 holds $C0 from boot ZP state; never explicitly written by game
+- [Drol BCD score at $D1/$D2/$D3](drol-score-zp.md) — ZP_SCORE_HI/MID/LO; not "entity state"
+- [Drol difficulty tiers](drol-difficulty-tiers.md) — $31/$32/$33/$34/$35/$40 tier state set by DIFFICULTY_UPDATE ($719D)

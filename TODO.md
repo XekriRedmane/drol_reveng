@@ -26,7 +26,22 @@ Review existing chunks for violations:
       SMC_SR_YSRC ($64FA), SMC_SPRITE_MASK_OP/ARG ($65B7/$65B8); tables
       LEVEL_DATA_BASE ($0200), SPRITE_TABLE_LO/HI ($B000/$B080); stub
       SFX_TONE ($67C1).
-- [ ] `$719D` — Scroll / camera
+- [x] `$719D` — `DIFFICULTY_UPDATE`: score-driven difficulty tier update
+      (misnamed "SCROLL_CAMERA" previously --- the routine never touches
+      scroll or camera state).  Runs only when `ZP_FRAME_COUNTER` ($FD)
+      wraps to 0 (every 256 frames ~= 4s).  Builds a tier index from
+      two BCD digits of the score (`ZP_SCORE_HI` low-nibble << 4 |
+      `ZP_SCORE_MID` high-nibble >> 4) and dispatches to one of four
+      presets that write slot-count maxima, tier thresholds, and the
+      per-tick timer-advance rate.  Sub-entry `DIFFICULTY_RESET` ($71D6)
+      is the minimum preset, also called by `GAME_START_INIT` to
+      initialize.  Renamed `ZP_ENTITY_D1/D2/D3` ($D1/$D2/$D3) to
+      `ZP_SCORE_HI/MID/LO` (these are the BCD score, not entity state;
+      also confirmed by `SCORE_ADD`, `POST_FRAME`, `LEVEL_TRANSITION`).
+      New ZP EQUs: `ZP_PROJ_GATE` ($32), `ZP_DIFF_THRESH_A/B` ($34/$35),
+      `ZP_ADVANCE_RATE` ($40), `ZP_DIFF_TMP` ($5C), `ZP_FRAME_COUNTER`
+      ($FD).  `$32` and `$40` are read by the not-yet-RE'd routines at
+      `$130A` (BPL gate) and `$13F7` / `$1675` (SBC decrement).
 - [x] `$683C` — `DRAW_ENTITIES`: final per-frame drawing dispatcher in
       MAIN_LOOP (misnamed "page flip" previously --- no display-page
       toggle here; that's `DISPLAY_PAGE_FLIP` at $6138).  Five phases:

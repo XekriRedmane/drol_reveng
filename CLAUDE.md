@@ -146,6 +146,7 @@ The `/annotate` skill automates these passes for an existing routine.
 - `SUBROUTINE` after each `ORG` to scope `.local` labels.
 - ORG directives must be in strictly ascending address order. Use `python .claude/skills/assemble/reorder_chunks.py` to fix.
 - Accumulator addressing: use bare `ASL`/`LSR`/`ROL`/`ROR`, not `ASL A`.
+- `HEX` directives: at most 8 bytes per line. Longer rows overflow the PDF column and wrap awkwardly. Break any hex blob into 8-byte lines; put the inline comment (if any) on the first line only.
 - Use `-f3` for raw binary output (not `-f1` which adds a 2-byte header).
 - Always produce `.lst` and `.sym` files when assembling.
 - Force absolute addressing when dasm optimizes to zero-page: `DC.B $9D,$00,$00` for `STA $0000,X`.

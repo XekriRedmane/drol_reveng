@@ -2204,6 +2204,11 @@ SCORE_DISPLAY   = $673B         ; Score / status display (entity process hex)
 ; (RESCUE_UPDATE is the label at ORG $6F9C, formerly stubbed as
 ;  LEVEL_LOGIC.  Per-frame tick for the 20-slot rescue-child entity
 ;  subsystem --- the scoring objective.)
+; (RESCUE_DRAW is the label at ORG $0C98, formerly stubbed as
+;  PROJECTILE_HANDLER --- the routine is actually the per-frame draw
+;  + collision sibling of RESCUE_UPDATE, also responsible for the
+;  hostile projectile-spawn path that fires when a rescue child is
+;  on the player floor at an odd row.)
 ; (HAZARD_CHECK has its own ORG chunk)
 ; (ENEMY_C_ADVANCE is the label at ORG $1646; was misnamed PLAYER_STATE.)
 ; (ENEMY_C_DRAW is the label at ORG $16AC inside sprite-player-code-16AC;
@@ -3491,7 +3496,7 @@ SMC_RENDER = *
         JSR SPECIAL_DRAW        ; Special sprite draw + hit/catch logic
         JSR COMPANION_UPDATE    ; Companion slot tick+draw
         JSR RESCUE_UPDATE       ; Rescue-child entity 20-slot tick
-        JSR PROJECTILE_HANDLER  ; Projectile handling
+        JSR RESCUE_DRAW         ; Rescue-child draw + collision + projectile-spawn
         JSR HAZARD_CHECK        ; Hazard checking
         JSR ENEMY_C_ADVANCE     ; Enemy-C advance timer + respawn
         JSR ENEMY_C_DRAW        ; Enemy-C draw + enemy-slot collision
@@ -5326,71 +5331,450 @@ SCREEN_ROW_HELPER:
         HEX 4A 9D 50 49 9D D0 4B 60
 @
 
-<<projectile handler>>=
+\section{Rescue-child draw, collision, and projectile-spawn}
+
+[[RESCUE_DRAW]] at \$0C98 is the per-frame draw + collision sibling of
+[[RESCUE_UPDATE]] (\$6F9C).  It iterates the same 20-slot rescue-child
+entity table (Y $\in [0, \$13]$), draws each active slot's body sprite
+on the playfield, and runs three independent collision/spawn checks:
+
+\begin{enumerate}
+\item \emph{Floor-enemy collision} (\$0DAB--\$0DEF): if the rescue
+  child overlaps any of the four floor-enemy slots
+  ([[ZP_ENEMY_FLAG]]/[[ZP_ENEMY_COL]]/[[ZP_ENEMY_Y]] at \$9B/\$9F/\$A3),
+  both die together: clear the enemy slot, set [[ENTITY_ACTIVE]],Y to
+  drift (\$FF), arm [[RESCUE_COUNTDOWN]] = \$04, award +\$0035 BCD via
+  [[SCORE_ADD]].  This is the same enemy table [[ENEMY_C_DRAW]] checks.
+\item \emph{Player pickup} (\$0DF0--\$0E11): if the entity is in the
+  centre screen-X band [\$40, \$50) and the player row [[ZP_PLAYER_COL]]
+  is within $[$entity\_row$-$\$12, entity\_row$+$\$19$]$, set
+  [[ZP_HIT_FLAG]] (\$1E) to \$FF and merge into the same drift +
+  reward path as the floor-enemy hit.  No [[ZP_LIVES_BCD]] decrement
+  --- this is the rescue, not a life-loss.
+\item \emph{Hostile projectile spawn} (\$0E13--\$0E50): if neither
+  collision fired \emph{and} the entity row is odd \emph{and} the
+  rescue's assigned floor [[RESCUE_FLOOR]] equals the player's current
+  floor [[ZP_PLAYER_FLOOR_CUR]] (\$0C) \emph{and} a free projectile
+  slot exists (some [[ZP_PROJ_DIR]] (\$C5,X) byte is zero, X $\in [0,
+  \$31]$), seed that slot with the rescue's direction, row, and
+  screen-X --- the rescue child throws a hostile projectile picked up
+  by [[HAZARD_CHECK]] on subsequent frames.  Plays a \$0D-pitch
+  click ([[SND_DELAY_DOWN]] with X=\$0A) on emit.
+\end{enumerate}
+
+\paragraph{Per-slot dispatch.}  After [[RESCUE_DRAW_PERSPECTIVE_CACHE]]
+pre-computes the player's perspective offset into [[ZP_PERSP_OFFSET_LO]]
+(\$0F) / [[ZP_PERSP_OFFSET_HI]] (\$10), the body iterates Y from \$13
+down through the 20 slots and dispatches on [[ENTITY_ACTIVE]],Y:
+
+\begin{itemize}
+\item \$00 (inactive): skip to next slot.
+\item +ve (active walking): compute screen-X and proceed to draw +
+  collision + projectile-spawn.
+\item \$FE (exit-anim): skip --- the child is in its terminal
+  walk-off-screen animation and is invisible during the fade.
+\item other -ve (drift): play descending click via the per-slot
+  [[RESCUE_DRIFT_PITCH]] table (\$0213) indexed by [[RESCUE_COUNTDOWN]],
+  patch the [[SMC_SPRITE_MASK_OP]] (\$65B7) flicker slot to [[AND
+  \#imm]] for one frame so the body sprite flashes, then proceed to
+  draw without running collision (the slot is invulnerable while
+  drifting).
+\end{itemize}
+
+\paragraph{Sprite selection.}  The rescue child has four sprite
+variants picked by walking direction ([[RESCUE_DIR]]) and step phase
+([[RESCUE_ANIM]]):
+
+\begin{center}
+\begin{tabular}{l|l|l|l|l}
+Phase & +dir lo/hi base & +dir h & -dir lo/hi base & -dir h \\
+\hline
+mid-step (anim $\notin \{0,7,8\}$) & \$75F0/\$76F0 & \$1C & \$75E2/\$76E2 & \$1C \\
+end-step (anim $\in \{0,7,8\}$)    & \$75E9/\$76E9 & \$1A & \$75DB/\$76DB & \$1A \\
+\end{tabular}
+\end{center}
+
+All four variants are width \$03 and indexed by [[PROJ_FRAME_IDX]]
+(\$1B8F,X) where X is the rescue's screen-X residue.  The end-step
+variant additionally plays an ascending-pitch click via
+[[SND_DELAY_UP]] (\$109E with X=\$0A, A=\$0C) --- the soft footstep
+sound as each step completes.  The screen-column [[ZP_SPRITE_X]]
+is sourced from [[PROJ_SCREEN_COL]] (\$1C34,X) and the row from
+[[ENTITY_FLOOR_POS]],Y.
+
+\paragraph{Drift sound.}  The drift-state click (4 frames during the
+\$04-step countdown after a hit) reads its pitch from
+[[RESCUE_DRIFT_PITCH]] at \$0213 indexed by the current
+[[RESCUE_COUNTDOWN]] (1..4) --- four descending-tone frames make the
+``pop'' sound when the child is collected.  The flicker mask byte
+loaded into [[SMC_SPRITE_MASK_ARG]] (\$65B8) is sourced from
+[[\$D7,X]] (top of the entity-record block; the value is
+quasi-random per frame and per slot) so each drift frame draws a
+slightly different alternating pattern.
+
+\paragraph{Common post-draw block.}  After each draw, the routine
+re-loads [[ENTITY_ACTIVE]],Y at \$0D9E.  If still positive, runs the
+collision/spawn block at \$0DAB.  If negative (drift-mode draw just
+finished), restores [[SMC_SPRITE_MASK_OP]] to \$24 (the BIT-NOP that
+disables the flicker patch) and skips collision --- drift-mode rescues
+are invulnerable and cannot throw projectiles.
+
+\paragraph{Hit-box geometry.}  The floor-enemy collision uses Y-extent
+half-widths from \$42 / \$43 (level-fixed parameters loaded from
+\$029A/\$029B by [[INIT_LEVEL_STATE]]); the X-extent is a fixed 10-pixel
+window (CMP enemy\_col, then SBC \#\$0A and re-CMP).  The player
+pickup uses the centre-band CMP \#\$40 / CMP \#\$50 X-test and a
+fixed 25/18 row band around [[ZP_PLAYER_COL]] (\$06).
+
+\paragraph{Pre-compute helper [[RESCUE_DRAW_PERSPECTIVE_CACHE]] (\$0D8C).}
+Sub-entry called once at the top of the routine; reads
+[[PERSPECTIVE_XOFF_LO]]([[ZP_PLAYER_Y]]) - [[ZP_SPRITE_XREF]] (\$4C) and
+[[PERSPECTIVE_XOFF_HI]]([[ZP_PLAYER_Y]]) - 0, storing the 16-bit
+result into [[ZP_PERSP_OFFSET_LO]] / [[ZP_PERSP_OFFSET_HI]] (\$0F /
+\$10).  Each per-slot inner loop then computes the rescue's
+screen-X residue as
+[[ENTITY_FLOOR_COL]],Y $-$ [[ZP_PERSP_OFFSET_LO]] (with high-byte
+match required, so off-screen entities are clipped to the off-camera
+``next slot'' branch via the [[BNE \$0CAA]] guard).
+
+<<rescue draw defines>>=
+
+; --- Zero-page (rescue draw working values) ---
+ZP_PERSP_OFFSET_LO = $0F        ; Pre-computed perspective X offset (low)
+ZP_PERSP_OFFSET_HI = $10        ; Pre-computed perspective X offset (high)
+                                ; (Set once per call by RESCUE_DRAW_PERSPECTIVE_CACHE
+                                ;  at $0D8C from PERSPECTIVE_XOFF_LO/HI[ZP_PLAYER_Y]
+                                ;  minus ZP_SPRITE_XREF.  Read by each per-slot inner
+                                ;  loop to map ENTITY_FLOOR_COL/XOFF_IDX to a
+                                ;  screen-X residue in $AF.)
+
+; --- Rescue-child sprite tables (per step phase x direction) ---
+; Width = $03, height = $1A or $1C; indexed by PROJ_FRAME_IDX[$0358,Y].
+; The four pairs sit at $75DB/$75E2/$75E9/$75F0 (low) and $76DB/...$76F0 (high).
+RESCUE_SPR_NEG_END_LO  = $75DB  ; -dir end-of-step body (h=$1A)
+RESCUE_SPR_NEG_END_HI  = $76DB
+RESCUE_SPR_NEG_MID_LO  = $75E2  ; -dir mid-step body (h=$1C)
+RESCUE_SPR_NEG_MID_HI  = $76E2
+RESCUE_SPR_POS_END_LO  = $75E9  ; +dir end-of-step body (h=$1A)
+RESCUE_SPR_POS_END_HI  = $76E9
+RESCUE_SPR_POS_MID_LO  = $75F0  ; +dir mid-step body (h=$1C)
+RESCUE_SPR_POS_MID_HI  = $76F0
+
+; --- Drift-state pitch table (4 entries, indexed 1..4 by RESCUE_COUNTDOWN) ---
+; The 4 descending pitches that play across the 4 drift-mode frames after
+; a hit/pickup.  Disk-image bytes: $07 $0C $10 $13 $15 ... (used 1..4 = $0C $10 $13 $15).
+RESCUE_DRIFT_PITCH = $0213
+@
+
+<<rescue draw>>=
 
         ORG $0C98
-PROJECTILE_HANDLER:
+RESCUE_DRAW:
         SUBROUTINE
-        ; Projectile handling (\$0C98-\$0E50): movement, collision, despawning
-        ; Raw data --- 441 bytes
+        ; Per-frame draw + collision sibling of RESCUE_UPDATE ($6F9C)
+        ; for the 20-slot rescue-child entity subsystem.  Iterates Y
+        ; from $13 down through the slots, draws each active body
+        ; sprite, and runs three collision/spawn checks: floor-enemy
+        ; overlap (kill both, +35 BCD), player pickup (centre-band
+        ; X + Y window, +35 BCD, $1E := $FF, no life-loss), and
+        ; hostile projectile-spawn (entity on player floor + odd row
+        ; + free $C5/$C9/$CD slot; throw a projectile in walking
+        ; direction).  See \S{Rescue-child draw, collision, and
+        ; projectile-spawn} for the full description.
+        ;
+        ; Inputs:
+        ;   ENTITY_ACTIVE,Y ($03A8)      --- per-slot state byte.
+        ;   ENTITY_FLOOR_COL,Y ($0358)   --- per-slot world-X low.
+        ;   ENTITY_XOFF_IDX,Y ($036C)    --- per-slot world-X high.
+        ;   ENTITY_FLOOR_POS,Y ($0380)   --- per-slot row Y.
+        ;   RESCUE_DIR,Y ($0394)         --- walk direction.
+        ;   RESCUE_ANIM,Y ($03BC)        --- step anim counter.
+        ;   RESCUE_FLOOR,Y ($03D0)       --- assigned floor index.
+        ;   RESCUE_COUNTDOWN,Y ($03E4)   --- drift-mode countdown.
+        ;   ZP_PLAYER_Y ($4A)            --- player perspective Y.
+        ;   ZP_SPRITE_XREF ($4C)         --- level-fixed X reference.
+        ;   ZP_PLAYER_COL ($06)          --- player col (pickup band).
+        ;   ZP_PLAYER_FLOOR_CUR ($0C)    --- player floor (proj-spawn gate).
+        ;   ZP_PROJ_MAX ($31)            --- max projectile slot index.
+        ;   ZP_ENEMY_FLAG ($9B)          --- 4-slot floor-enemy active flag.
+        ;   ZP_ENEMY_COL ($9F)           --- 4-slot enemy column.
+        ;   ZP_ENEMY_Y ($A3)             --- 4-slot enemy Y coordinate.
+        ;   ZP_PROJ_DIR ($C5)            --- 4-slot projectile direction.
+        ;   ZP_PROJ_X ($C9)              --- 4-slot projectile column.
+        ;   ZP_PROJ_Y ($CD)              --- 4-slot projectile row.
+        ;   $42, $43                     --- floor-enemy hit-box Y extents
+        ;                                    (level-fixed; loaded by
+        ;                                    INIT_LEVEL_STATE from $029A/B).
+        ;   PERSPECTIVE_XOFF_LO/HI ($1A8F/$198F) --- perspective tables.
+        ;   PROJ_SCREEN_COL ($1C34)      --- screen-col lookup.
+        ;   PROJ_FRAME_IDX  ($1B8F)      --- frame-index lookup.
+        ;
+        ; Modifies:
+        ;   ZP_PERSP_OFFSET_LO/HI ($0F/$10) --- pre-compute scratch.
+        ;   ZP_HIT_FLAG ($1E) on player pickup.
+        ;   ZP_SPRITE_W/H/X/Y, SMC_DS_SRC_LO/HI, SMC_SPRITE_MASK_OP/ARG.
+        ;   ZP_DRAW_LOOP_IDX ($5C), ZP_SCORE_ADD_LO/HI ($1A/$1B).
+        ;   ENTITY_ACTIVE,Y (drift transition); RESCUE_COUNTDOWN,Y on hit.
+        ;   ZP_ENEMY_FLAG,X (cleared on rescue/enemy mutual-kill).
+        ;   ZP_PROJ_DIR/X/Y,X (projectile slot seeded on hostile-spawn).
+        ;   $AF (per-slot screen-X residue scratch).
+        ; Clobbers: A, X, Y
 
-        HEX 20 8C 0D A0 13 B9 A8 03
-        HEX F0 04 10 2B 30 0C 88 10
-        HEX F4 60 A9 24 8D B7 65 4C
-        HEX A6 0C C9 FE F0 F0 A9 29
-        HEX 8D B7 65 BE E4 03 B5 D7
-        HEX 8D B8 65 84 5C BD 13 02
-        HEX A2 12 20 91 10 A4 5C 38
-        HEX B9 58 03 E5 0F 85 AF B9
-        HEX 6C 03 E5 10 D0 CC A5 AF
-        HEX C9 9A B0 C6 AA B9 80 03
-        HEX 85 5B BD 34 1C 85 5D BD
-        HEX 8F 1B AA A9 03 85 56 B9
-        HEX 94 03 30 48 B9 BC 03 F0
-        HEX 22 C9 07 F0 1E C9 08 F0
-        HEX 1A A9 1C 85 57 BD F0 75
-        HEX 8D B3 65 BD F0 76 8D B4
-        HEX 65 84 5C 20 6F 65 A4 5C
-        HEX 4C 9E 0D A9 1A 85 57 BD
-        HEX E9 75 8D B3 65 BD E9 76
-        HEX 8D B4 65 84 5C 20 6F 65
-        HEX A2 0A A9 0C 20 9E 10 A4
-        HEX 5C 4C 9E 0D B9 BC 03 F0
-        HEX 22 C9 07 F0 1E C9 08 F0
-        HEX 1A A9 1C 85 57 BD E2 75
-        HEX 8D B3 65 BD E2 76 8D B4
-        HEX 65 84 5C 20 6F 65 A4 5C
-        HEX 4C 9E 0D A9 1A 85 57 BD
-        HEX DB 75 8D B3 65 BD DB 76
-        HEX 8D B4 65 84 5C 20 6F 65
-        HEX A2 0A A9 0C 20 9E 10 A4
-        HEX 5C 4C 9E 0D A6 4A BD 8F
-        HEX 1A 38 E5 4C 85 0F BD 8F
-        HEX 19 E9 00 85 10 60 B9 A8
-        HEX 03 10 08 A9 24 8D B7 65
-        HEX 4C A6 0C A2 03 B5 9B D0
-        HEX 05 CA 10 F9 30 3A A5 AF
-        HEX D5 9F 90 F5 38 E9 0A D5
-        HEX 9F B0 EE B9 80 03 18 65
-        HEX 42 D5 A3 B0 E4 18 65 43
-        HEX D5 A3 90 DD A9 00 95 9B
-        HEX A9 FF 99 A8 03 A9 04 99
-        HEX E4 03 A9 35 85 1A A9 00
-        HEX 85 1B 20 1A 12 4C A6 0C
-        HEX A5 AF C9 40 90 1D C9 50
-        HEX B0 19 A5 06 38 E9 19 D9
-        HEX 80 03 B0 0F 18 69 2B D9
-        HEX 80 03 90 07 A9 FF 85 1E
-        HEX 4C D8 0D B9 80 03 29 01
-        HEX D0 03 4C A6 0C B9 D0 03
-        HEX C5 0C F0 03 4C A6 0C A6
-        HEX 31 30 1D B5 C5 D0 1C B9
-        HEX 94 03 95 C5 B9 80 03 95
-        HEX CD A5 AF 95 C9 A2 0A A9
-        HEX 0D 84 5C 20 91 10 A4 5C
-        HEX 4C A6 0C CA 10 DD 4C A6
-        HEX 0C
-@ %def PROJECTILE_HANDLER
+        JSR RESCUE_DRAW_PERSPECTIVE_CACHE  ; precompute $0F/$10 once
+        LDY #$13                           ; 20 slots
+.slot_loop:
+        LDA ENTITY_ACTIVE,Y
+        BEQ .slot_next                     ; $00 inactive
+        BPL .compute_screen_x              ; +ve active walking
+        BMI .neg_state                     ; -ve drift or exit-anim
+.slot_next:
+        DEY
+        BPL .slot_loop
+        RTS
+
+; --- Skip-this-slot exit (also restores BIT opcode at $65B7) ---
+.skip_off_screen:
+        LDA #$24                           ; BIT opcode (disable flicker)
+        STA SMC_SPRITE_MASK_OP             ; $65B7
+        JMP .slot_next
+
+; --- Negative state: $FE -> skip; else drift sound + flicker setup ---
+.neg_state:
+        CMP #$FE
+        BEQ .slot_next                     ; $FE exit-anim: invisible
+; Drift-mode (any other -ve): play descending click + enable flicker patch.
+        LDA #$29                           ; AND #imm opcode
+        STA SMC_SPRITE_MASK_OP             ; $65B7 (flicker the next draw)
+        LDX RESCUE_COUNTDOWN,Y             ; $03E4,Y in 1..4
+        LDA $D7,X                          ; quasi-random AND-mask byte
+        STA SMC_SPRITE_MASK_ARG            ; $65B8
+        STY ZP_DRAW_LOOP_IDX               ; $5C
+        LDA RESCUE_DRIFT_PITCH,X           ; $0213,X = pitch for this frame
+        LDX #$12                           ; X = duration
+        JSR SND_DELAY_DOWN                 ; $1091: descending click
+        LDY ZP_DRAW_LOOP_IDX
+
+; --- Common: compute screen-X residue and stage sprite XYHW ---
+.compute_screen_x:
+        SEC
+        LDA ENTITY_FLOOR_COL,Y             ; $0358,Y
+        SBC ZP_PERSP_OFFSET_LO             ; $0F
+        STA $AF                            ; screen-X residue
+        LDA ENTITY_XOFF_IDX,Y              ; $036C,Y
+        SBC ZP_PERSP_OFFSET_HI             ; $10
+        BNE .skip_off_screen               ; high-byte != 0: off camera
+        LDA $AF
+        CMP #$9A                           ; clip right edge
+        BCS .skip_off_screen
+        TAX                                ; X = screen-X residue
+        LDA ENTITY_FLOOR_POS,Y             ; row
+        STA ZP_SPRITE_Y                    ; $5B
+        LDA PROJ_SCREEN_COL,X              ; $1C34,X = column
+        STA ZP_SPRITE_X                    ; $5D
+        LDA PROJ_FRAME_IDX,X               ; $1B8F,X = frame index
+        TAX                                ; X = sprite frame index
+        LDA #$03
+        STA ZP_SPRITE_W                    ; $56 = 3 (width)
+; --- Direction split: -ve dir (left), +ve dir (right) ---
+        LDA RESCUE_DIR,Y                   ; $0394,Y
+        BMI .draw_neg_dir
+; +dir branch.
+        LDA RESCUE_ANIM,Y                  ; $03BC,Y
+        BEQ .draw_pos_end                  ; anim 0 -> end-step
+        CMP #$07
+        BEQ .draw_pos_end                  ; anim 7 -> end-step
+        CMP #$08
+        BEQ .draw_pos_end                  ; anim 8 -> end-step
+; +dir mid-step (anim 1..6, not 7).
+.draw_pos_mid:
+        LDA #$1C
+        STA ZP_SPRITE_H                    ; $57 = $1C
+        LDA RESCUE_SPR_POS_MID_LO,X        ; $75F0,X
+        STA SMC_DS_SRC_LO                  ; $65B3
+        LDA RESCUE_SPR_POS_MID_HI,X        ; $76F0,X
+        STA SMC_DS_SRC_HI                  ; $65B4
+        STY ZP_DRAW_LOOP_IDX
+        JSR DRAW_SPRITE                    ; $656F
+        LDY ZP_DRAW_LOOP_IDX
+        JMP .post_draw
+
+.draw_pos_end:
+        LDA #$1A
+        STA ZP_SPRITE_H                    ; $57 = $1A
+        LDA RESCUE_SPR_POS_END_LO,X        ; $75E9,X
+        STA SMC_DS_SRC_LO
+        LDA RESCUE_SPR_POS_END_HI,X        ; $76E9,X
+        STA SMC_DS_SRC_HI
+        STY ZP_DRAW_LOOP_IDX
+        JSR DRAW_SPRITE
+        LDX #$0A                           ; ascending-click args
+        LDA #$0C
+        JSR SND_DELAY_UP                   ; $109E: footstep sound
+        LDY ZP_DRAW_LOOP_IDX
+        JMP .post_draw
+
+; -dir branch.
+.draw_neg_dir:
+        LDA RESCUE_ANIM,Y
+        BEQ .draw_neg_end
+        CMP #$07
+        BEQ .draw_neg_end
+        CMP #$08
+        BEQ .draw_neg_end
+.draw_neg_mid:
+        LDA #$1C
+        STA ZP_SPRITE_H
+        LDA RESCUE_SPR_NEG_MID_LO,X        ; $75E2,X
+        STA SMC_DS_SRC_LO
+        LDA RESCUE_SPR_NEG_MID_HI,X        ; $76E2,X
+        STA SMC_DS_SRC_HI
+        STY ZP_DRAW_LOOP_IDX
+        JSR DRAW_SPRITE
+        LDY ZP_DRAW_LOOP_IDX
+        JMP .post_draw
+
+.draw_neg_end:
+        LDA #$1A
+        STA ZP_SPRITE_H
+        LDA RESCUE_SPR_NEG_END_LO,X        ; $75DB,X
+        STA SMC_DS_SRC_LO
+        LDA RESCUE_SPR_NEG_END_HI,X        ; $76DB,X
+        STA SMC_DS_SRC_HI
+        STY ZP_DRAW_LOOP_IDX
+        JSR DRAW_SPRITE
+        LDX #$0A
+        LDA #$0C
+        JSR SND_DELAY_UP
+        LDY ZP_DRAW_LOOP_IDX
+        JMP .post_draw
+
+; --- Pre-compute helper: cache PERSPECTIVE_XOFF[player_Y] - $4C in $0F/$10 ---
+RESCUE_DRAW_PERSPECTIVE_CACHE:
+        LDX ZP_PLAYER_Y                    ; $4A
+        LDA PERSPECTIVE_XOFF_LO,X          ; $1A8F,X
+        SEC
+        SBC ZP_SPRITE_XREF                 ; $4C
+        STA ZP_PERSP_OFFSET_LO             ; $0F
+        LDA PERSPECTIVE_XOFF_HI,X          ; $198F,X
+        SBC #$00
+        STA ZP_PERSP_OFFSET_HI             ; $10
+        RTS
+
+; --- Post-draw: drift-mode skips collision; active runs all 3 checks ---
+.post_draw:
+        LDA ENTITY_ACTIVE,Y
+        BPL .collide_floor_enemy           ; +ve: run collision
+; Drift mode: restore BIT opcode and exit.
+        LDA #$24
+        STA SMC_SPRITE_MASK_OP             ; $65B7
+        JMP .slot_next
+
+; --- Floor-enemy collision: walk 4 enemy slots looking for overlap ---
+.collide_floor_enemy:
+        LDX #$03
+.find_enemy:
+        LDA ZP_ENEMY_FLAG,X                ; $9B,X
+        BNE .test_enemy_overlap
+.next_enemy:
+        DEX
+        BPL .find_enemy
+        BMI .test_player_pickup            ; ran out of slots: try player
+
+.test_enemy_overlap:
+        LDA $AF                            ; entity screen-X
+        CMP ZP_ENEMY_COL,X                 ; $9F,X
+        BCC .next_enemy                    ; entity left of enemy: skip
+        SEC
+        SBC #$0A
+        CMP ZP_ENEMY_COL,X
+        BCS .next_enemy                    ; entity > enemy + 10: skip
+        LDA ENTITY_FLOOR_POS,Y             ; entity row
+        CLC
+        ADC $42                            ; + level Y-extent low
+        CMP ZP_ENEMY_Y,X                   ; $A3,X
+        BCS .next_enemy
+        CLC
+        ADC $43                            ; + level Y-extent high
+        CMP ZP_ENEMY_Y,X
+        BCC .next_enemy
+
+; --- Mutual-kill reward path (also entered from player-pickup) ---
+.kill_enemy_and_award:
+        LDA #$00
+        STA ZP_ENEMY_FLAG,X                ; clear floor-enemy slot
+.award_reward:
+        LDA #$FF
+        STA ENTITY_ACTIVE,Y                ; rescue -> drift state
+        LDA #$04
+        STA RESCUE_COUNTDOWN,Y             ; arm 4-frame drift countdown
+        LDA #$35
+        STA ZP_SCORE_ADD_LO                ; +$0035 BCD
+        LDA #$00
+        STA ZP_SCORE_ADD_HI
+        JSR SCORE_ADD                      ; $121A
+        JMP .slot_next
+
+; --- Player pickup: centre-band X + row band ---
+.test_player_pickup:
+        LDA $AF                            ; entity screen-X
+        CMP #$40
+        BCC .test_proj_spawn               ; X < $40: outside band
+        CMP #$50
+        BCS .test_proj_spawn               ; X >= $50: outside band
+        LDA ZP_PLAYER_COL                  ; $06
+        SEC
+        SBC #$19
+        CMP ENTITY_FLOOR_POS,Y
+        BCS .test_proj_spawn               ; player_col-$19 > entity_row
+        CLC
+        ADC #$2B
+        CMP ENTITY_FLOOR_POS,Y
+        BCC .test_proj_spawn               ; player_col+$12 < entity_row
+; Player pickup: signal hit, then merge into reward path (no enemy clear).
+        LDA #$FF
+        STA ZP_HIT_FLAG                    ; $1E
+        JMP .award_reward                  ; $0DD8: rescue=drift, +$0035
+
+; --- Hostile projectile spawn (no collision occurred) ---
+; Gate 1: entity row must be odd (1-in-2 rate-limit by row parity).
+; Gate 2: rescue assigned floor must equal player floor (same-floor only).
+; Gate 3: at least one $C5,X projectile slot must be empty.
+.test_proj_spawn:
+        LDA ENTITY_FLOOR_POS,Y
+        AND #$01
+        BNE .check_floor_match
+        JMP .slot_next
+.check_floor_match:
+        LDA RESCUE_FLOOR,Y                 ; $03D0,Y
+        CMP ZP_PLAYER_FLOOR_CUR            ; $0C
+        BEQ .find_empty_proj
+        JMP .slot_next
+.find_empty_proj:
+        LDX ZP_PROJ_MAX                    ; $31 = max projectile slot
+        BMI .proj_skip                     ; $31 < 0: subsystem off
+.proj_loop:
+        LDA ZP_PROJ_DIR,X                  ; $C5,X
+        BNE .proj_advance                  ; slot busy: try next
+; Empty slot found: seed it.
+        LDA RESCUE_DIR,Y                   ; $0394,Y = direction
+        STA ZP_PROJ_DIR,X                  ; $C5,X
+        LDA ENTITY_FLOOR_POS,Y
+        STA ZP_PROJ_Y,X                    ; $CD,X = row
+        LDA $AF
+        STA ZP_PROJ_X,X                    ; $C9,X = screen-X
+        LDX #$0A                           ; descending-click args
+        LDA #$0D
+        STY ZP_DRAW_LOOP_IDX
+        JSR SND_DELAY_DOWN                 ; $1091: emit-sound
+        LDY ZP_DRAW_LOOP_IDX
+.proj_skip:
+        JMP .slot_next
+.proj_advance:
+        DEX
+        BPL .proj_loop
+        JMP .slot_next
+
+@ %def RESCUE_DRAW RESCUE_DRAW_PERSPECTIVE_CACHE RESCUE_DRIFT_PITCH ZP_PERSP_OFFSET_LO ZP_PERSP_OFFSET_HI RESCUE_SPR_NEG_END_LO RESCUE_SPR_NEG_END_HI RESCUE_SPR_NEG_MID_LO RESCUE_SPR_NEG_MID_HI RESCUE_SPR_POS_END_LO RESCUE_SPR_POS_END_HI RESCUE_SPR_POS_MID_LO RESCUE_SPR_POS_MID_HI
 
 <<enemy ai 2>>=
 
@@ -11020,12 +11404,12 @@ COMPANION_NEG_POSE3:
 [[RESCUE_UPDATE]] at \$6F9C is the per-frame tick routine for the
 20-slot ``rescue child'' entity subsystem --- the small walking figures
 that appear on the perspective floors and become the player's scoring
-objective.  It pairs with the sibling draw-plus-collision routine at
-\$0C98 (still inside the \$03A8 HEX blob) and with [[DRAW_ENTITIES]]
-phase~5 (which handles the marker sprite at the receding-floor
-perspective projection).  The routine exists in the main-loop slot
-immediately after [[COMPANION_UPDATE]] and immediately before
-[[PROJECTILE_HANDLER]].
+objective.  It pairs with the sibling draw-plus-collision routine
+[[RESCUE_DRAW]] at \$0C98 (now its own ORG chunk) and with
+[[DRAW_ENTITIES]] phase~5 (which handles the marker sprite at the
+receding-floor perspective projection).  The routine exists in the
+main-loop slot immediately after [[COMPANION_UPDATE]] and immediately
+before [[RESCUE_DRAW]].
 
 \paragraph{Slot record.}  The 20-slot subsystem uses seven parallel
 per-slot byte arrays, indexed by Y $\in [0, \$13]$:
@@ -12391,8 +12775,9 @@ RESCUE_UPDATE:
 <<game data 02C6>>
 ; --- ORG $03A8: Game code ---
 <<game code 03A8>>
-; --- ORG $0C98: Projectile handler ---
-<<projectile handler>>
+; --- ORG $0C98: Rescue draw + collision + projectile-spawn ---
+<<rescue draw defines>>
+<<rescue draw>>
 ; --- ORG $0E51: Pause handler ---
 <<pause handler>>
 ; --- ORG $0E5A: Hazard check ---

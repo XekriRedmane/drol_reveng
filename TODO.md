@@ -1,5 +1,33 @@
 # TODO
 
+## Milestone: `RESCUE_DRAW` carved from `<<projectile handler>>` (2026-04-17)
+
+The 441-byte `<<projectile handler>>` HEX blob at $0C98-$0E50 (the
+last misnamed `PROJECTILE_HANDLER` stub --- the routine has nothing
+to do with general projectiles) has been fully RE'd as
+`RESCUE_DRAW`, the per-frame draw + collision sibling of
+`RESCUE_UPDATE` ($6F9C).  Carved as one main routine with a
+sub-entry pre-compute helper (`RESCUE_DRAW_PERSPECTIVE_CACHE` at
+$0D8C).  All structural rules pass: byte-perfect drol.bin and zero
+new chunk-placement violations.
+
+**Surprise discovery:** rescue children are NOT pure friendlies.
+The "no-collision" tail of RESCUE_DRAW ($0E13-$0E50) spawns hostile
+projectiles into the $C5/$C9/$CD slot table when the rescue child
+is on the player's floor at an odd row.  `HAZARD_CHECK` then ticks
+the projectile on subsequent frames as a normal hazard.  So
+rescue-children also harass the player on their assigned floor ---
+the +$0035 BCD pickup is the reward for catching them before they
+keep firing.
+
+**Now `<<game code 03A8>>` (the largest remaining HEX blob) shrinks
+from 2288 bytes ($03A8-$0C97) to no longer needing to span $0C97;
+the rest of $03A8-$0C97 is still HEX-blobbed in `<<game code 03A8>>`,
+but the gap to the next labeled chunk (`<<rescue draw>>` at $0C98)
+is now closed.**  The remaining blob is 2288 bytes covering
+$03A8-$0C97, the entity sprite-data tables and several entity
+update routines (rescue marker draw, etc.).
+
 ## Milestone: `<<game engine B tail>>` FULLY RETIRED (2026-04-17)
 
 The 1763-byte "game engine B tail" HEX blob that started as raw data

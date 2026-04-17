@@ -2161,8 +2161,13 @@ the page looks like immediately after [[GAME_INIT]] returns, assuming
 a cleared framebuffer: the static score/hiscore HUD, the player-lives
 and level indicators, and the purple wall/floor frame of the playfield.
 The DROL logo and any other foreground content are drawn later by the
-screen-init routines at \$4713--\$47FF (not yet reverse engineered) and
-by the game code itself.
+attract-mode sprite routines ([[ATTRACT_ANIM_1..4]] at \$17A6/\$17E1/\$1813/\$1844)
+which composite sprite pointer tables into hi-res page~2 for the
+animated title sequence.
+
+The 237 bytes immediately after the stream terminator
+(\$4713--\$47FF) are \emph{dead residue}, not a continuation of the
+unpacker --- see [[SECTOR_RESIDUE_47XX]] below.
 
 \begin{figure}[H]
 \centering
@@ -2586,13 +2591,69 @@ HUD_FRAME_DATA:
         DC.B $FF
 @ %def HUD_FRAME_DATA
 
-<<game init remaining>>=
+\section{Sector-image residue at \$4713--\$47FF}
 
-; $4713-$47FF: screen initialization routines and data tables.
-; These routines fill hi-res page 2 rows from $0300 data.
-; Not yet disassembled.
+The 237 bytes at \$4713--\$47FF are \emph{dead residue} from the disk
+build process, not a continuation of the HUD-frame unpacker.  Three
+independent lines of evidence identify them as unreachable:
+
+\begin{enumerate}
+\item \textbf{No static call or jump targets them.}  An exhaustive scan
+of all five reference binaries ([[boot1.bin]], [[loader.bin]],
+[[rwts.bin]], [[drol.bin]], [[level1.bin]]) for JSR~(\$20), JMP-abs
+(\$4C), and JMP-indirect (\$6C) with a 2-byte operand in
+\$4713--\$47FF returns zero hits.  No immediate load of the value
+\$47 into a pointer appears anywhere either, so the region cannot
+be reached via a runtime-built vector.
+\item \textbf{The code is truncated mid-instruction at a page
+boundary.}  Disassembly of \$474E onward reads as the prologue and
+first 13 iterations of [[STRIPE_COPY_PAGE1]] (\$054E--\$05FF), with
+the 13th iteration cut off at \$47FF (the last store is
+[[STA \$3528,X]] with the third operand byte landing at \$4800).
+The following 5120 bytes \$4800--\$5BFF are all \$00, which would
+dispatch as [[BRK]] instructions --- not a continuation any real
+routine could return from.
+\item \textbf{The bytes are a verbatim copy of \$0513--\$05FF.}
+Byte-for-byte, [[reference/drol.bin[\$4713..\$47FF]]] equals
+[[reference/drol.bin[\$0513..\$05FF]]].  The leading \$0B at \$4713
+matches the high byte of [[JSR INTERLACE_FILL_P2]]'s operand at
+\$0512--\$0513 --- this is mid-instruction residue, not a purposeful
+constant.  The body replicates [[CLEAR_PAGE2]]'s interlace tail,
+[[CLEAR_PAGE2_TEXT_ENTRY]]'s text-restore loop, and the first half
+of [[STRIPE_COPY_PAGE1]], all at the same offsets.
+\end{enumerate}
+
+The mechanism is incidental: the page table ([[PAGE_TABLE]] at
+\$5400) maps track~2 sector~15 to destination page \$47, and track~1
+sector~3 to destination page \$05.  These two disk sectors happen
+to contain identical bytes (the build artefact of some earlier
+editing pass or a deliberate sector-level duplicate).  Because
+\$4713--\$47FF sits after the [[HUD_FRAME_DATA]] stream terminator
+at \$4712, the unpacker stops before reaching it, and nothing else
+calls in --- so the residue has no runtime effect.
+
+Confirmed further by [[reference/level1.bin]], built by replaying
+the loader's reload-phase track read (tracks 5--9, which do not
+target page~\$47): it has \$00 throughout \$4700--\$47FF.  The only
+reason the residue appears in [[drol.bin]] is that the extracted
+image was captured after the first-boot load, before the phase-0
+reload cleared those pages.
+
+Because the data is meaningless (neither executable game logic nor
+displayable art), \emph{no figure is rendered} for this region.
+The chunk is emitted as raw [[HEX]] to preserve byte-perfect
+assembly against [[reference/drol.bin]].
+
+<<sector residue 47xx>>=
+
+; $4713-$47FF: sector-image residue --- 237 bytes of dead code.
+; Byte-exact copy of $0513-$05FF (CLEAR_PAGE2 tail, CLEAR_PAGE2_TEXT_ENTRY
+; body, and truncated first half of STRIPE_COPY_PAGE1).  Statically
+; unreachable (no JSR/JMP in any reference binary targets it, and the
+; code is cut off mid-instruction at the $4800 page boundary followed
+; by 5120 bytes of $00).  Preserved for byte-perfect drol.bin match.
         ORG $4713
-GAME_INIT_EXTRA:
+SECTOR_RESIDUE_47XX:
         HEX 0B E4 2D F0 04 CA 4C AB
         HEX 04 A2 27 BD 00 03 9D 28
         HEX 50 9D 28 54 9D 28 58 9D
@@ -2623,7 +2684,7 @@ GAME_INIT_EXTRA:
         HEX 50 2E C8 B1 FE 9D 28 31
         HEX 9D A8 33 9D 50 32 C8 B1
         HEX FE 9D 28 35 9D
-@ %def GAME_INIT_EXTRA
+@ %def SECTOR_RESIDUE_47XX
 
 @ \chapter{Input system}
 
@@ -13298,7 +13359,7 @@ RESCUE_UPDATE:
 <<game init>>
 <<game init padding>>
 <<hud frame data>>
-<<game init remaining>>
+<<sector residue 47xx>>
 ; --- ORG $4800: Unused ---
 <<unused 4800>>
 ; --- ORG $5000: Loader zeros ---

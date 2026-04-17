@@ -1,5 +1,55 @@
 # TODO
 
+## Milestone: `$4713-$47FF` identified as dead sector-image residue (2026-04-17)
+
+The 237-byte HEX blob at `$4713-$47FF` --- previously labelled
+`GAME_INIT_EXTRA` and stubbed as "screen-init routines" that would
+paint the DROL title logo --- has been investigated and confirmed to
+be **statically unreachable dead code**, not a title-logo painter.
+Three independent lines of evidence:
+
+1. An exhaustive scan of all five reference binaries (boot1, loader,
+   rwts, drol, level1) for JSR/JMP/JMP-indirect with operand in
+   `$4713-$47FF` returns zero hits.  No immediate load of `#$47`
+   into any pointer appears either, ruling out runtime-built vectors.
+2. The "code" at `$474E` is a truncated copy of `STRIPE_COPY_PAGE1`'s
+   prologue + first 13 iterations, cut off mid-instruction at
+   `$4800` followed by 5120 bytes of `$00` (which would dispatch
+   as `BRK`).  No real routine could return from here.
+3. The bytes at `$4713-$47FF` are **byte-exact identical** to
+   `$0513-$05FF` (a 237-byte window spanning the tail of
+   `CLEAR_PAGE2` + `CLEAR_PAGE2_TEXT_ENTRY` + the first half of
+   `STRIPE_COPY_PAGE1`).  The leading `$0B` at `$4713` is the high
+   byte of `JSR INTERLACE_FILL_P2`'s operand at `$0512-$0513` ---
+   mid-instruction, not a purposeful constant.
+
+The mechanism is incidental: `PAGE_TABLE` at `$5400` maps track 2
+sector 15 → page `$47` and track 1 sector 3 → page `$05`, and those
+two sectors on disk happen to contain the same bytes (build
+artefact, possibly a deliberate sector-level duplicate for
+error-recovery).  Because `GAME_INIT`'s stream terminates at `$4712`
+and nothing else calls into `$47xx`, the residue has no runtime
+effect.  Confirmed by `level1.bin`, built by replaying the loader's
+reload-phase track read (which targets different pages): it has
+`$00` throughout `$4700-$47FF`.
+
+**Corrections** (applied this session):
+
+- Renamed chunk `<<game init remaining>>` to `<<sector residue 47xx>>`
+  with label `SECTOR_RESIDUE_47XX` (retires the `GAME_INIT_EXTRA`
+  misnomer).
+- Updated the HUD-frame prose in `\section{HUD/frame unpacker}` to
+  correct the previous claim that `$4713-$47FF` held screen-init
+  routines.  The DROL logo is actually drawn by the attract-mode
+  sprite routines `ATTRACT_ANIM_1..4` at `$17A6/$17E1/$1813/$1844`
+  compositing sprite pointer tables into hi-res page~2 during the
+  animated title sequence --- not by any code at `$47xx`.
+- No PNG rendered for `$4713-$47FF`: the bytes are neither
+  executable game logic nor displayable art.
+- The existing `images/drol_logo.png` caption is already correct
+  (identifies the sprite at `$BCF1` as the "© 1983 Broderbund"
+  attribution strip, drawn by `ATTRACT_ANIM_4`) --- no change needed.
+
 ## Milestone: `CLEAR_PAGE1`/`CLEAR_PAGE2` carved + entity-table data split (2026-04-17)
 
 First cut into the 2288-byte `<<game code 03A8>>` hex blob:
@@ -635,7 +685,28 @@ Individual TODO entries:
 
 ### Undocumented regions
 
-- [ ] `$4713-$47FF` — Screen init routines (currently HEX blob, has code at $471C+)
+- [x] `$4713-$47FF` — `SECTOR_RESIDUE_47XX`: 237 bytes of dead
+      residue, NOT the DROL logo painter.  Exhaustive scan of all 5
+      reference binaries finds zero JSR/JMP/JMP-indirect targeting
+      this region.  The bytes are a byte-exact copy of $0513-$05FF
+      (CLEAR_PAGE2 tail + CLEAR_PAGE2_TEXT_ENTRY body + truncated
+      first ~13 iterations of STRIPE_COPY_PAGE1); the code is cut off
+      mid-instruction at the $4800 page boundary, followed by 5120
+      bytes ($4800-$5BFF) of $00.  Mechanism: PAGE_TABLE maps track~2
+      sector~15 to page $47 and track~1 sector~3 to page $05; those
+      two sectors on disk happen to contain identical bytes (build
+      artefact), and since GAME_INIT's packed stream terminates at
+      $4712 before reaching the residue, the bytes have no runtime
+      effect.  Corroborated by level1.bin, which has $00 throughout
+      $4700-$47FF.  The prior prose claim that these were "screen-
+      init routines" painting the DROL title logo was wrong ---
+      the actual title-screen logo is drawn by the attract sprite
+      routines (ATTRACT_ANIM_1..4 at $17A6/$17E1/$1813/$1844)
+      compositing sprite pointer tables into hi-res page~2 during
+      the animated title sequence.  Retires the `GAME_INIT_EXTRA`
+      misnomer; chunk is now `<<sector residue 47xx>>` with label
+      `SECTOR_RESIDUE_47XX`.  No PNG rendered --- the bytes are
+      neither executable game logic nor displayable art.
 - [ ] `$4800-$67CA` — Large gap between game init and main loop
       (sprites, tables, game code).  Carved this session:
       `$5EC5` RESTART_DISPATCH (15 bytes, dead code) out of

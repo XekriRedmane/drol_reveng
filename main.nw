@@ -2200,7 +2200,8 @@ ENTITY_PROCESS  = $6CFE         ; Entity processing (game engine B hex)
 LEVEL_LOGIC     = $6F9C         ; Level logic (game engine B hex)
 ; (HAZARD_CHECK has its own ORG chunk)
 ; (ENEMY_C_ADVANCE is the label at ORG $1646; was misnamed PLAYER_STATE.)
-; (PLAYER_RENDER is the label at ORG $16AC inside sprite-player-code-16AC.)
+; (ENEMY_C_DRAW is the label at ORG $16AC inside sprite-player-code-16AC;
+;  formerly mislabelled PLAYER_RENDER.)
 ; (SPRITE_DRAW_1 is the label at ORG $1423 inside sprite-player-code chunk)
 ; (ENEMY_B_ADVANCE is the label at ORG $1536 in enemy-b-advance chunk)
 ; (ENEMY_B_DRAW is the label at ORG $1591 in enemy-b-draw chunk)
@@ -3483,7 +3484,7 @@ SMC_RENDER = *
         JSR PROJECTILE_HANDLER  ; Projectile handling
         JSR HAZARD_CHECK        ; Hazard checking
         JSR ENEMY_C_ADVANCE     ; Enemy-C advance timer + respawn
-        JSR PLAYER_RENDER       ; Enemy-C draw (label is a misnomer)
+        JSR ENEMY_C_DRAW        ; Enemy-C draw + enemy-slot collision
         JSR ENEMY_A_ADVANCE     ; Enemy-A advance timer + respawn
         JSR SPRITE_DRAW_1       ; Enemy-A draw
         JSR ENEMY_B_ADVANCE     ; Enemy-B advance timer + respawn
@@ -5734,7 +5735,7 @@ Rearm then:
   current state value unchanged.
 \item Unconditionally writes \$01 into [[ZP_ENEMY_C_STATE]] (\$D4)~---
   reactivating the ground-level companion slot owned by
-  [[ENEMY_C_ADVANCE]] / [[PLAYER_RENDER]].  This is the cross-slot
+  [[ENEMY_C_ADVANCE]] / [[ENEMY_C_DRAW]].  This is the cross-slot
   handshake: every enemy-A reload wakes up enemy-C.
 \item Reloads [[ZP_ENEMY_A_POS]] to \$0361.  At the fastest tier
   (\$40~=~\$03) the next reload is~$\lceil 0x0361/3\rceil\approx 289$
@@ -5863,7 +5864,7 @@ ENEMY_A_ADVANCE:
 SPRITE_DRAW_1:
         SUBROUTINE
         ; Enemy-A draw ($1423-$1535): sibling of ENEMY_B_DRAW
-        ; (enemy-B draw) and PLAYER_RENDER (enemy-C draw).  Not yet
+        ; (enemy-B draw) and ENEMY_C_DRAW (enemy-C draw).  Not yet
         ; fully RE'd; emitted as a 275-byte HEX blob.
 
         HEX A5 DC D0 01 60 A6 4A BD
@@ -5998,7 +5999,7 @@ reads [[ZP_ENEMY_B_STATE]], [[ZP_ENEMY_B_POS]] and
 [[ZP_ENEMY_B_ROW]], and its collision path at \$15FE writes \$FF to
 [[ZP_ENEMY_B_STATE]] (putting B into drift mode for self-deactivation)
 when B's screen sprite overlaps the player hit-box.  The \$D4/\$DC
-writes at \$1757-\$1763 belong to [[PLAYER_RENDER]] (enemy-C draw),
+writes at \$1757-\$1763 belong to [[ENEMY_C_DRAW]] (enemy-C draw),
 not to [[ENEMY_B_DRAW]] --- enemy-C's collision path is what
 broadcasts \$FF to both neighbours.
 
@@ -6123,7 +6124,7 @@ SMC_ENEMY_B_ADD = *+1                   ; ADC operand byte (patched below)
 
 [[ENEMY_B_DRAW]] at \$1591 is the draw+hit routine for the enemy-B
 slot, and the third member of the sprite-draw family that mirrors
-[[SPRITE_DRAW_1]] (enemy-A) and [[PLAYER_RENDER]] (enemy-C).  It is
+[[SPRITE_DRAW_1]] (enemy-A) and [[ENEMY_C_DRAW]] (enemy-C).  It is
 called from [[MAIN_LOOP]] every frame after [[ENEMY_B_ADVANCE]] has
 ticked the slot; the two routines together implement the enemy-B
 cycle.
@@ -6450,13 +6451,14 @@ drift mode entirely differently:
 \paragraph{Rearm does not wake another slot.}  Enemy-A's rearm writes
 \$01 to [[ZP_ENEMY_C_STATE]], waking enemy-C (the cross-slot
 A$\rightarrow$C handshake).  Enemy-C's rearm instead writes \$00 to
-[[ZP_ENEMY_C_STATE]]~--- \emph{deactivating itself}.  There is no
-C$\rightarrow$\{A,B\} handshake: each enemy-C cycle is a one-shot
-puff that retires the slot, and the next activation must come from
-elsewhere (enemy-A's rearm or the enemy-B firing path at \$1757
-which writes \$FF to \$D4 to put C in drift mode).  This confirms a
+[[ZP_ENEMY_C_STATE]]~--- \emph{deactivating itself}.  Enemy-C's own
+\emph{draw} routine [[ENEMY_C_DRAW]] at \$1757--\$1763 is what
+broadcasts \$FF to both \$D4 and \$DC (when C hits a floor-enemy
+slot) --- so C's topology edges all live in its draw, not in
+[[ENEMY_B_ADVANCE]] or any other neighbour.  This confirms a
 \emph{three-slot} entity model with the topology
-A$\rightarrow$C and B$\rightarrow$\{A,C\}~--- not a four-slot model.
+A$\rightarrow$C (via A's rearm) and C$\rightarrow$\{A,C\} (via C's
+hit path), with B having no outgoing handshake.
 
 \paragraph{Other constants.}  The reload value is \$0352 (vs.\ enemy-A's
 \$0361), the rearm window is \$0000..\$003B (vs.\ \$0000..\$003D), and
@@ -6472,11 +6474,13 @@ Y rows as spawn-row choices.
 
 \paragraph{Cross-references.}  [[ZP_ADVANCE_RATE]] is shared with
 [[ENEMY_A_ADVANCE]] (and presumably [[ENEMY_B_ADVANCE]]).  The draw
-counterpart at \$16AC reads [[ZP_ENEMY_C_STATE]],
+counterpart [[ENEMY_C_DRAW]] at \$16AC reads [[ZP_ENEMY_C_STATE]],
 [[ZP_ENEMY_C_POS]] and [[ZP_ENEMY_C_ROW]] directly.  External
 producers of [[ZP_ENEMY_C_STATE]] are: [[ENEMY_A_ADVANCE]]
-($\$1411$, writes~\$01) and the enemy-B firing path inside
-SPRITE\_DRAW\_3 ($\$1759$, writes~\$FF for drift mode).
+($\$1411$, writes~\$01 = steady-mode activation) and
+[[ENEMY_C_DRAW]]'s own hit path ($\$1759$, writes~\$FF = drift-mode
+self-animation, paired with a \$FF write to [[ZP_ENEMY_A_STATE]] if
+that slot was active).
 
 <<enemy c defines>>=
 
@@ -6608,58 +6612,334 @@ ENEMY_C_ADVANCE:
 @ %def ENEMY_C_ADVANCE
 @ %def ZP_ENEMY_C_SND_CTR ZP_ENEMY_C_POS SND_PITCH_TBL_C ENEMY_C_ROW_TBL
 
+\section{Enemy-C draw and enemy-slot collision}
+
+[[ENEMY_C_DRAW]] at \$16AC is the draw+hit routine for the enemy-C
+slot --- the third member of the sprite-draw family alongside
+[[SPRITE_DRAW_1]] (enemy-A, still stubbed) and [[ENEMY_B_DRAW]].
+Called from [[MAIN_LOOP]] immediately after [[ENEMY_C_ADVANCE]] has
+ticked the slot.  (Previously mislabeled \texttt{PLAYER\_RENDER} in
+the stub; that name was a misnomer and is retired here --- this
+routine does not draw the player at all.)
+
+\paragraph{Shape.}  Same state-gate / perspective-clip / main-draw /
+hit-test / drift-draw-tail shape as [[ENEMY_B_DRAW]], with three
+substantive differences:
+\begin{enumerate}
+\item \textbf{Body sprite is smaller.}  [[ENEMY_B_DRAW]] draws a
+  $\$05\times\$11$ body; enemy-C's body is a narrow $\$02\times\$0B$
+  sprite read from [[SPRITE_TABLE_C_LO]] / [[SPRITE_TABLE_C_HI]] at
+  \$AFE1/\$B061 (indexed by [[PROJ_FRAME_IDX]]).  The column bound
+  is \$94 rather than \$9C, so enemy-C clips slightly sooner at the
+  right edge.
+\item \textbf{Secondary ``tail'' sprite below the body.}  Immediately
+  after the main draw, enemy-C issues a \emph{second} [[DRAW_SPRITE]]
+  call for a $\$01\times\$07$ sprite at (clip\_X$-$1, row $+$ \$0B),
+  reading from the level-specific pointer pair
+  [[ENEMY_C_TAIL_LO]]/[[ENEMY_C_TAIL_HI]] at \$7549/\$7649 (also
+  indexed by [[PROJ_FRAME_IDX]]).  The tail lives in the per-level
+  swappable region \$7500--\$7AFF so each level contributes its own
+  tail art.  A \texttt{BCS} at \$1706 skips both the second draw and
+  the hit test if the shifted X underflowed (i.e.\ clip\_X was \$00).
+\item \textbf{Hit target is a 4-slot enemy table, not the player.}
+  The hit test at \$1730--\$1755 walks the four-slot floor-enemy
+  table at \$9B/\$9F/\$A3 (the same slots the beam targets), scanning
+  X~=~3..0 for the first active flag.  The test compares enemy-C's
+  screen-X ([[ZP_CLIP_X_LO]]) against [[ZP_ENEMY_COL]] and its row
+  ([[ZP_ENEMY_C_ROW]]) against [[ZP_ENEMY_Y]].  On a match,
+  enemy-C \emph{consumes} the floor-enemy slot.
+\end{enumerate}
+
+\paragraph{Hit action (\$1757--\$1782): the C$\rightarrow$\{A,C\}
+broadcast.}  On a hit:
+\begin{enumerate}
+\item Write \$FF to [[ZP_ENEMY_C_STATE]] (put self into drift mode,
+  triggering the vertical bobble animation in [[ENEMY_C_ADVANCE]]).
+\item If [[ZP_ENEMY_A_STATE]] is non-zero, write \$FF to it too ---
+  putting enemy-A into PRNG-gated drift mode.  This is the
+  \emph{cross-slot broadcast}: C's hit animates both itself and A.
+\item Reload [[ZP_ENEMY_C_POS]] to ($\$$AF,$\$$D0) (hi~=~clip\_X,
+  lo~=~\$D0) and bump [[ZP_ENEMY_C_ROW]] by 2.
+\item Clear the floor-enemy slot: \texttt{STA \$9B,X} with A~=~\$00
+  retires the same slot the beam would retire on a laser kill.
+\item Rearm the click counter ([[ZP_ENEMY_C_SND_CTR]] \$B7~=~\$04).
+\item Award \textbf{100~BCD} points via [[SCORE_ADD]] (addend
+  \$0100).  Note: unlike [[ENEMY_B_DRAW]], enemy-C does
+  \emph{not} decrement [[ZP_GAME_OVER]] --- this hit path is not a
+  player-life event.
+\end{enumerate}
+
+\paragraph{Hit-box.}  Screen-X window is (clip\_X$-$\$08, clip\_X]
+(enemy-C's X $\pm$ 4 pixels of the target's column); Y window is
+(row$-$\$04, row$+$\$0A) (a 13-row band centred four rows above
+enemy-C's top).  Only the \emph{first} active slot (highest X with
+the flag set) is tested per frame.
+
+\paragraph{Drift-mode tail at \$1783.}  Reached when
+[[ZP_ENEMY_C_STATE]] is negative (set by the hit path above, or
+externally by [[ENEMY_A_ADVANCE]]'s rearm at \$1411 which writes
+\$01 --- wait, only hits write \$FF; A's rearm writes \$01 for
+steady mode).  The drift-mode draw emits a single $\$02\times\$06$
+``puff'' sprite at [[ZP_ENEMY_C_POS]]$+1$'s column index, reading
+from [[ENEMY_C_PUFF_LO]]/[[ENEMY_C_PUFF_HI]] at \$7559/\$7659 ---
+a different level-specific pointer pair from [[ENEMY_B_DRAW]]'s
+\$755A/\$765A puff (one byte earlier).
+
+\paragraph{Contrast with [[ENEMY_B_DRAW]]:}
+
+\begin{center}
+\begin{tabular}{lll}
+                        & Enemy-B                        & Enemy-C               \\ \hline
+Slot state              & \$E0                          & \$D4                  \\
+16-bit pos              & \$E1/\$E2                     & \$D5/\$D6             \\
+Row                     & \$E3                          & \$D7                  \\
+Main sprite size        & $\$05\times\$11$              & $\$02\times\$0B$      \\
+Main sprite table       & \$B025/\$B0A5 (SPRITE\_B)     & \$AFE1/\$B061 (SPRITE\_C) \\
+Right X clip            & \$9C                          & \$94                  \\
+Secondary sprite        & \emph{none}                   & $\$01\times\$07$ tail at \$7549/\$7649 \\
+Hit target              & player (\$06/\$4A)            & 4-slot enemy (\$9F/\$A3) \\
+Hit X window            & [\$42, \$55)                  & (clip\_X$-$8, clip\_X] \\
+Hit Y window            & $[\textrm{player}-\$0E, \textrm{player}+\$0D]$ & $[\textrm{row}-\$03, \textrm{row}+\$09]$ \\
+Score awarded           & +\$0300 (300)                 & +\$0100 (100)         \\
+Game-over decrement     & yes                           & \emph{no}             \\
+Post-hit state writes   & \$E0~$\leftarrow$~\$FF        & \$D4~$\leftarrow$~\$FF; \$DC~$\leftarrow$~\$FF (if non-zero); \$9B,X~$\leftarrow$~\$00 \\
+Sound counter reload    & \$E4~$\leftarrow$~\$05        & \$B7~$\leftarrow$~\$04 \\
+Drift-mode puff src     & \$755A/\$765A                 & \$7559/\$7659         \\
+\end{tabular}
+\end{center}
+
+\paragraph{Topology restated.}  The C$\rightarrow$\{A,C\} broadcast
+in this routine is triggered by enemy-C striking a floor-enemy, not
+by striking the player.  Combined with enemy-A's rearm writing
+\$01 to \$D4 (A$\rightarrow$C wake), the three-slot handshake graph
+is: A wakes C on its own rearm; C arms both itself and A into drift
+mode when it kills a floor-enemy; B has no outgoing handshake and
+only affects its own state.
+
+<<enemy c draw defines>>=
+
+; --- Enemy-C sprite tables (persistent, $A000-$B0FF region) ---
+SPRITE_TABLE_C_LO = $AFE1       ; Enemy-C body sprite pointers, low
+SPRITE_TABLE_C_HI = $B061       ; Enemy-C body sprite pointers, high
+
+; --- Enemy-C level-specific sprites (inside swappable $7500-$7AFF) ---
+; Steady-mode ``tail'' sprite indexed by PROJ_FRAME_IDX (X).
+ENEMY_C_TAIL_LO = $7549         ; Tail sprite pointers, low (indexed)
+ENEMY_C_TAIL_HI = $7649         ; Tail sprite pointers, high (indexed)
+; Drift-mode single puff pointer (not indexed).
+ENEMY_C_PUFF_LO = $7559         ; Drift-mode puff sprite pointer, low
+ENEMY_C_PUFF_HI = $7659         ; Drift-mode puff sprite pointer, high
+
+@
+
 <<sprite player code 16AC>>=
 
         ORG $16AC
-PLAYER_RENDER:
+ENEMY_C_DRAW:
         SUBROUTINE
-        ; Sprite/player code (\$16AC-\$17A5): enemy-C draw
-        ; (PLAYER_RENDER, misnamed --- this is the enemy-C draw,
-        ; mirror of SPRITE_DRAW_1 / ENEMY_B_DRAW) plus tail code.
-        ; Contains the enemy-C collision path at $1757-$1763 which
-        ; broadcasts $FF to both ZP_ENEMY_C_STATE ($D4) and
-        ; ZP_ENEMY_A_STATE ($DC, if non-zero) when C overlaps the
-        ; player --- i.e. C's collision arms BOTH neighbours into
-        ; drift mode simultaneously.  (Prior docs placed this
-        ; handshake inside SPRITE_DRAW_3 / ENEMY_B_DRAW; that was
-        ; incorrect: $15E4-$1622 is B's hit path and only writes to
-        ; B's own state $E0, while the C->{A,C} broadcast lives
-        ; here in PLAYER_RENDER.)
-        ; Not yet disassembled.
+        ; Per-frame draw + enemy-slot collision for the enemy-C slot.
+        ; Previously mislabeled PLAYER_RENDER --- this routine does
+        ; not render the player.  Dispatches on ZP_ENEMY_C_STATE:
+        ; $00 exits; positive does the full steady-mode draw (main
+        ; body + tail sprite) and 4-slot enemy hit-test; negative
+        ; takes the drift-mode tail that draws a smaller puff sprite
+        ; using a level-specific pointer pair at $7559/$7659.
+        ;
+        ; Inputs:
+        ;   ZP_ENEMY_C_STATE    --- $00 off; +steady; -drift.
+        ;   ZP_ENEMY_C_POS      --- 16-bit world X for enemy-C.
+        ;   ZP_ENEMY_C_ROW      --- Sprite starting screen row.
+        ;   ZP_PLAYER_Y ($4A)   --- Player Y (index into perspective tables).
+        ;   ZP_SPRITE_XREF ($4C) --- Level-fixed X reference.
+        ;   ZP_ENEMY_A_STATE    --- Inspected by cross-slot broadcast.
+        ;   ZP_ENEMY_FLAG/COL/Y --- 4-slot floor-enemy tables ($9B/$9F/$A3).
+        ;   PERSPECTIVE_XOFF_LO/HI --- Y-to-X transform tables.
+        ;   SPRITE_TABLE_C_LO/HI   --- Body-sprite pointer table base.
+        ;   ENEMY_C_TAIL_LO/HI     --- Per-level tail-sprite pointers (indexed).
+        ;   ENEMY_C_PUFF_LO/HI     --- Per-level drift-puff pointer (un-indexed).
+        ;
+        ; Behavior:
+        ;   1. State gate: $00 exits; negative jumps to .drift_draw.
+        ;   2. Clip: compute screen-relative X into ZP_CLIP_X_LO/HI;
+        ;      exit if high byte non-zero or low byte >= $94.
+        ;   3. Main draw: set sprite params ($5D = col, $56 = 2,
+        ;      $57 = $0B, $5B = ZP_ENEMY_C_ROW), patch DRAW_SPRITE
+        ;      src to SPRITE_TABLE_C_{LO,HI}[PROJ_FRAME_IDX],
+        ;      JSR DRAW_SPRITE.
+        ;   4. Tail draw: decrement clip_X by 1 (exit if it underflows);
+        ;      set sprite params ($56 = 1, $57 = 7, $5B = row + $0B),
+        ;      patch src to ENEMY_C_TAIL_{LO,HI}[PROJ_FRAME_IDX],
+        ;      JSR DRAW_SPRITE.
+        ;   5. Hit test: walk X = 3..0 searching for an active slot
+        ;      (ZP_ENEMY_FLAG,X != 0); on the first active slot,
+        ;      test ZP_CLIP_X_LO in (ZP_ENEMY_COL,X, ZP_ENEMY_COL,X + $08]
+        ;      AND ZP_ENEMY_C_ROW in (ZP_ENEMY_Y,X - $0A, ZP_ENEMY_Y,X + $04].
+        ;   6. On hit (.hit): write $FF to ZP_ENEMY_C_STATE; if
+        ;      ZP_ENEMY_A_STATE non-zero, write $FF to it too; reload
+        ;      ZP_ENEMY_C_POS to (hi = clip_X, lo = $D0); retire the
+        ;      floor-enemy slot (STA $00 -> ZP_ENEMY_FLAG,X); bump
+        ;      ZP_ENEMY_C_ROW by 2; reset ZP_ENEMY_C_SND_CTR to $04;
+        ;      award +$0100 BCD via SCORE_ADD; RTS.  Does NOT
+        ;      decrement ZP_GAME_OVER.
+        ;   7. Drift-mode draw tail (.drift_draw at $1783): draw a
+        ;      $02x$06 puff at (ZP_ENEMY_C_POS+1, ZP_ENEMY_C_ROW)
+        ;      using the un-indexed pointer pair $7559/$7659.
+        ;
+        ; Modifies:
+        ;   ZP_CLIP_X_LO/HI, sprite-param ZPs ($56/$57/$5B/$5D),
+        ;   ZP_SCORE_ADD_LO/HI, ZP_ENEMY_C_STATE, ZP_ENEMY_A_STATE,
+        ;   ZP_ENEMY_C_POS, ZP_ENEMY_C_ROW, ZP_ENEMY_C_SND_CTR,
+        ;   ZP_ENEMY_FLAG (one slot), SMC_DS_SRC_LO/HI.
+        ; Clobbers: A, X
 
-        HEX A5 D4 F0 23 10 03 4C 83
-        HEX 17 A6 4A BD 8F 1A 38 E5
-        HEX 4C 85 AF BD 8F 19 E9 00
-        HEX 85 B0 38 A5 D5 E5 AF 85
-        HEX AF A5 D6 E5 B0 F0 01 60
-        HEX A5 AF C9 94 B0 F9 AA BD
-        HEX 34 1C 85 5D BD 8F 1B AA
-        HEX A9 02 85 56 A9 0B 85 57
-        HEX A5 D7 85 5B BD E1 AF 8D
-        HEX B3 65 BD 61 B0 8D B4 65
-        HEX 20 6F 65 A5 AF 38 E9 01
-        HEX C9 94 B0 31 AA BD 34 1C
-        HEX 85 5D BD 8F 1B AA A9 01
-        HEX 85 56 A9 07 85 57 A5 D7
-        HEX 18 69 0B 85 5B BD 49 75
-        HEX 8D B3 65 BD 49 76 8D B4
-        HEX 65 20 6F 65 A2 03 B5 9B
-        HEX D0 04 CA 10 F9 60 A5 AF
-        HEX D5 9F 90 F6 38 E9 08 D5
-        HEX 9F B0 EF A5 D7 38 E9 04
-        HEX D5 A3 B0 E6 18 69 0E D5
-        HEX A3 90 DF A9 FF 85 D4 A5
-        HEX DC F0 04 A9 FF 85 DC A9
-        HEX D0 85 D5 A9 00 95 9B A5
-        HEX AF 85 D6 E6 D7 E6 D7 A9
-        HEX 04 85 B7 A9 00 85 1A A9
-        HEX 01 85 1B 20 1A 12 60 A9
-        HEX 02 85 56 A9 06 85 57 A6
-        HEX D6 BD 34 1C 85 5D A5 D7
-        HEX 85 5B AD 59 75 8D B3 65
-        HEX AD 59 76 8D B4 65 20 6F
-        HEX 65 60
-@ %def PLAYER_RENDER
+; --- State dispatch: $00 exit, +steady, -drift ---
+        LDA ZP_ENEMY_C_STATE
+        BEQ .exit                       ; $00: slot inactive
+        BPL .steady                     ; positive: steady-mode draw
+        JMP .drift_draw                 ; negative: drift-mode draw tail
+
+; --- Clip: compute screen-relative X from world X ---
+.steady:
+        LDX ZP_PLAYER_Y
+        LDA PERSPECTIVE_XOFF_LO,X       ; Y-indexed X offset (low)
+        SEC
+        SBC ZP_SPRITE_XREF              ; ... minus fixed X-reference
+        STA ZP_CLIP_X_LO
+        LDA PERSPECTIVE_XOFF_HI,X       ; (high byte propagation)
+        SBC #$00
+        STA ZP_CLIP_X_HI
+        SEC
+        LDA ZP_ENEMY_C_POS              ; Subtract from enemy world X
+        SBC ZP_CLIP_X_LO
+        STA ZP_CLIP_X_LO                ; ZP_CLIP_X_LO = screen-relative X (lo)
+        LDA ZP_ENEMY_C_POS+1
+        SBC ZP_CLIP_X_HI
+        BEQ .in_bounds                  ; hi diff == 0: on-screen
+.exit:
+        RTS                             ; hi diff != 0: off-screen, exit
+.in_bounds:
+        LDA ZP_CLIP_X_LO
+        CMP #$94
+        BCS .exit                       ; clipped X >= $94: off right edge
+
+; --- Main body draw (narrow 2x$0B sprite) ---
+        TAX                             ; X := clipped screen-X
+        LDA PROJ_SCREEN_COL,X           ; -> screen column index
+        STA ZP_SPRITE_X
+        LDA PROJ_FRAME_IDX,X            ; -> sprite frame index
+        TAX                             ; X := frame index
+        LDA #$02
+        STA ZP_SPRITE_W                 ; Body width = 2 bytes
+        LDA #$0B
+        STA ZP_SPRITE_H                 ; Body height = 11 rows
+        LDA ZP_ENEMY_C_ROW
+        STA ZP_SPRITE_Y                 ; Row = enemy-C row
+        LDA SPRITE_TABLE_C_LO,X         ; Patch DRAW_SPRITE src (lo)
+        STA SMC_DS_SRC_LO
+        LDA SPRITE_TABLE_C_HI,X         ; Patch DRAW_SPRITE src (hi)
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE                 ; Blit enemy-C body
+
+; --- Tail draw: $01x$07 sprite one column left, $0B rows below ---
+        LDA ZP_CLIP_X_LO
+        SEC
+        SBC #$01                        ; shift left one column
+        CMP #$94
+        BCS .done                       ; underflow: skip tail and hit test
+        TAX                             ; X := shifted screen-X
+        LDA PROJ_SCREEN_COL,X           ; -> screen column index
+        STA ZP_SPRITE_X
+        LDA PROJ_FRAME_IDX,X            ; -> sprite frame index
+        TAX                             ; X := frame index
+        LDA #$01
+        STA ZP_SPRITE_W                 ; Tail width = 1 byte
+        LDA #$07
+        STA ZP_SPRITE_H                 ; Tail height = 7 rows
+        LDA ZP_ENEMY_C_ROW
+        CLC
+        ADC #$0B
+        STA ZP_SPRITE_Y                 ; Row = enemy-C row + $0B
+        LDA ENEMY_C_TAIL_LO,X           ; Patch DRAW_SPRITE src (lo, per-level)
+        STA SMC_DS_SRC_LO
+        LDA ENEMY_C_TAIL_HI,X           ; Patch DRAW_SPRITE src (hi, per-level)
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE                 ; Blit enemy-C tail
+
+; --- Hit test: walk 4-slot floor-enemy table for first active slot ---
+        LDX #$03
+.scan:
+        LDA ZP_ENEMY_FLAG,X             ; 4-slot active flag ($9B,X)
+        BNE .test_slot                  ; non-zero: test this slot
+.next:
+        DEX
+        BPL .scan                       ; loop X = 3..0
+.done:
+        RTS                             ; no active slot (or tail underflow)
+
+.test_slot:
+        LDA ZP_CLIP_X_LO
+        CMP ZP_ENEMY_COL,X              ; enemy_col > clip_X? skip
+        BCC .next
+        SEC
+        SBC #$08
+        CMP ZP_ENEMY_COL,X              ; enemy_col <= clip_X - 8? skip
+        BCS .next
+        LDA ZP_ENEMY_C_ROW
+        SEC
+        SBC #$04
+        CMP ZP_ENEMY_Y,X                ; enemy_Y <= row - 4? skip
+        BCS .next
+        CLC
+        ADC #$0E
+        CMP ZP_ENEMY_Y,X                ; enemy_Y > row + $0A? skip
+        BCC .next
+
+; --- Hit: C -> drift; A -> drift (if active); retire floor-enemy; +100 BCD ---
+.hit:
+        LDA #$FF
+        STA ZP_ENEMY_C_STATE            ; Self -> drift mode (bobble)
+        LDA ZP_ENEMY_A_STATE
+        BEQ .skip_a                     ; A inactive: leave it alone
+        LDA #$FF
+        STA ZP_ENEMY_A_STATE            ; A -> drift mode too
+.skip_a:
+        LDA #$D0
+        STA ZP_ENEMY_C_POS              ; counter lo := $D0
+        LDA #$00
+        STA ZP_ENEMY_FLAG,X             ; retire the floor-enemy slot
+        LDA ZP_CLIP_X_LO
+        STA ZP_ENEMY_C_POS+1            ; counter hi := clip_X
+        INC ZP_ENEMY_C_ROW              ; row += 2 (shift bobble down)
+        INC ZP_ENEMY_C_ROW
+        LDA #$04
+        STA ZP_ENEMY_C_SND_CTR          ; rearm click counter
+        LDA #$00
+        STA ZP_SCORE_ADD_LO             ; addend lo = $00
+        LDA #$01
+        STA ZP_SCORE_ADD_HI             ; addend hi = $01 ($0100 BCD = 100)
+        JSR SCORE_ADD                   ; ... so score += 100
+        RTS                             ; Note: no DEC ZP_GAME_OVER
+
+; --- Drift-mode draw tail: $02x$06 puff from level-data pointer pair ---
+.drift_draw:
+        LDA #$02
+        STA ZP_SPRITE_W                 ; Puff width = 2 bytes
+        LDA #$06
+        STA ZP_SPRITE_H                 ; Puff height = 6 rows
+        LDX ZP_ENEMY_C_POS+1            ; Use counter hi as X-col index
+        LDA PROJ_SCREEN_COL,X
+        STA ZP_SPRITE_X
+        LDA ZP_ENEMY_C_ROW
+        STA ZP_SPRITE_Y                 ; Row = enemy-C row
+        LDA ENEMY_C_PUFF_LO             ; Patch DRAW_SPRITE src with the
+        STA SMC_DS_SRC_LO               ; level-specific puff pointer
+        LDA ENEMY_C_PUFF_HI             ; (un-indexed)
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+        RTS
+@ %def ENEMY_C_DRAW
+@ %def SPRITE_TABLE_C_LO SPRITE_TABLE_C_HI
+@ %def ENEMY_C_TAIL_LO ENEMY_C_TAIL_HI ENEMY_C_PUFF_LO ENEMY_C_PUFF_HI
 
 <<game logic 188A>>=
 
@@ -9673,7 +9953,8 @@ LEVEL_INTRO_TICK:
 ; --- ORG $1646: Enemy-C advance ---
 <<enemy c defines>>
 <<enemy c advance>>
-; --- ORG $16AC: Sprite/player code (cont.) ---
+; --- ORG $16AC: Enemy-C draw + enemy-slot collision ---
+<<enemy c draw defines>>
 <<sprite player code 16AC>>
 ; --- ORG $17A6: Attract anim 1 ---
 <<attract anim 1>>

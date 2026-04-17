@@ -97,21 +97,38 @@ Review existing chunks for violations:
       phase, producing a vertical wobble.  Drift entry at $16A5
       counts the lo counter UP and falls into rearm on overflow.
       (3) Rearm writes $00 to `ZP_ENEMY_C_STATE` (deactivates
-      itself) --- there is NO C$\rightarrow$\{A,B\} handshake, so
-      enemy-C is purely a one-shot puff awakened by enemy-A's rearm
-      ($1411 writes $01 to $D4) or by enemy-B's firing path
-      ($1759 writes $FF for drift mode).  This confirms the
-      three-slot entity model with topology A$\rightarrow$C and
-      B$\rightarrow$\{A,C\}.  Reload value $0352, rearm window
-      $0000..$003B, row reload reads from a 3-entry table at
+      itself) --- the topology edges live in `ENEMY_C_DRAW` instead
+      (see below), giving three-slot model A$\rightarrow$C (rearm)
+      and C$\rightarrow$\{A,C\} (hit).  Reload value $0352, rearm
+      window $0000..$003B, row reload reads from a 3-entry table at
       $85/$86/$87 (addressed as $84,X for X $\in \{1,2,3\}$ with
       X~=~1 selected 2/4 of the time).  Carved $1646--$16AB out of
-      the surviving `<<sprite player code>>` HEX blob; the tail at
-      $16AC is now `<<sprite player code 16AC>>` with `PLAYER_RENDER`
-      label (the misnomer remains pending RE of the draw routine).
+      the surviving `<<sprite player code>>` HEX blob.
       Retires `PLAYER_STATE = $1646` EQU stub.  Introduces ZPs
       `ZP_ENEMY_C_SND_CTR` ($B7), `ZP_ENEMY_C_POS` ($D5),
       `SND_PITCH_TBL_C` ($0224), `ENEMY_C_ROW_TBL` ($84).
+- [x] `$16AC` — `ENEMY_C_DRAW`: per-frame draw + enemy-slot collision
+      for enemy-C, replacing the `PLAYER_RENDER` stub (mis-named in
+      the stub era --- this routine does not render the player).
+      Steady-mode draws TWO sprites: a $02x$0B body from
+      `SPRITE_TABLE_C_LO/HI` ($AFE1/$B061) and a $01x$07 ``tail''
+      one column left and $0B rows below from the level-specific
+      `ENEMY_C_TAIL_LO/HI` pointer-table ($7549/$7649, indexed by
+      PROJ_FRAME_IDX).  Hit-test is against the 4-slot floor-enemy
+      table at $9B/$9F/$A3 (same slots the beam subsystem targets),
+      NOT the player --- walks X=3..0 for first active slot, checks
+      clip_X vs ZP_ENEMY_COL and row vs ZP_ENEMY_Y.  On hit:
+      $FF$\rightarrow$$D4 (self drift), $FF$\rightarrow$$DC if
+      active (A into drift), retires the floor-enemy ($00$\rightarrow$$9B,X),
+      rewinds position, awards +$0100 BCD, reloads click counter to
+      $04.  No DEC ZP_GAME_OVER --- this hit path is not a
+      life-loss event.  Drift-mode tail draws a $02x$06 puff from
+      `ENEMY_C_PUFF_LO/HI` ($7559/$7659, un-indexed, one byte
+      earlier than enemy-B's $755A/$765A puff).  Corrects prior
+      prose that attributed the $1757--$1763 broadcast to
+      `SPRITE_DRAW_3`/enemy-B firing.  Retires `PLAYER_RENDER`
+      label.  Introduces EQUs `SPRITE_TABLE_C_LO/HI`,
+      `ENEMY_C_TAIL_LO/HI`, `ENEMY_C_PUFF_LO/HI`.
 - [x] `$130A` — `BEAM_UPDATE`: player laser-beam subsystem, gated on
       `ZP_PROJ_GATE` ($32).  Inactive at difficulty tiers minimum and
       moderate ($32 = $FF); active at standard and maximum ($32 = $01).

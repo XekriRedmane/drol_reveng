@@ -3490,7 +3490,7 @@ SMC_RENDER = *
         JSR SPRITE_DRAW_3       ; Sprite draw (part 3)
         JSR PAGE_FLIP_PREP      ; Page flip preparation
         JSR DISPLAY_UPDATE      ; Display update
-        JSR PAGE_FLIP           ; Page flip
+        JSR DRAW_ENTITIES       ; Entity draw dispatcher
 
 ; --- Frame end ---
         INC $FD                 ; Increment frame counter
@@ -3937,7 +3937,7 @@ INIT_LEVEL_STATE:
         LDA #$00
         LDX #$13
 .zero_entities:
-        STA $03A8,X
+        STA ENTITY_ACTIVE,X
         DEX
         BPL .zero_entities
 
@@ -6357,60 +6357,390 @@ SFX_TONE:
         RTS
 @ %def SFX_TONE
 
-<<game engine B head>>=
+\section{Entity draw dispatcher}
+
+[[DRAW_ENTITIES]] at \$683C is the last drawing call in [[MAIN_LOOP]]
+(before [[POST_FRAME]] and the exit checks).  Despite the old
+``page-flip'' nickname it does \emph{not} flip the hardware page --- that
+is [[DISPLAY_PAGE_FLIP]] at \$6138.  Instead it is the frame-level
+``restore-and-draw'' dispatcher for four independent sprite categories,
+each with its own state table:
+
+\begin{enumerate}
+\item A small ``hit-entity'' restore pass (phase~1) that scans a 12-slot
+  active table at [[ENTITY_HIT_STATE]] (\$8D,X bounded by [[ZP_HIT_MAX]]
+  at \$41).  For the first active slot it restores two bytes of hi-res
+  background at an address assembled from [[HIT_BG_HI]] (\$0328,X),
+  [[HIT_BG_LO]] (\$0334,X) and the saved pixel pair [[HIT_BG_BYTE1]]
+  (\$0340,X) / [[HIT_BG_BYTE0]] (\$034C,X).  The high byte is bumped by
+  \$20 when [[ZP_PAGE_FLAG]] is negative so that the restore lands on the
+  currently hidden hi-res page.  Control falls through into phase~2.
+\item The \emph{player} sprite draw (phase~2, \$6865--\$68B1), gated on
+  [[$0E]] being non-negative.  The player column ([[ZP_PLAYER_Y]]+\$10)
+  is looked up in parallel tables [[FLOOR_SPRITE_IDX]] (\$1E00) and
+  [[FLOOR_SCREEN_COL]] (\$1F00) to produce a sprite-frame index and
+  screen column.  Frame-counter bit~2 ([[$FD]]) selects between two
+  sprite-data address tables (offsets \$7542/\$7642 and \$7552/\$7652)
+  whose entries are copied into the SMC operand slot inside the
+  playfield sprite blitter at [[DRAW_SPRITE_CLIPPED]] (\$65D5,
+  operand bytes at [[SMC_PFB_SRC_LO]] / [[SMC_PFB_SRC_HI]] = \$6615 /
+  \$6616).  The sprite row is [[FLOOR_TO_ROW]] (\$1D40) indexed either
+  by [[ZP_INTRO_Y]] (\$17) during the intro/wait phase or by
+  [[ZP_PLAYER_COL]] (\$06) during gameplay --- selected by
+  [[$1E]]~(zero means intro is still running).
+\item A single ``special'' sprite (phase~3, \$68B2--\$6904) --- most
+  likely the moon-bouncing ball or an attract-mode actor --- gated on
+  [[$AB]] being strictly positive.  Its floor-column index ([[$AC]]) is
+  converted to an absolute screen position using [[FLOOR_BASE_ROW]]
+  (\$188F) plus an offset [[$B9]],X (X from [[$AD]]), minus~\$08.  The
+  result indexes [[FLOOR_SPRITE_IDX]]/[[FLOOR_SCREEN_COL]] the same way
+  as phase~2; sprite-data table pair is \$7594/\$7694 or \$759B/\$769B
+  (bit~2 of frame counter), row comes from [[FLOOR_TO_ROW]] indexed by
+  [[$AE]].
+\item A two-slot ``companion'' draw (phase~4, \$6905--\$694D), gated on
+  [[$33]] being non-negative.  Iterates X=1 down to 0 through three
+  parallel per-slot tables in low ZP ([[$11,X]] = floor column,
+  [[$13,X]] = X-offset, [[$15,X]] = floor row index).  Each slot uses
+  the fixed sprite-data table at \$75CC/\$76CC (no animation toggle).
+\item A 20-slot ``entity'' draw (phase~5, \$694E--\$699B).  Iterates
+  Y=\$13 down to 0 through [[ENTITY_ACTIVE]] (\$03A8, activity), skipping
+  slots that are zero or negative.  Parallel tables provide the
+  floor-column ([[ENTITY_FLOOR_COL]] = \$0358), X-offset index
+  ([[ENTITY_XOFF_IDX]] = \$036C), and floor row index
+  ([[ENTITY_FLOOR_POS]] = \$0380).  All twenty slots share the same
+  sprite-data table at \$75D4/\$76D4.
+\end{enumerate}
+
+Phases~2--5 each set up ZP sprite parameters ([[ZP_SPRITE_W]]/[[\_H]]
+at \$56/\$57, [[ZP_SPRITE_Y]] at \$5B, [[ZP_SPRITE_X]] at \$5D) and
+then [[JSR DRAW_SPRITE_CLIPPED]] --- the playfield variant of
+[[DRAW_SPRITE]] at \$65D5 whose inner loop skips columns \$0B and
+\$$\ge$1C so enemy sprites can't overwrite the left-side HUD or right
+border.  They all patch the \emph{same} SMC operand bytes
+(\$6615/\$6616) inside that blitter with sprite-specific source
+addresses before calling it.
+
+The widths, heights and column indices per phase are:
+
+\begin{center}
+\begin{tabular}{l|l|l|l|l}
+Phase & \$56 (W) & \$57 (H) & Source base & State gate \\
+\hline
+Player      & 1 & 4 & \$7542/\$7552 & \$0E $\ge$ 0 \\
+Special     & 1 & 3 & \$7594/\$759B & \$AB $>$ 0 \\
+Companion   & 1 & 2 & \$75CC        & \$33 $\ge$ 0 \\
+Entities    & 1 & 5 & \$75D4        & \$03A8,Y $>$ 0 \\
+\end{tabular}
+\end{center}
+
+\paragraph{Why this is the ``page-flip'' in MAIN\_LOOP.}  The routine
+is called immediately after [[DISPLAY_UPDATE]] and before the frame
+counter increment / [[POST_FRAME]] epilogue.  It is the final step
+that commits all of the frame's sprite pixels to the hidden hi-res
+page, which will become visible after [[DISPLAY_PAGE_FLIP]] runs on
+the next frame.  The ``flip'' in the original label referred to the
+[[ZP_PAGE_FLAG]]-driven \$20 page-offset applied in phase~1, not to
+any toggle of the display soft-switch.
+
+\paragraph{Cross-reference to [[LEVEL_INTRO_TICK]].}  Earlier prose
+speculated that this chunk patches the same [[SMC_SR_HEIGHT]] /
+[[SMC_SR_YSRC]] operands inside [[SPRITE_RENDER]] (\$64F6 / \$64FA)
+that [[LEVEL_INTRO_TICK]] patches.  That was incorrect --- this
+routine does \emph{not} touch those operands.  The two SMC slots
+[[DRAW_ENTITIES]] patches are [[SMC_PFB_SRC_LO]] (\$6615) and
+[[SMC_PFB_SRC_HI]] (\$6616), which are the source-address operand
+bytes of the [[LDA $9000,Y]] at the top of [[DRAW_SPRITE_CLIPPED]]
+(\$65D5).
+
+<<draw entities defines>>=
+
+; --- Zero-page (entity draw dispatcher) ---
+ZP_HIT_MAX      = $41           ; Max active hit-entity slot index (phase 1)
+ZP_HIT_GATE     = $0E           ; $ff = suppress player draw (phase 2)
+ZP_SPECIAL_A    = $AB           ; Special sprite state flag (phase 3)
+ZP_SPECIAL_X    = $AC           ; Special sprite floor column (phase 3)
+ZP_SPECIAL_Y    = $AD           ; Special sprite X-offset index (phase 3)
+ZP_SPECIAL_ROW  = $AE           ; Special sprite floor row (phase 3)
+ZP_COMPANION_GATE = $33         ; Companion-slot gate (phase 4)
+ZP_COMPANION_COL  = $11         ; Companion floor-column pair (phase 4)
+ZP_COMPANION_OFF  = $13         ; Companion X-offset pair (phase 4)
+ZP_COMPANION_ROW  = $15         ; Companion floor-row pair (phase 4)
+ZP_DRAW_DEST_LO = $FB           ; Phase-1 BG restore destination pointer (2 bytes)
+ZP_DRAW_LOOP_IDX = $5C          ; Saved loop index for phases 4/5
+
+; --- Hit-entity background-save tables (12 slots, parallel to $8D) ---
+ENTITY_HIT_STATE = $8D          ; Hit-entity active flags ($8D,X, X<=ZP_HIT_MAX)
+HIT_BG_HI       = $0328         ; High byte of BG-restore address (page 1 base)
+HIT_BG_LO       = $0334         ; Low byte of BG-restore address
+HIT_BG_BYTE1    = $0340         ; Saved BG byte at offset +1
+HIT_BG_BYTE0    = $034C         ; Saved BG byte at offset +0
+
+; --- 20-slot entity draw tables (phase 5) ---
+ENTITY_ACTIVE   = $03A8         ; Entity activity table ($03A8-$03BB, 20 slots)
+ENTITY_FLOOR_COL = $0358        ; Entity floor-column index table
+ENTITY_XOFF_IDX = $036C          ; Entity X-offset index table
+ENTITY_FLOOR_POS = $0380         ; Entity floor-row index table
+
+; --- Floor-position lookup tables (player coord -> screen coords) ---
+FLOOR_TO_ROW    = $1D40         ; Floor position -> sprite Y row
+FLOOR_SPRITE_IDX = $1E00         ; Floor position -> sprite-frame index
+FLOOR_SCREEN_COL = $1F00         ; Floor position -> sprite X column
+FLOOR_BASE_ROW  = $188F          ; Floor-column -> base row (phase 3/4/5)
+
+; --- Self-modifying operand aliases inside DRAW_SPRITE_CLIPPED ($65D5) ---
+; The LDA $9000,Y at $6614 is patched per-sprite with a sprite-data
+; source address before each JSR DRAW_SPRITE_CLIPPED.  Disk-image
+; initial value is $9000 (harmless, overwritten before first use).
+SMC_PFB_SRC_LO  = $6615         ; Low byte of sprite-data source
+SMC_PFB_SRC_HI  = $6616         ; High byte of sprite-data source
+
+; --- Playfield sprite blitter (sibling of DRAW_SPRITE, narrow column clip) ---
+DRAW_SPRITE_CLIPPED = $65D5     ; Playfield OR-blit: skips columns $0B and >=$1C
+
+@
+
+<<draw entities>>=
 
         ORG $683C
-PAGE_FLIP:
+DRAW_ENTITIES:
         SUBROUTINE
-        ; Game engine head (\$683C-\$699B): page flip, entity/attract draw
-        ; dispatchers --- not yet disassembled.
-        ; Raw data --- 352 bytes
+        ; Per-frame entity draw dispatcher --- final drawing step of
+        ; MAIN_LOOP.  Restores one hit-entity's hi-res background then
+        ; draws player, one special, two companions and up to twenty
+        ; entities onto the hidden hi-res page.
+        ;
+        ; Inputs:
+        ;   ZP_HIT_MAX ($41)          --- max hit-entity slot to scan.
+        ;   ENTITY_HIT_STATE,X ($8D)  --- per-slot active flag.
+        ;   HIT_BG_HI / HIT_BG_LO     --- BG-restore destination (page 1).
+        ;   HIT_BG_BYTE0 / HIT_BG_BYTE1 --- saved BG byte pair.
+        ;   ZP_PAGE_FLAG ($00) b7     --- negative: restore to page 2
+        ;                                 (add $20 to HIT_BG_HI).
+        ;   ZP_HIT_GATE ($0E)         --- negative: skip player draw.
+        ;   ZP_PLAYER_Y ($4A)         --- player floor position (+$10).
+        ;   ZP_HIT_FLAG ($1E)         --- game-state word ($00 = intro).
+        ;   ZP_INTRO_Y ($17)          --- intro sprite Y source.
+        ;   ZP_PLAYER_COL ($06)       --- player sprite Y source.
+        ;   $FD bit 2                 --- player/special animation phase.
+        ;   ZP_SPECIAL_A..ROW ($AB-$AE) --- special-sprite slot state.
+        ;   ZP_COMPANION_GATE ($33)   --- companion-slot gate.
+        ;   ZP_COMPANION_COL/OFF/ROW  --- 2 companion slots ($11-$16).
+        ;   ENTITY_ACTIVE ($03A8..$03BB) + parallel tables
+        ;     ENTITY_FLOOR_COL ($0358), ENTITY_XOFF_IDX ($036C),
+        ;     ENTITY_FLOOR_POS ($0380).
+        ;   FLOOR_TO_ROW / FLOOR_SPRITE_IDX / FLOOR_SCREEN_COL /
+        ;     FLOOR_BASE_ROW lookup tables.
+        ;
+        ; Behavior:
+        ;   Phase 1 scans ENTITY_HIT_STATE top-down for the first active
+        ;   slot, then writes HIT_BG_BYTE0/BYTE1 back into ($FB),Y=0/1
+        ;   where ($FC,$FB) is assembled from HIT_BG_HI (+$20 if the
+        ;   page flag is negative) and HIT_BG_LO.  Falls through.
+        ;   Phases 2--5 each set sprite dimensions / position, patch
+        ;   SMC_PFB_SRC_LO/HI with a sprite-data source address, load
+        ;   FLOOR_TO_ROW into ZP_SPRITE_Y and JSR DRAW_SPRITE_CLIPPED.
+        ;
+        ; Modifies:
+        ;   SMC_PFB_SRC_LO / SMC_PFB_SRC_HI ($6615/$6616),
+        ;   ZP_DRAW_DEST_LO ($FB), ZP_DRAW_DEST_HI ($FC),
+        ;   ZP_DRAW_LOOP_IDX ($5C), ZP_SPRITE_W/H ($56/$57),
+        ;   ZP_SPRITE_Y/X ($5B/$5D), hi-res page framebuffers.
+        ; Clobbers: A, X, Y
 
-        HEX A6 41 B5 8D 10 05 CA 10
-        HEX F9 30 1E BD 28 03 24 00
-        HEX 10 03 18 69 20 85 FC BD
-        HEX 34 03 85 FB BD 40 03 A0
-        HEX 01 91 FB 88 BD 4C 03 91
-        HEX FB A5 0E 30 49 A5 4A 18
-        HEX 69 10 AA A8 BD 00 1E AA
-        HEX B9 00 1F 85 5D A5 FD 29
-        HEX 04 F0 0F BD 52 75 8D 15
-        HEX 66 BD 52 76 8D 16 66 4C
-        HEX 9A 68 BD 42 75 8D 15 66
-        HEX BD 42 76 8D 16 66 A9 01
-        HEX 85 56 A9 04 85 57 A6 17
-        HEX A5 1E F0 02 A6 06 BD 40
-        HEX 1D 85 5B 20 D5 65 A5 AB
-        HEX F0 4F 10 02 30 4B A6 AC
-        HEX BD 8F 18 A6 AD 18 75 B9
-        HEX 38 E9 08 AA BD 00 1F 85
-        HEX 5D A9 01 85 56 A9 03 85
-        HEX 57 BD 00 1E AA A5 FD 29
-        HEX 04 F0 0F BD 9B 75 8D 15
-        HEX 66 BD 9B 76 8D 16 66 4C
-        HEX FA 68 BD 94 75 8D 15 66
-        HEX BD 94 76 8D 16 66 A5 AE
-        HEX AA BD 40 1D 85 5B 20 D5
-        HEX 65 A5 33 30 45 A2 01 B5
-        HEX 11 A8 B9 8F 18 86 5C 48
-        HEX B5 13 AA 68 18 75 B9 38
-        HEX E9 05 A8 B9 00 1F 85 5D
-        HEX A9 01 85 56 A9 02 85 57
-        HEX B9 00 1E A8 B9 CC 75 8D
-        HEX 15 66 B9 CC 76 8D 16 66
-        HEX A6 5C B5 15 AA BD 40 1D
-        HEX 85 5B 20 D5 65 A6 5C CA
-        HEX 10 BD A0 13 B9 A8 03 F0
-        HEX 43 30 41 B9 58 03 AA BD
-        HEX 8F 18 48 B9 6C 03 AA 68
-        HEX 18 75 B9 38 E9 05 AA BD
-        HEX 00 1F 85 5D A9 01 85 56
-        HEX A9 05 85 57 BD 00 1E AA
-        HEX BD D4 75 8D 15 66 BD D4
-        HEX 76 8D 16 66 B9 80 03 AA
-        HEX BD 40 1D 85 5B 84 5C 20
-        HEX D5 65 A4 5C 88 10 B5 60
-@ %def PAGE_FLIP
+; --- Phase 1: find topmost active hit-entity, restore its BG ---
+.hit_scan:
+        LDX ZP_HIT_MAX                  ; Start at highest slot
+.hit_next:
+        LDA ENTITY_HIT_STATE,X          ; Active flag
+        BPL .hit_restore                ;   bit 7 clear = active
+        DEX
+        BPL .hit_next
+        BMI .draw_player                ; X wrapped to $FF --- no hits
+.hit_restore:
+        LDA HIT_BG_HI,X                 ; High byte of saved BG address
+        BIT ZP_PAGE_FLAG
+        BPL .hit_bg_page1               ;   page flag positive: use as-is
+        CLC
+        ADC #$20                        ;   page flag negative: bump to page 2
+.hit_bg_page1:
+        STA ZP_DRAW_DEST_LO+1           ; ($FC) = high byte
+        LDA HIT_BG_LO,X
+        STA ZP_DRAW_DEST_LO             ; ($FB) = low byte
+        LDA HIT_BG_BYTE1,X              ; Saved pixel byte @ +1
+        LDY #$01
+        STA (ZP_DRAW_DEST_LO),Y         ; Restore to hi-res
+        DEY
+        LDA HIT_BG_BYTE0,X              ; Saved pixel byte @ +0
+        STA (ZP_DRAW_DEST_LO),Y
+;       fall through to phase 2
+
+; --- Phase 2: player sprite ---
+.draw_player:
+        LDA ZP_HIT_GATE                 ; $0E
+        BMI .draw_special               ;   negative = suppress player
+        LDA ZP_PLAYER_Y                 ; Player floor position
+        CLC
+        ADC #$10                        ;   + $10 (centre adjust)
+        TAX
+        TAY                             ; X = Y = player + $10
+        LDA FLOOR_SPRITE_IDX,X          ; Sprite-frame index
+        TAX
+        LDA FLOOR_SCREEN_COL,Y          ; Screen column
+        STA ZP_SPRITE_X
+        LDA $FD                         ; Frame counter
+        AND #$04                        ; Bit 2 = animation phase
+        BEQ .player_frameA
+        LDA $7552,X                     ; Frame B source low
+        STA SMC_PFB_SRC_LO
+        LDA $7652,X                     ; Frame B source high
+        STA SMC_PFB_SRC_HI
+        JMP .player_dims
+.player_frameA:
+        LDA $7542,X                     ; Frame A source low
+        STA SMC_PFB_SRC_LO
+        LDA $7642,X                     ; Frame A source high
+        STA SMC_PFB_SRC_HI
+.player_dims:
+        LDA #$01
+        STA ZP_SPRITE_W                 ; Width = 1 byte
+        LDA #$04
+        STA ZP_SPRITE_H                 ; Height = 4 rows
+        LDX ZP_INTRO_Y                  ; Default: intro Y source
+        LDA ZP_HIT_FLAG                 ; $1E
+        BEQ .player_row                 ;   $00 = intro running, keep $17
+        LDX ZP_PLAYER_COL               ; Gameplay: use player column
+.player_row:
+        LDA FLOOR_TO_ROW,X
+        STA ZP_SPRITE_Y
+        JSR DRAW_SPRITE_CLIPPED
+
+; --- Phase 3: special sprite (moon-ball / attract actor) ---
+.draw_special:
+        LDA ZP_SPECIAL_A                ; $AB
+        BEQ .draw_companions            ;   $00 = inactive
+        BPL .special_active             ;   positive = active
+        BMI .draw_companions            ;   negative = inactive
+.special_active:
+        LDX ZP_SPECIAL_X                ; Floor column
+        LDA FLOOR_BASE_ROW,X            ; Base floor row
+        LDX ZP_SPECIAL_Y                ; X-offset index
+        CLC
+        ADC $B9,X                       ; + per-entity vertical offset
+        SEC
+        SBC #$08                        ; - 8
+        TAX
+        LDA FLOOR_SCREEN_COL,X
+        STA ZP_SPRITE_X
+        LDA #$01
+        STA ZP_SPRITE_W
+        LDA #$03
+        STA ZP_SPRITE_H
+        LDA FLOOR_SPRITE_IDX,X
+        TAX
+        LDA $FD
+        AND #$04
+        BEQ .special_frameA
+        LDA $759B,X
+        STA SMC_PFB_SRC_LO
+        LDA $769B,X
+        STA SMC_PFB_SRC_HI
+        JMP .special_row
+.special_frameA:
+        LDA $7594,X
+        STA SMC_PFB_SRC_LO
+        LDA $7694,X
+        STA SMC_PFB_SRC_HI
+.special_row:
+        LDA ZP_SPECIAL_ROW              ; $AE
+        TAX
+        LDA FLOOR_TO_ROW,X
+        STA ZP_SPRITE_Y
+        JSR DRAW_SPRITE_CLIPPED
+
+; --- Phase 4: two companion-slot sprites ---
+.draw_companions:
+        LDA ZP_COMPANION_GATE           ; $33
+        BMI .draw_entity_list
+        LDX #$01                        ; Slots 1 then 0
+.companion_loop:
+        LDA ZP_COMPANION_COL,X          ; Floor column ($11,$12)
+        TAY
+        LDA FLOOR_BASE_ROW,Y            ; Base row
+        STX ZP_DRAW_LOOP_IDX            ; Save X
+        PHA                             ;   and accumulator
+        LDA ZP_COMPANION_OFF,X          ; X-offset ($13,$14)
+        TAX
+        PLA
+        CLC
+        ADC $B9,X                       ; + offset
+        SEC
+        SBC #$05                        ; - 5
+        TAY
+        LDA FLOOR_SCREEN_COL,Y
+        STA ZP_SPRITE_X
+        LDA #$01
+        STA ZP_SPRITE_W
+        LDA #$02
+        STA ZP_SPRITE_H
+        LDA FLOOR_SPRITE_IDX,Y
+        TAY
+        LDA $75CC,Y                     ; Fixed source (no animation toggle)
+        STA SMC_PFB_SRC_LO
+        LDA $76CC,Y
+        STA SMC_PFB_SRC_HI
+        LDX ZP_DRAW_LOOP_IDX
+        LDA ZP_COMPANION_ROW,X          ; Row index ($15,$16)
+        TAX
+        LDA FLOOR_TO_ROW,X
+        STA ZP_SPRITE_Y
+        JSR DRAW_SPRITE_CLIPPED
+        LDX ZP_DRAW_LOOP_IDX
+        DEX
+        BPL .companion_loop
+
+; --- Phase 5: 20-slot entity list ---
+.draw_entity_list:
+        LDY #$13                        ; 20 slots
+.entity_next:
+        LDA ENTITY_ACTIVE,Y
+        BEQ .entity_step                ;   $00 = inactive
+        BMI .entity_step                ;   negative = inactive
+        LDA ENTITY_FLOOR_COL,Y
+        TAX
+        LDA FLOOR_BASE_ROW,X
+        PHA
+        LDA ENTITY_XOFF_IDX,Y
+        TAX
+        PLA
+        CLC
+        ADC $B9,X
+        SEC
+        SBC #$05
+        TAX
+        LDA FLOOR_SCREEN_COL,X
+        STA ZP_SPRITE_X
+        LDA #$01
+        STA ZP_SPRITE_W
+        LDA #$05
+        STA ZP_SPRITE_H
+        LDA FLOOR_SPRITE_IDX,X
+        TAX
+        LDA $75D4,X
+        STA SMC_PFB_SRC_LO
+        LDA $76D4,X
+        STA SMC_PFB_SRC_HI
+        LDA ENTITY_FLOOR_POS,Y
+        TAX
+        LDA FLOOR_TO_ROW,X
+        STA ZP_SPRITE_Y
+        STY ZP_DRAW_LOOP_IDX
+        JSR DRAW_SPRITE_CLIPPED
+        LDY ZP_DRAW_LOOP_IDX
+.entity_step:
+        DEY
+        BPL .entity_next
+        RTS
+@ %def DRAW_ENTITIES
 
 \section{Level intro / countdown tick}
 
@@ -7787,6 +8117,7 @@ LEVEL_INTRO_TICK:
 <<prng defines>>
 <<draw sprite defines>>
 <<hazard check defines>>
+<<draw entities defines>>
 <<level intro defines>>
 ; --- ORG $0100: Screen row copy ---
 <<screen row copy>>
@@ -7874,8 +8205,8 @@ LEVEL_INTRO_TICK:
 <<sfx tone>>
 ; --- ORG $67CB: Main loop ---
 <<main loop>>
-; --- ORG $683C: Game engine B head ---
-<<game engine B head>>
+; --- ORG $683C: Draw entities dispatcher ---
+<<draw entities>>
 ; --- ORG $699C: Level intro tick ---
 <<level intro tick>>
 ; --- ORG $6ABA: Game engine B tail ---

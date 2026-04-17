@@ -27,7 +27,23 @@ Review existing chunks for violations:
       LEVEL_DATA_BASE ($0200), SPRITE_TABLE_LO/HI ($B000/$B080); stub
       SFX_TONE ($67C1).
 - [ ] `$719D` — Scroll / camera
-- [ ] `$683C` — Page flip routine
+- [x] `$683C` — `DRAW_ENTITIES`: final per-frame drawing dispatcher in
+      MAIN_LOOP (misnamed "page flip" previously --- no display-page
+      toggle here; that's `DISPLAY_PAGE_FLIP` at $6138).  Five phases:
+      phase 1 restores one hit-entity's BG using 12-slot tables at
+      `HIT_BG_HI/LO/BYTE0/BYTE1` ($0328/$0334/$034C/$0340), with a +$20
+      page offset applied when `ZP_PAGE_FLAG` is negative; phase 2 draws
+      the player (gated on $0E); phase 3 draws a "special" sprite
+      (gated on $AB); phase 4 draws two "companion" slots (gated on
+      $33) from ZP tables at $11/$13/$15; phase 5 iterates the 20-slot
+      `ENTITY_ACTIVE` table at $03A8 with parallel tables
+      `ENTITY_FLOOR_COL` ($0358), `ENTITY_XOFF_IDX` ($036C),
+      `ENTITY_FLOOR_POS` ($0380).  All four draw phases set sprite
+      params ($56/$57/$5B/$5D) and JSR `DRAW_SPRITE_CLIPPED` ($65D5,
+      still a stub), patching the sprite-data source operands at
+      `SMC_PFB_SRC_LO/HI` ($6615/$6616).  Introduced lookup-table
+      labels: `FLOOR_TO_ROW` ($1D40), `FLOOR_SPRITE_IDX` ($1E00),
+      `FLOOR_SCREEN_COL` ($1F00), `FLOOR_BASE_ROW` ($188F).
 - [x] `$67C1` — `SFX_TONE`: speaker-click tone / delay generator.
       Classic nested delay loop; A = pitch, X = duration; clicks the
       speaker via `CMP ($36),Y` where ($36,$37) is an indirect pointer
@@ -53,7 +69,8 @@ Review existing chunks for violations:
 
 - [ ] `$4713-$47FF` — Screen init routines (currently HEX blob, has code at $471C+)
 - [ ] `$4800-$67CA` — Large gap between game init and main loop (sprites, tables, game code)
-- [ ] `$683C-$699B` — Game engine B head (page-flip / attract-draw dispatchers, HEX)
+- [x] `$683C-$699B` — Game engine B head: now documented as `DRAW_ENTITIES`
+      (see above).  No longer a HEX blob.
 - [ ] `$6ABA-$719C` — Game engine B tail (sound, animation, entity processing,
       level logic, HEX — 1763 bytes)
 - [ ] `$72A0-$72A2` — 3 bytes between attract loop exit and copy routine (JMP $67CB at $72A0)

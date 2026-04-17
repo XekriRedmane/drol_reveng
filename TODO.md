@@ -1,5 +1,95 @@
 # TODO
 
+## Milestone: `INTERLACE_BLIT_P1/P2` callers carved as playfield-refresh routines (2026-04-17)
+
+The three `INTERLACE_BLIT` caller sites inside the
+`<<game engine A>>` hex blob (now split into six smaller chunks)
+have been fully RE'd with descriptive names:
+
+- **`REFRESH_RIGHT_WALL`** at `$61F0` (122 bytes): per-frame paint
+  of the right-edge playfield wall when `ZP_PLAYER_Y` ($4A) is in
+  range `[$C4..$EF]` (i.e. $\Delta=$EF-$4A$ fits in $[$00..$2B]$).
+  Updates `HUD_LIVES_COL` ($65A7) --- the playfield right-bound
+  read by `BEAM_UPDATE` --- and paints the sprite from
+  `WALL_SPR_LO/HI` ($7520/$7620) at the shared tail ($624C).
+- **`REFRESH_LEFT_WALL`** at `$626A` (96 bytes): mirror of the
+  right-wall routine for the left edge; fires when `ZP_PLAYER_Y
+  <= $11`.  Updates `HUD_SCORE_COL` ($65AB) --- playfield
+  left-bound --- and paints from `WALL_L_SPR_LO/HI` ($7519/$7619)
+  at the shared tail ($62AC).
+- **`REFRESH_PILLARS`** at `$62E2` (59 bytes): 6-slot loop over ZP
+  `$60..$65` (fixed world-Y landmark positions); for each slot
+  whose screen-column $\Delta=[\$60,X]-$4A$ is in $[$00..$2A]$,
+  paint a 4-column-wide pillar sprite from `PILLAR_SPR_LO/HI`
+  ($7500/$7600).  Unlike the wall routines it does NOT call
+  `INTERLACE_RESTORE` --- relies on the per-frame
+  `CLEAR_DRAW_PAGE` pass instead.  ZP `$60..$65` is never written
+  by any code in `drol.bin` or `level1.bin`, so the slot array
+  retains its post-boot-ZP values (effectively: the 6-slot loop
+  is a no-op in the game's current configuration, but the code is
+  there for future-level extension).
+
+All three callers share the same BIT/BMI/JSR page-flag gate on
+`ZP_PAGE_FLAG` ($00): positive picks `INTERLACE_RESTORE_P1` +
+`INTERLACE_BLIT_P1` (page 1), negative picks the P2 twins.  The
+new EQUs for the sprite-pointer tables are in
+`<<playfield refresh defines>>`.
+
+**Byte count retired from `<<game engine A>>`:** 277 bytes.  The
+blob is now split into:
+
+- `<<game engine A prologue>>` $614B-$61EF (165 bytes, HEX) ---
+  the movement-tick handler bodies + `CLEAR_DRAW_PAGE` wrapper.
+- `<<refresh right wall>>` $61F0-$6269 (122 bytes, source).
+- `<<refresh left wall>>` $626A-$62C9 (96 bytes, source).
+- `<<game engine A middle>>` $62CA-$62E1 (24 bytes, HEX) ---
+  a third playfield-refresh callee that uses `ROW_PAINT_P1_38/P2_38`
+  instead of `INTERLACE_BLIT`; still awaiting RE.
+- `<<refresh pillars>>` $62E2-$631C (59 bytes, source).
+- `<<game engine A tail>>` $631D-$64CA (430 bytes, HEX) --- entity
+  redraw loop at $6321, text-row dispatch at $636C, and the four
+  movement handlers `DO_ASCEND`/`DO_DESCEND`/`DO_MOVE_RIGHT`/
+  `DO_MOVE_LEFT`.
+
+All raw-hex `JSR $054E` / `JSR $070B` / `JSR $09FE` / `JSR $0B4B`
+references in main.nw have been replaced with symbolic calls
+(zero raw-hex occurrences remain).
+
+PNG rendered: `images/playfield_refresh_sprites.png` is a 3-row
+grid showing frames $02..$07 of all three sprite tables --- the
+PILLAR table holds a classical-Greek column with fluted shaft and
+stepped capital; the WALL_L/WALL_R tables hold T-shaped
+torches/light fixtures with palette-bit animation cycling
+violet/green/blue/orange.  The renderer is
+`.claude/scripts/render_playfield_refresh.py`.
+
+Prior-doc corrections:
+
+- `INTERLACE_BLIT_P1` and `INTERLACE_RESTORE_P1` header "Callers"
+  blocks now name the three refresh routines (were previously
+  listed as raw addresses $625F/$62C6/$6317 and $625C/$62BC).
+- The `\section{Callers and twin selection}` prose at the
+  `INTERLACE_BLIT_P1` docs now enumerates the three refresh
+  routines and names the three sprite-pointer tables.
+- Prose in the player-tick-move-right description now references
+  `REFRESH_RIGHT_WALL`/`REFRESH_LEFT_WALL` instead of raw
+  addresses $61F0/$626A.
+
+Next-session priorities:
+
+1. The `<<game engine A middle>>` routine at $62CA (24 bytes) ---
+   a third playfield-refresh callee using ROW_PAINT_P1_38/P2_38
+   ($08C8/$08DF) instead of `INTERLACE_BLIT`.  Small and similar
+   in shape to the wall routines.
+2. The `<<game engine A tail>>` (430 bytes) --- this contains
+   the already-EQU'd `DO_ASCEND` ($6378), `DO_DESCEND` ($63B4),
+   `DO_MOVE_RIGHT` ($6409), `DO_MOVE_LEFT` ($646D) movement-input
+   handlers plus the entity-redraw loop at $6321 and text-row
+   dispatch at $636C.
+3. The four remaining hi-res-library helpers in `<<game code 03A8>>`
+   (`ROW_PAINT_P1_38/P2_38` $08C8/$08DF, 23 bytes each;
+   `TEXT_ROW_FROM_A30D_P1/P2` $08F6/$097A, 132 bytes each).
+
 ## Milestone: `INTERLACE_BLIT_P1/P2` carved (2026-04-17)
 
 The last large twin pair in `<<game code 03A8>>` ---

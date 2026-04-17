@@ -5436,23 +5436,40 @@ hi-res memory interleave, so the per-group 3-STA triplet lands in three
 
 \subsection{Callers and twin selection}
 
-Three caller sites --- all currently inside hex blobs near [[$625F]],
-[[$62C6]], and [[$6317]] --- share the same shape:
+Three caller sites --- all three now carved out of the
+\texttt{<<game engine A>>} hex blob as their own chunks --- share
+the same shape:
 
 \begin{enumerate}
 \item Load a 16-bit pointer from a sprite-address table into
       [[ZP_BLIT_SRC]]/[[ZP_BLIT_SRC+1]].
-\item Check a page flag ([[BIT $00]]/[[BMI]]) to select the page-1 or
-      page-2 twin, then [[JSR]] the appropriate blit helper.
+\item Check [[ZP_PAGE_FLAG]] ([[BIT $00]]/[[BMI]]) to select the
+      page-1 or page-2 twin, then [[JSR]] the appropriate blit
+      helper.
 \end{enumerate}
 
-The selectors pick [[INTERLACE_BLIT_P1]] when the ZP page flag is
+The three callers are:
+\begin{itemize}
+\item [[REFRESH_RIGHT_WALL]] at [[$61F0]] --- right-edge
+      playfield wall (shared tail at [[$624C]], [[INTERLACE_BLIT]]
+      at [[$625F]] for page~1).
+\item [[REFRESH_LEFT_WALL]] at [[$626A]] --- left-edge playfield
+      wall (shared tail at [[$62AC]], [[INTERLACE_BLIT]] at
+      [[$62C6]] for page~2 --- the task-named site).
+\item [[REFRESH_PILLARS]] at [[$62E2]] --- six-slot landmark
+      pillar loop (shared tail at [[$62FD]], [[INTERLACE_BLIT]] at
+      [[$6317]] for page~2).
+\end{itemize}
+
+The selectors pick [[INTERLACE_BLIT_P1]] when [[ZP_PAGE_FLAG]] is
 positive and [[INTERLACE_BLIT_P2]] otherwise --- the same gating
 pattern already documented for [[INTERLACE_RESTORE_P1]]/[[P2]].  The
-sprite tables at [[$7500]]/[[$7600]] hold pointers into persistent game
-pages and into the swappable level banks; entries pointed at by these
-three callers have widths that range from 1\,column (40 bytes) to
-4\,columns (140 bytes), producing the thin vertical pillar/column
+sprite tables at [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]]
+([[$7500]]/[[$7600]]), [[WALL_L_SPR_LO]]/[[WALL_L_SPR_HI]]
+([[$7519]]/[[$7619]]), and [[WALL_SPR_LO]]/[[WALL_SPR_HI]]
+([[$7520]]/[[$7620]]) hold pointers into the swappable level banks;
+the sprites have widths in the 1\,column (40 bytes) to 4\,columns
+(140 bytes) range, producing the thin vertical pillar/column
 decorations visible in the Drol playfield (see
 Figure~\ref{fig:interlace-blit-demo}).
 
@@ -5527,9 +5544,12 @@ INTERLACE_BLIT_P1:
         ;   then X := X - 1; loop.
         ;
         ; Callers:
-        ;   $625F, $62C6, $6317 (all inside hex blobs near
-        ;   DRAW_ENTITIES --- perspective-floor sprite dispatch).  Each
-        ;   site uses a BIT $00 / BMI page-flag gate to pick this
+        ;   REFRESH_RIGHT_WALL shared tail at $625F (page 1 path).
+        ;   REFRESH_LEFT_WALL  shared tail at $62BF (page 1 path,
+        ;                                            page-2 JSR at $62C6).
+        ;   REFRESH_PILLARS    per-slot paint at $630F (page 1 path,
+        ;                                              page-2 JSR at $6317).
+        ;   Each site uses a BIT ZP_PAGE_FLAG / BMI gate to pick this
         ;   (page 1, ZP_PAGE_FLAG positive) or INTERLACE_BLIT_P2
         ;   (page 2, ZP_PAGE_FLAG negative).
         ;
@@ -6021,11 +6041,15 @@ INTERLACE_RESTORE_P1:
         ;   pattern as CLEAR_PAGE1).  Exit early when X == ZP_SCORE_1.
         ;
         ; Callers:
-        ;   $625C (sibling-paired with JSR INTERLACE_BLIT_P1 at $054E).
-        ;   $62BC (player-sprite redraw; paired with INTERLACE_BLIT_P1).
-        ;   BIT $00 gate at each caller selects page 1 (this routine)
-        ;   when ZP_PAGE_FLAG is positive; page 2 (INTERLACE_RESTORE_P2
-        ;   at $0B4B) otherwise.
+        ;   REFRESH_RIGHT_WALL shared tail at $625C (paired with
+        ;                      JSR INTERLACE_BLIT_P1 at $625F).
+        ;   REFRESH_LEFT_WALL  shared tail at $62BC (paired with
+        ;                      JSR INTERLACE_BLIT_P1 at $62BF).
+        ;   (REFRESH_PILLARS does NOT call the restore helper --- it
+        ;    relies on CLEAR_DRAW_PAGE's earlier pass instead.)
+        ;   BIT ZP_PAGE_FLAG gate at each caller selects page 1 (this
+        ;   routine) when ZP_PAGE_FLAG is positive; page 2
+        ;   (INTERLACE_RESTORE_P2 at $0B4B) otherwise.
         ;
         ; Note on ZP aliasing:
         ;   $2B and $2C are aliased as ZP_SCORE_0 / ZP_SCORE_1 (HUD
@@ -9411,19 +9435,28 @@ RESTART_DISPATCH:
         HEX 00 5C 80 5C 00 5D 80 5D
 @
 
-<<game engine A>>=
+<<game engine A prologue>>=
 
         ORG $614B
         SUBROUTINE
-        ; Game engine (\$614B-\$64CA): movement handlers + per-frame
-        ; tick subroutines.  Entry points called by PLAYER_MOVE_TICK:
-        ;   \$614B  PLAYER_TICK_MOVE_LEFT
-        ;   \$6184  PLAYER_TICK_IDLE
-        ;   \$619A  PLAYER_TICK_MOVE_RIGHT
-        ; The movement-tick dispatcher that originally tailed this blob
-        ; at \$64CB has been extracted as [[PLAYER_MOVE_TICK]]; the
-        ; sprite-setup tail at \$64DF is now [[DRAW_PLAYER]].
-        ; Raw data --- 896 bytes
+        ; Game engine prologue (\$614B-\$61EF, 165 bytes): movement-tick
+        ; handler bodies.  Entry points called by [[PLAYER_MOVE_TICK]]:
+        ;   \$614B  [[PLAYER_TICK_MOVE_LEFT]]
+        ;   \$6184  [[PLAYER_TICK_IDLE]]
+        ;   \$619A  [[PLAYER_TICK_MOVE_RIGHT]]
+        ;   \$61E4  [[CLEAR_DRAW_PAGE]]: BIT [[ZP_PAGE_FLAG]]; page-gated
+        ;                                [[CLEAR_PAGE1]]/[[CLEAR_PAGE2]].
+        ; The per-frame tick chain that each movement handler invokes is:
+        ;   JSR CLEAR_DRAW_PAGE  (\$61E4)  --- zero the drawing page
+        ;   JSR TEXT_ROW_DISPATCH (\$636C) --- text-strip restore
+        ;   JSR REFRESH_LEFT_WALL (\$626A) --- left-edge wall
+        ;   JSR REFRESH_RIGHT_WALL (\$61F0) --- right-edge wall
+        ;   JSR GAME_ENGINE_A_STUB_62CA (\$62CA) --- floor-edge background
+        ;   JSR REFRESH_PILLARS (\$62E2)   --- six landmark pillars
+        ;   JSR GAME_ENGINE_A_STUB_6321 (\$6321) --- entity-X redraw loop
+        ; The four playfield-refresh routines at \$61F0, \$626A, \$62E2,
+        ; and (pair-wise) \$62CA/\$6321 have been carved out of this
+        ; blob; only \$62CA and \$6321 still await full RE.
 
         HEX A5 4A C9 01 90 33 A5 4C
         HEX C9 03 F0 12 C9 02 F0 0E
@@ -9445,45 +9478,519 @@ RESTART_DISPATCH:
         HEX 86 4B 20 E4 61 20 6C 63
         HEX 20 F0 61 20 6A 62 4C 90
         HEX 61 24 00 30 04 20 00 04
-        HEX 60 20 A7 04 60 A9 EF 38
-        HEX E5 4A 90 54 C9 2C B0 50
-        HEX 85 59 A0 27 84 2B 84 2C
-        HEX C9 2B F0 34 C9 2A D0 0C
-        HEX 38 E9 02 8D A7 65 38 E9
-        HEX 01 4C 20 62 38 E9 01 8D
-        HEX A7 65 38 E9 02 85 2E C9
-        HEX 27 F0 0D 18 69 01 85 2C
-        HEX 38 E9 02 85 58 4C 4C 62
-        HEX 38 E9 01 85 58 4C 4C 62
-        HEX 38 E9 04 85 58 85 2E 18
-        HEX 69 01 8D A7 65 4C 4C 62
-        HEX 60 A4 4C B9 20 76 85 FF
-        HEX B9 20 75 85 FE 24 00 30
-        HEX 07 20 FE 09 20 4E 05 60
-        HEX 20 4B 0B 20 0B 07 60 A9
-        HEX 11 38 E5 4A 90 3A 85 59
-        HEX A0 00 84 2B A0 FF 84 2C
-        HEX C9 00 F0 1F 38 E9 01 85
-        HEX 2D 8D AB 65 F0 0D 38 E9
-        HEX 01 85 2B 38 E9 02 85 58
-        HEX 4C AC 62 38 E9 03 85 58
-        HEX 4C AC 62 85 2D 8D AB 65
-        HEX 38 E9 04 85 58 4C AC 62
-        HEX 60 A4 4C B9 19 76 85 FF
-        HEX B9 19 75 85 FE 24 00 30
-        HEX 07 20 FE 09 20 4E 05 60
-        HEX 20 4B 0B 20 0B 07 60 A4
-        HEX 4B B9 0E 76 85 FF B9 0E
-        HEX 75 85 FE 24 00 30 04 20
-        HEX C8 08 60 20 DF 08 60 A2
-        HEX 05 B5 60 38 E5 4A 90 0E
-        HEX C9 2B B0 0A 85 59 38 E9
-        HEX 04 85 58 4C FD 62 CA 10
-        HEX E8 60 86 5C A4 4C B9 00
-        HEX 76 85 FF B9 00 75 85 FE
-        HEX 24 00 30 08 20 4E 05 A6
-        HEX 5C 4C F9 62 20 0B 07 4C
-        HEX 12 63 CA 10 03 60 A6 41
+        HEX 60 20 A7 04 60
+@
+
+\section{Right-edge wall refresh}
+
+[[REFRESH_RIGHT_WALL]] at [[$61F0]] is the first of three
+\emph{playfield-refresh} routines carved out of the game-engine-A
+blob: each per-frame tick call restores the text-area stripe beneath
+the wall and re-paints a perspective-band sprite on top, so moving
+sprites (player, enemies, projectiles) leave no trails.  The paired
+[[INTERLACE_RESTORE_P1]]/[[INTERLACE_BLIT_P1]] (respectively the
+page-2 twins) are called back-to-back, gated on [[ZP_PAGE_FLAG]].
+
+\paragraph{World-position gate.}  The routine is a no-op unless the
+player is near the \emph{right} edge of the world.  With
+[[ZP_PLAYER_Y]] ([[$4A]]) as the 8-bit player world-Y (valid range
+[[$00]]--[[$EF]]), the on-screen column of the right wall is
+$\Delta=\mathtt{\$EF}-[\mathtt{\$4A}]$.  If $\Delta<0$ (player-Y
+past [[$EF]]) or $\Delta\ge\mathtt{\$2C}$ (player-Y [[<=\$C3]]) the
+routine RTSes without painting.  Otherwise $\Delta$ is the on-screen
+column where the wall should appear.
+
+\paragraph{Four column-range cases.}  Having computed $\Delta$, the
+routine picks one of four cases based on exact value, and updates
+both [[HUD_LIVES_COL]] ([[$65A7]]) --- the shared right-bound
+variable read by [[BEAM_UPDATE]] --- and the restore/blit column
+bounds:
+
+\begin{itemize}
+\item $\Delta=\mathtt{\$2B}$ (wall just entering from the right):
+      [[HUD_LIVES_COL]] $\gets\mathtt{\$2C}$ ([[$2B]]+[[$01]]),
+      [[ZP_CLEAR_COL]] $\gets\mathtt{\$27}$ ([[$2B]]-[[$04]]),
+      [[ZP_BLIT_X_END]] $\gets\mathtt{\$27}$,
+      [[ZP_SCORE_0]]/[[ZP_SCORE_1]] both $\gets\mathtt{\$27}$
+      (narrow restore strip at col~39).
+\item $\Delta=\mathtt{\$2A}$ (wall almost on-screen):
+      [[HUD_LIVES_COL]] $\gets\mathtt{\$28}$ ($\Delta-\mathtt{\$02}$),
+      [[ZP_CLEAR_COL]] $\gets\mathtt{\$27}$,
+      [[ZP_SCORE_1]]/[[ZP_BLIT_X_END]] per the ``= [[$27]]'' branch
+      at [[$622C]]--[[$6238]].
+\item All other valid $\Delta$ (not [[$2B]], not [[$2A]]):
+      [[HUD_LIVES_COL]] $\gets\Delta-\mathtt{\$01}$,
+      [[ZP_CLEAR_COL]] $\gets\Delta-\mathtt{\$02}$, then
+      [[ZP_SCORE_1]] $\gets\Delta-\mathtt{\$01}$ and
+      [[ZP_BLIT_X_END]] $\gets\Delta-\mathtt{\$03}$ (``paint one
+      column, restore a one-column strip'').
+\item The [[ZP_SCORE_0]]/[[ZP_SCORE_1]] terminator pair starts at
+      [[$27]]/[[$27]] (both equal --- restore no-op), and the
+      branches above adjust [[ZP_SCORE_1]] to widen the strip when
+      the wall straddles multiple columns.
+\end{itemize}
+
+\paragraph{Shared tail.}  All four cases fall through to [[$624C]],
+the shared three-instruction tail that loads the wall sprite pointer
+from the level-data tables at [[$7520]] (lo) and [[$7620]] (hi)
+indexed by [[$4C]] (the walking-animation / X-reference slot), then
+page-gates the paired restore+blit on [[ZP_PAGE_FLAG]].
+
+<<playfield refresh defines>>=
+
+; --- Sprite-pointer tables for the three playfield-refresh routines ---
+; All three tables live in the level-data region $7500-$76FF.  Each
+; table is indexed by ZP $4C (the walking-animation / X-reference slot,
+; initialized to $02 by INIT_LEVEL_STATE and cycled through $02..$07
+; by PLAYER_TICK_MOVE_LEFT/RIGHT).  The lo-byte table is at page $75
+; and the hi-byte table is at page $76 at the same offset.
+PILLAR_SPR_LO   = $7500         ; REFRESH_PILLARS sprite ptr, low byte
+PILLAR_SPR_HI   = $7600         ; REFRESH_PILLARS sprite ptr, high byte
+WALL_L_SPR_LO   = $7519         ; REFRESH_LEFT_WALL sprite ptr, low byte
+WALL_L_SPR_HI   = $7619         ; REFRESH_LEFT_WALL sprite ptr, high byte
+WALL_SPR_LO     = $7520         ; REFRESH_RIGHT_WALL sprite ptr, low byte
+WALL_SPR_HI     = $7620         ; REFRESH_RIGHT_WALL sprite ptr, high byte
+
+@
+
+<<refresh right wall>>=
+
+        ORG $61F0
+REFRESH_RIGHT_WALL:
+        SUBROUTINE
+        ; Per-frame refresh of the right-edge playfield wall.  Called
+        ; once per tick by PLAYER_TICK_IDLE / PLAYER_TICK_MOVE_RIGHT
+        ; from game-engine-A.  Paints a wall sprite at screen column
+        ; ($EF - ZP_PLAYER_Y) when that falls in [$00..$2B]; no-op
+        ; otherwise.  Updates HUD_LIVES_COL (the playfield right bound
+        ; read by BEAM_UPDATE) and the INTERLACE_RESTORE/INTERLACE_BLIT
+        ; column-bounds scratch in ZP.
+        ;
+        ; Inputs:
+        ;   ZP_PLAYER_Y     ($4A) --- player world-Y ($00..$EF).
+        ;   ZP_PAGE_FLAG    ($00) --- drawing-page selector (BMI = page 2).
+        ;   $4C                   --- sprite-pointer index into the
+        ;                             $7520/$7620 wall-animation tables.
+        ;   WALL_SPR_LO/HI at $7520/$7620 --- per-frame sprite pointers.
+        ;
+        ; Behavior:
+        ;   Compute \Delta = $EF - ZP_PLAYER_Y.  If \Delta overflowed
+        ;   or \Delta >= $2C, RTS.  Otherwise store \Delta as the blit
+        ;   rightmost paint column (ZP_BLIT_X_START), seed
+        ;   ZP_SCORE_0/ZP_SCORE_1 both to $27 (restore no-op), then:
+        ;     \Delta == $2B      \to  narrow-strip case ($623B branch)
+        ;     \Delta == $2A      \to  edge-case ($620B branch)
+        ;     else               \to  general case ($6217 branch)
+        ;   Each case writes HUD_LIVES_COL, ZP_CLEAR_COL, ZP_BLIT_X_END,
+        ;   and (sometimes) ZP_SCORE_1, then falls through to the
+        ;   shared tail at $624C.
+        ;
+        ;   Shared tail ($624C-$6269): LDY $4C; load sprite pointer
+        ;   from $7520/$7620 into ZP_BLIT_SRC; BIT ZP_PAGE_FLAG; if
+        ;   positive, JSR INTERLACE_RESTORE_P1 + JSR INTERLACE_BLIT_P1;
+        ;   if negative, JSR INTERLACE_RESTORE_P2 + JSR INTERLACE_BLIT_P2.
+        ;
+        ; Modifies:
+        ;   ZP_BLIT_X_START ($59), ZP_BLIT_X_END ($58),
+        ;   ZP_BLIT_SRC ($FE/$FF),
+        ;   ZP_SCORE_0 ($2B), ZP_SCORE_1 ($2C), ZP_CLEAR_COL ($2E),
+        ;   HUD_LIVES_COL ($65A7),
+        ;   hi-res page 1/2 framebuffer (via the paired RESTORE+BLIT).
+        ; Clobbers: A, X, Y
+
+; --- World-position gate: compute \Delta = $EF - ZP_PLAYER_Y ---
+        LDA #$EF                        ; $61F0
+        SEC                             ; $61F2
+        SBC ZP_PLAYER_Y                 ; $61F3: A = $EF - player-Y
+        BCC .exit                       ; $61F5: underflow -> off-screen
+        CMP #$2C                        ; $61F7
+        BCS .exit                       ; $61F9: \Delta >= $2C -> off-screen
+        STA ZP_BLIT_X_START             ; $61FB: \Delta = rightmost paint col
+        LDY #$27                        ; $61FD: seed restore range at col 39
+        STY ZP_SCORE_0                  ; $61FF: (inclusive col start)
+        STY ZP_SCORE_1                  ; $6201: (== start -> restore no-op)
+
+; --- Dispatch: exact-match edge cases vs general case ---
+        CMP #$2B                        ; $6203: wall just entering?
+        BEQ .edge_2B                    ; $6205
+        CMP #$2A                        ; $6207: one column in from edge?
+        BNE .general                    ; $6209
+
+; --- Case \Delta == $2A: narrow edge, offset by 2/1 ---
+        SEC                             ; $620B
+        SBC #$02                        ; $620C
+        STA HUD_LIVES_COL               ; $620E: right-bound = \Delta-2
+        SEC                             ; $6211
+        SBC #$01                        ; $6212: A = \Delta-3
+        JMP .store_clear_col            ; $6214 -> $6220
+
+; --- Case general: HUD_LIVES_COL = \Delta-1 ---
+.general:
+        SEC                             ; $6217
+        SBC #$01                        ; $6218
+        STA HUD_LIVES_COL               ; $621A: right-bound = \Delta-1
+        SEC                             ; $621D
+        SBC #$02                        ; $621E: A = \Delta-3
+
+; --- Store ZP_CLEAR_COL, then branch on (\Delta-3) == $27 ---
+.store_clear_col:
+        STA ZP_CLEAR_COL                ; $6220
+        CMP #$27                        ; $6222: at col 39?
+        BEQ .one_col_strip              ; $6224
+        CLC                             ; $6226
+        ADC #$01                        ; $6227: A = \Delta-2
+        STA ZP_SCORE_1                  ; $6229: widen restore strip
+        SEC                             ; $622B
+        SBC #$02                        ; $622C
+        STA ZP_BLIT_X_END               ; $622E: left terminator = \Delta-4
+        JMP .shared_tail                ; $6230
+
+.one_col_strip:
+        SEC                             ; $6233
+        SBC #$01                        ; $6234: A = \Delta-4
+        STA ZP_BLIT_X_END               ; $6236
+        JMP .shared_tail                ; $6238
+
+; --- Case \Delta == $2B: narrowest strip at the far right ---
+.edge_2B:
+        SEC                             ; $623B
+        SBC #$04                        ; $623C: A = $27
+        STA ZP_BLIT_X_END               ; $623E
+        STA ZP_CLEAR_COL                ; $6240
+        CLC                             ; $6242
+        ADC #$01                        ; $6243: A = $28
+        STA HUD_LIVES_COL               ; $6245: right-bound = $28 (off-screen by 1)
+        JMP .shared_tail                ; $6248
+
+.exit:
+        RTS                             ; $624B
+
+; --- Shared tail: load sprite pointer, page-gate, call RESTORE+BLIT ---
+.shared_tail:
+        LDY $4C                         ; $624C: sprite-animation index
+        LDA WALL_SPR_HI,Y               ; $624E: $7620,Y -> ZP_BLIT_SRC+1
+        STA ZP_BLIT_SRC+1
+        LDA WALL_SPR_LO,Y               ; $6253: $7520,Y -> ZP_BLIT_SRC
+        STA ZP_BLIT_SRC
+        BIT ZP_PAGE_FLAG                ; $6258
+        BMI .page2                      ; $625A: page 2 path
+        JSR INTERLACE_RESTORE_P1        ; $625C
+        JSR INTERLACE_BLIT_P1           ; $625F
+        RTS                             ; $6262
+.page2:
+        JSR INTERLACE_RESTORE_P2        ; $6263
+        JSR INTERLACE_BLIT_P2           ; $6266
+        RTS                             ; $6269
+@ %def REFRESH_RIGHT_WALL
+
+\section{Left-edge wall refresh}
+
+[[REFRESH_LEFT_WALL]] at [[$626A]] is the mirror of
+[[REFRESH_RIGHT_WALL]] for the \emph{left} edge of the world.  The
+world-position gate fires when $\Delta=\mathtt{\$11}-[\mathtt{\$4A}]$
+is non-negative (i.e.\ [[ZP_PLAYER_Y]] $\le\mathtt{\$11}$).  The
+routine updates [[HUD_SCORE_COL]] ([[$65AB]]) --- the playfield
+\emph{left} bound --- and the matching [[INTERLACE_RESTORE]]/
+[[INTERLACE_BLIT]] column bounds.
+
+The column range computation is a three-case dispatch with the
+symmetrically opposite polarity from the right-edge routine:
+[[ZP_SCORE_0]] is seeded to [[$00]] and [[ZP_SCORE_1]] to [[$FF]]
+(so the restore strip has a high terminator beyond the playable
+area), and [[ZP_SCORE_2]] / [[HUD_SCORE_COL]] get the computed left
+bound.
+
+\paragraph{Shared tail.}  At [[$62AC]] the routine loads the wall
+sprite pointer from the level-data tables at [[$7519]] (lo) /
+[[$7619]] (hi) indexed by [[$4C]], then page-gates the paired
+[[INTERLACE_RESTORE]] + [[INTERLACE_BLIT]] call on [[ZP_PAGE_FLAG]].
+The [[$7519]]/[[$7619]] table is immediately before the [[$7520]]/
+[[$7620]] table used by the right-wall path; the [[$07]]-byte offset
+between them suggests two adjacent animation-frame banks in the same
+level-data region.
+
+<<refresh left wall>>=
+
+        ORG $626A
+REFRESH_LEFT_WALL:
+        SUBROUTINE
+        ; Per-frame refresh of the left-edge playfield wall.  Mirror
+        ; of REFRESH_RIGHT_WALL: paints a wall sprite at screen column
+        ; ($11 - ZP_PLAYER_Y) when player-Y is near the left edge
+        ; (ZP_PLAYER_Y <= $11); no-op otherwise.  Updates HUD_SCORE_COL
+        ; (the playfield left bound read by BEAM_UPDATE).
+        ;
+        ; Inputs:
+        ;   ZP_PLAYER_Y     ($4A) --- player world-Y ($00..$EF).
+        ;   ZP_PAGE_FLAG    ($00) --- drawing-page selector (BMI = page 2).
+        ;   $4C                   --- sprite-pointer index into the
+        ;                             $7519/$7619 wall-animation tables.
+        ;   WALL_L_SPR_LO/HI at $7519/$7619 --- per-frame sprite pointers.
+        ;
+        ; Behavior:
+        ;   Compute \Delta = $11 - ZP_PLAYER_Y.  If \Delta < 0, RTS.
+        ;   Otherwise store \Delta as ZP_BLIT_X_START, seed
+        ;   ZP_SCORE_0 = $00 and ZP_SCORE_1 = $FF (restore terminator
+        ;   past playable area), then dispatch on \Delta:
+        ;     \Delta == $00           \to  $629E branch (1-col wide)
+        ;     \Delta == $01 (via BEQ) \to  $6296 branch
+        ;     else                    \to  general branch
+        ;   Each case writes HUD_SCORE_COL, ZP_SCORE_2, ZP_BLIT_X_END,
+        ;   and (sometimes) ZP_SCORE_0, then falls through to the
+        ;   shared tail at $62AC.
+        ;
+        ;   Shared tail ($62AC-$62C9): same shape as REFRESH_RIGHT_WALL,
+        ;   but the sprite pointer is loaded from $7519/$7619 (indexed
+        ;   by $4C), and the paired RESTORE/BLIT is selected on
+        ;   ZP_PAGE_FLAG.
+        ;
+        ; Modifies:
+        ;   ZP_BLIT_X_START ($59), ZP_BLIT_X_END ($58),
+        ;   ZP_BLIT_SRC ($FE/$FF),
+        ;   ZP_SCORE_0 ($2B), ZP_SCORE_1 ($2C), ZP_SCORE_2 ($2D),
+        ;   HUD_SCORE_COL ($65AB),
+        ;   hi-res page 1/2 framebuffer (via the paired RESTORE+BLIT).
+        ; Clobbers: A, X, Y
+
+; --- World-position gate: compute \Delta = $11 - ZP_PLAYER_Y ---
+        LDA #$11                        ; $626A
+        SEC                             ; $626C
+        SBC ZP_PLAYER_Y                 ; $626D: A = $11 - player-Y
+        BCC .exit                       ; $626F: underflow -> off-screen
+        STA ZP_BLIT_X_START             ; $6271: \Delta = rightmost paint col
+        LDY #$00                        ; $6273
+        STY ZP_SCORE_0                  ; $6275: (inclusive col start = 0)
+        LDY #$FF                        ; $6277
+        STY ZP_SCORE_1                  ; $6279: (high terminator = $FF)
+
+; --- Dispatch on \Delta exact match ---
+        CMP #$00                        ; $627B: at the extreme left?
+        BEQ .delta_zero                 ; $627D
+
+; --- Case \Delta != 0: general ---
+        SEC                             ; $627F
+        SBC #$01                        ; $6280
+        STA ZP_SCORE_2                  ; $6282
+        STA HUD_SCORE_COL               ; $6284: left-bound = \Delta-1
+        BEQ .delta_one                  ; $6287: was \Delta==1?
+        SEC                             ; $6289
+        SBC #$01                        ; $628A: A = \Delta-2
+        STA ZP_SCORE_0                  ; $628C: widen restore strip from $00
+        SEC                             ; $628E
+        SBC #$02                        ; $628F: A = \Delta-4
+        STA ZP_BLIT_X_END               ; $6291
+        JMP .shared_tail                ; $6293
+
+.delta_one:
+        SEC                             ; $6296
+        SBC #$03                        ; $6297: A = \Delta-4 = -3 (wraps)
+        STA ZP_BLIT_X_END               ; $6299
+        JMP .shared_tail                ; $629B
+
+; --- Case \Delta == 0: wall at col 0 ---
+.delta_zero:
+        STA ZP_SCORE_2                  ; $629E (A was 0)
+        STA HUD_SCORE_COL               ; $62A0: left-bound = $00
+        SEC                             ; $62A3
+        SBC #$04                        ; $62A4: A = $FC (-4)
+        STA ZP_BLIT_X_END               ; $62A6
+        JMP .shared_tail                ; $62A8
+
+.exit:
+        RTS                             ; $62AB
+
+; --- Shared tail: load sprite pointer, page-gate, call RESTORE+BLIT ---
+.shared_tail:
+        LDY $4C                         ; $62AC: sprite-animation index
+        LDA WALL_L_SPR_HI,Y             ; $62AE: $7619,Y -> ZP_BLIT_SRC+1
+        STA ZP_BLIT_SRC+1
+        LDA WALL_L_SPR_LO,Y             ; $62B3: $7519,Y -> ZP_BLIT_SRC
+        STA ZP_BLIT_SRC
+        BIT ZP_PAGE_FLAG                ; $62B8
+        BMI .page2                      ; $62BA: page 2 path
+        JSR INTERLACE_RESTORE_P1        ; $62BC
+        JSR INTERLACE_BLIT_P1           ; $62BF
+        RTS                             ; $62C2
+.page2:
+        JSR INTERLACE_RESTORE_P2        ; $62C3
+        JSR INTERLACE_BLIT_P2           ; $62C6
+        RTS                             ; $62C9
+@ %def REFRESH_LEFT_WALL
+
+<<game engine A middle>>=
+
+        ORG $62CA
+        SUBROUTINE
+        ; Game-engine-A middle slice (\$62CA-\$62E1, 24 bytes): still
+        ; awaiting full RE.  The routine at \$62CA is a third
+        ; playfield-refresh callee, but unlike its neighbors it does
+        ; NOT call INTERLACE_BLIT/INTERLACE_RESTORE --- instead it uses
+        ; ROW_PAINT_P1_38 / ROW_PAINT_P2_38 at \$08C8/\$08DF (38-column
+        ; text-row paint helpers).  Sprite pointer loaded from
+        ; \$750E/\$760E indexed by \$4B.
+
+        HEX A4 4B B9 0E 76 85 FF B9
+        HEX 0E 75 85 FE 24 00 30 04
+        HEX 20 C8 08 60 20 DF 08 60
+@
+
+\section{Landmark-pillar refresh}
+
+[[REFRESH_PILLARS]] at [[$62E2]] is the third
+[[INTERLACE_BLIT]]-calling playfield-refresh routine.  It iterates
+through a 6-slot table at ZP [[$60]]--[[$65]] of fixed world-Y
+pillar positions; for each entry it checks whether the pillar's
+screen column ($\Delta=[\mathtt{\$60,X}]-[\mathtt{\$4A}]$) is
+on-screen (in [[$00..$2A]]) and, if so, paints a 4-column-wide
+pillar sprite centred at that column.
+
+Unlike [[REFRESH_LEFT_WALL]] and [[REFRESH_RIGHT_WALL]], this
+routine does \emph{not} call [[INTERLACE_RESTORE]] --- each loop
+iteration writes sprite pixels without first repainting the text-
+strip beneath.  The wall routines need the restore because their
+sprite may partially overlap [[BEAM_UPDATE]]'s tracer-drawing area;
+the pillars are always well inside the playable column range, so
+[[CLEAR_DRAW_PAGE]]'s page-zero pass has already cleaned the
+background for them.
+
+\paragraph{Sprite-pointer table.}  The per-frame sprite is loaded
+from [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]] ([[$7500]]/[[$7600]])
+indexed by [[$4C]] (the walking-animation / X-reference slot, same
+as the wall routines).  Each loaded sprite is then used for
+\emph{all six} slots in a single pass --- the loop reloads
+[[ZP_BLIT_SRC]] inside the outer per-slot gate, but the 4-column
+width produces the same artwork at each of the 6 screen columns.
+
+\paragraph{Sprite artwork.}  Figure~\ref{fig:playfield-refresh}
+renders frames [[$02]]--[[$07]] of all three tables.  The PILLAR
+table (row~1) holds a classical Greek-style ornamental column with a
+stepped capital, a shaft with fluting, and a base plinth; the
+walking-animation frames cycle palette bit, rotating the pillar's
+colour through violet/green on odd frames and blue/orange on even
+frames (this is exactly the NTSC palette-bit trick Drol uses
+everywhere for ``flicker-free'' animated artwork).  The WALL\_L and
+WALL\_R tables (rows~2--3) hold T-shaped ``torches'' or light-fixture
+sprites for the left and right edges of the world.  Frame [[$07]]
+runs past the 4-column stride boundary for PILLAR and WALL\_R (the
+table stride changes to [[$28]] bytes per entry starting at
+index~[[$08]]), so its decoded bytes partially overlap the next
+table and render as garbage --- in practice the walking-animation
+state machine at [[PLAYER_TICK_MOVE_LEFT]]/\texttt{\_MOVE\_RIGHT}
+clamps [[$4C]] to [[$02]]--[[$07]], which suggests index~[[$07]]
+may represent a shorter 1-column sprite variant rather than a
+genuine 4-column frame.
+
+\begin{figure}
+\centering
+\includegraphics[width=0.8\textwidth]{images/playfield_refresh_sprites.png}
+\caption{Sprite artwork consumed by the three playfield-refresh
+routines: [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]] ([[REFRESH_PILLARS]]),
+[[WALL_L_SPR_LO]]/[[WALL_L_SPR_HI]] ([[REFRESH_LEFT_WALL]]),
+[[WALL_R_SPR_LO]]/[[WALL_R_SPR_HI]] ([[REFRESH_RIGHT_WALL]]).  Each
+tile is a 4-column $\times$ 35-row column-major sprite decoded to
+band~0 of hi-res page~1.  Columns are the frame index stored in
+[[$4C]] (the walking-animation slot, range [[$02]]--[[$07]]).  See
+also Figure~\ref{fig:interlace-blit-demo} for how the single-band
+artwork is replicated into the 3-band perspective playfield.}
+\label{fig:playfield-refresh}
+\end{figure}
+
+\paragraph{The six slots at $60$--$65$.}  ZP [[$60]]--[[$65]] are
+never written by any code in [[drol.bin]] or [[level1.bin]]; they
+are either left-over from post-boot ZP state or set by one of the
+level-data overlays during setup.  Functionally they define six
+world-Y landmark positions where the pillar sprite should appear;
+each loop iteration paints at most one pillar, and invalid slots
+(where [[$\Delta < 0$]] or [[$\Delta \ge \$2B$]]) are skipped.
+
+<<refresh pillars>>=
+
+        ORG $62E2
+REFRESH_PILLARS:
+        SUBROUTINE
+        ; Per-frame refresh of 6 fixed-position pillar sprites.  For
+        ; each of the 6 world-Y slots at ZP $60..$65, paint a
+        ; 4-column-wide pillar sprite at screen column
+        ;     \Delta = [$60,X] - ZP_PLAYER_Y
+        ; when \Delta is in [$00..$2A].  No INTERLACE_RESTORE --- the
+        ; per-frame CLEAR_DRAW_PAGE pass has already zeroed the
+        ; drawing page.
+        ;
+        ; Inputs:
+        ;   ZP_PLAYER_Y  ($4A) --- player world-Y.
+        ;   ZP_PAGE_FLAG ($00) --- drawing-page selector (BMI = page 2).
+        ;   $4C                --- sprite-pointer index.
+        ;   $60..$65           --- 6 world-Y landmark positions.
+        ;   PILLAR_SPR_LO/HI at $7500/$7600 --- sprite-pointer tables.
+        ;
+        ; Behavior:
+        ;   X := 5; loop:
+        ;     \Delta := [$60,X] - ZP_PLAYER_Y
+        ;     if \Delta < 0 or \Delta >= $2B, skip paint.
+        ;     else store \Delta as ZP_BLIT_X_START, set
+        ;         ZP_BLIT_X_END := \Delta - 4 (4-column-wide paint),
+        ;         save X in $5C, load sprite pointer from
+        ;         $7500/$7600[$4C] into ZP_BLIT_SRC, BIT ZP_PAGE_FLAG,
+        ;         JSR INTERLACE_BLIT_P1 or P2, reload X from $5C.
+        ;     X := X - 1; if X >= 0, loop.
+        ;
+        ; Modifies:
+        ;   ZP_BLIT_X_START ($59), ZP_BLIT_X_END ($58),
+        ;   ZP_BLIT_SRC ($FE/$FF), $5C (loop-index save),
+        ;   hi-res page 1/2 framebuffer (via INTERLACE_BLIT_P*).
+        ; Clobbers: A, X, Y
+
+        LDX #$05                        ; $62E2: start at top slot
+.slot_loop:
+        LDA $60,X                       ; $62E4: world-Y of pillar slot X
+        SEC                             ; $62E6
+        SBC ZP_PLAYER_Y                 ; $62E7: A = world-Y - player-Y
+        BCC .next                       ; $62E9: slot behind player -> skip
+        CMP #$2B                        ; $62EB: slot off right edge?
+        BCS .next                       ; $62ED
+        STA ZP_BLIT_X_START             ; $62EF: rightmost paint col
+        SEC                             ; $62F1
+        SBC #$04                        ; $62F2: left terminator = \Delta-4
+        STA ZP_BLIT_X_END               ; $62F4
+        JMP .paint                      ; $62F6 -> $62FD
+.next:
+        DEX                             ; $62F9
+        BPL .slot_loop                  ; $62FA
+        RTS                             ; $62FC
+
+; --- Paint: save X, load sprite ptr, page-gate, JSR BLIT ---
+.paint:
+        STX $5C                         ; $62FD: save loop index
+        LDY $4C                         ; $62FF: sprite-animation index
+        LDA PILLAR_SPR_HI,Y             ; $6301: $7600,Y -> ZP_BLIT_SRC+1
+        STA ZP_BLIT_SRC+1
+        LDA PILLAR_SPR_LO,Y             ; $6306: $7500,Y -> ZP_BLIT_SRC
+        STA ZP_BLIT_SRC
+        BIT ZP_PAGE_FLAG                ; $630B
+        BMI .page2                      ; $630D
+        JSR INTERLACE_BLIT_P1           ; $630F
+.paint_resume:
+        LDX $5C                         ; $6312: restore loop index
+        JMP .next                       ; $6314 -> $62F9
+.page2:
+        JSR INTERLACE_BLIT_P2           ; $6317
+        JMP .paint_resume               ; $631A -> $6312 (shared tail)
+@ %def REFRESH_PILLARS
+
+<<game engine A tail>>=
+
+        ORG $631D
+        SUBROUTINE
+        ; Game-engine-A tail (\$631D-\$64CA, 430 bytes): the three-
+        ; byte loop-tail that services the routine at \$6321 (an
+        ; entity-column redraw loop that patches SMC operands at
+        ; \$6662/\$6663), followed by the text-row dispatch at
+        ; \$636C, and the movement handlers DO_ASCEND (\$6378),
+        ; DO_DESCEND (\$63B4), DO_MOVE_RIGHT (\$6409),
+        ; DO_MOVE_LEFT (\$646D), and the direction-state tails at
+        ; \$64AA/\$64BE/\$64C8.  All still awaiting full RE.
+
+        HEX CA 10 03 60 A6 41
         HEX B5 66 38 E5 4A 90 F3 C9
         HEX 2F B0 EF 85 5D 38 E9 08
         HEX A0 07 84 56 A0 05 84 57
@@ -9566,7 +10073,7 @@ that live inside the \texttt{<<game engine A>>} hex blob at
   (mod~12, stepping by~-2) and [[$4C]] ([[$07]]/[[$08]]/[[$FE]] transitions), then  % TODO-SYM: $FE
   \texttt{JMP} into the middle of the per-frame update chain so the
   same 7 routines run (in a slightly reshuffled order that swaps
-  [[$61F0]] and [[$626A]]).  % TODO-SYM: $61F0 $626A
+  [[REFRESH_RIGHT_WALL]] and [[REFRESH_LEFT_WALL]]).
 \end{itemize}
 
 \paragraph{Who writes ZP\_MOVE\_DIR.}  [[$04]] is set to [[$01]] (moving
@@ -14112,8 +14619,20 @@ RESCUE_UPDATE:
 <<input process>>
 ; --- ORG $6138: Display page flip ---
 <<display page flip>>
-; --- ORG $614B: Game engine A ---
-<<game engine A>>
+; --- ORG $614B: Game engine A (movement-tick handlers, prologue) ---
+<<game engine A prologue>>
+; --- ORG $61F0: Playfield-refresh sprite-pointer tables ---
+<<playfield refresh defines>>
+; --- ORG $61F0: Right-edge wall refresh ---
+<<refresh right wall>>
+; --- ORG $626A: Left-edge wall refresh ---
+<<refresh left wall>>
+; --- ORG $62CA: Game engine A middle (awaiting RE) ---
+<<game engine A middle>>
+; --- ORG $62E2: Landmark-pillar refresh ---
+<<refresh pillars>>
+; --- ORG $631D: Game engine A tail (entity redraw + movement handlers, awaiting RE) ---
+<<game engine A tail>>
 ; --- ORG $64CB: Player movement tick dispatcher ---
 <<player move tick defines>>
 <<player move tick>>

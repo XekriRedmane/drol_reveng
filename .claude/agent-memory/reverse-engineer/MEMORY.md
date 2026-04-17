@@ -15,3 +15,4 @@
 - [Drol INTERLACE_BLIT routines](drol-interlace-blit.md) — $054E/$070B 3-band perspective sprite blitter; $FE/$FF src pointer, $58/$59 col bounds; 35 bytes/col column-major source
 - [DRAW_SPRITE W+1 bytes/row](drol-draw-sprite-w-plus-1.md) — ZP_SPRITE_W is W-1 bytes/row; the BPL loop runs W+1 iterations not W
 - [Level-1 extraction from drol.dsk](drol-level-data-extraction.md) — extract_level1.py replays loader phase-0 to produce reference/level1.bin for sprite art in $8C00-$BDFF
+- [Drol playfield-refresh routines](drol-playfield-refresh.md) — $61F0/$626A REFRESH_RIGHT_WALL/REFRESH_LEFT_WALL update HUD_LIVES_COL/HUD_SCORE_COL; $62E2 REFRESH_PILLARS is a no-op (slots never written)

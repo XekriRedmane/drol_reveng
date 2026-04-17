@@ -1,5 +1,58 @@
 # TODO
 
+## Milestone: `INTERLACE_RESTORE_P1/P2` carved; `INTERLACE_FILL_P1/P2` verified complete (2026-04-17)
+
+Confirmed the primary target `INTERLACE_FILL_P1` ($0A0F) and
+`INTERLACE_FILL_P2` ($0B5C) were already fully carved in the
+preceding `CLEAR_PAGE1/CLEAR_PAGE2` session (commit `40a2421`):
+each is a 315-byte unrolled row-broadcast painter that writes A
+across 105 interlaced hi-res rows at column X (3 bands of 35 rows:
+rows 72-106 / 112-146 / 152-186 of pages 1/2 respectively, in
+strict-twin form with only $20 added to each STA operand's high
+byte).  Inputs: A (paint byte), X (column $00..$27); clobbers:
+none.  Used by `CLEAR_PAGE1/CLEAR_PAGE2` (per outer-loop
+iteration with A=$00) and by the `INTERLACE_RESTORE` helpers
+described below (one byte per column, from the $0300 buffer).
+
+Carved this session:
+
+- **`INTERLACE_RESTORE_P1`** at `$09FE` (16 bytes): loops X from
+  `ZP_SCORE_0` ($2B) down to `ZP_SCORE_1+1` ($2C), loading the
+  text-buffer byte at $0300,X and calling `INTERLACE_FILL_P1` to
+  broadcast it across 105 interlaced rows per column.  Replaces
+  the trailing 17 HEX bytes of `<<game code 03A8>>`.
+- **`INTERLACE_RESTORE_P2`** at `$0B4B` (16 bytes): page-2 twin;
+  replaces the `<<game code 0B4B>>` HEX stub.  Byte-for-byte
+  identical to P1 except the inner JSR targets `INTERLACE_FILL_P2`.
+
+Both restore helpers are called from three sibling-paired sites in
+the game engine A region ($625C, $62BC, $630F area), always as the
+non-negative-ZP-flag branch of `BIT $00; BMI`; the page-2 variants
+are the `BMI` targets ($6263, $62C3).  Each pair is
+`INTERLACE_RESTORE_PN + STRIPE_COPY_PAGEN` = "restore the score-HUD
+text strip at columns $2B..$2C, then copy a new playfield stripe
+from ($FE) into columns $58..$59" --- the full 2-step screen refresh
+used during player-sprite redraws and level-transition repaints.
+The paired bounds explain why the four HUD score slots at $2B-$2E
+double as two (low, high) column-range pairs: $2B/$2C for the
+score-strip restore, $2D/$2E for the main playfield clear.
+
+**Byte count retired from `<<game code 03A8>>`:** 17 bytes (blob
+now covers $054E-$09FD, 1200 bytes; was $054E-$0A0E, 1217 bytes).
+The blob still contains `STRIPE_COPY_PAGE1/PAGE2` at $054E/$070B
+(two 445-byte streaming 3-band perspective-floor painters),
+`ROW_PAINT_P1_38/P2_38` at $08C8/$08DF (two 23-byte row-4
+painters), and `TEXT_ROW_FROM_A30D_P1/P2` at $08F6/$097A (two
+132-byte text-row painters from the fixed $A30D source).  Improved
+the blob's intro comment with the newly-understood streaming-3-band
+semantics of the `STRIPE_COPY` pair (each source byte from
+`($FE),Y` paints the same relative row in all three perspective
+bands --- a streaming analogue of `INTERLACE_FILL`'s constant A
+broadcast).  Chunk `<<game code 0B4B>>` is retired.
+
+No PNG: this session's new routines are framebuffer plumbing, not
+displayable art.
+
 ## Milestone: `$4713-$47FF` identified as dead sector-image residue (2026-04-17)
 
 The 237-byte HEX blob at `$4713-$47FF` --- previously labelled

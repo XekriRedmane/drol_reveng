@@ -5391,13 +5391,18 @@ CLEAR_PAGE2_TEXT_ENTRY:
 
         ORG $054E
         SUBROUTINE
-        ; Hi-res framebuffer library middle ($054E-$0A0E, 1217 bytes).
-        ; Contains STRIPE_COPY_PAGE1/PAGE2 at $054E/$070B, the two
-        ; ROW_PAINT_P1_38/P2_38 painters at $08C8/$08DF, the
-        ; TEXT_ROW_FROM_A30D_P1/P2 helpers at $08F6/$097A, and
-        ; INTERLACE_RESTORE_P1 at $09FE (which calls INTERLACE_FILL_P1
-        ; at $0A0F, carved as its own chunk below).  Still awaiting
-        ; full carve-out.
+        ; Hi-res framebuffer library middle ($054E-$09FD, 1200 bytes).
+        ; Contains STRIPE_COPY_PAGE1/PAGE2 at $054E/$070B (streaming
+        ; versions of INTERLACE_FILL that pull source bytes from
+        ; ($FE),Y instead of broadcasting A; each $FE-sourced byte paints
+        ; the SAME relative row in all three perspective bands, making
+        ; the pair a 3-band perspective-floor painter), the two
+        ; ROW_PAINT_P1_38/P2_38 painters at $08C8/$08DF, and the
+        ; TEXT_ROW_FROM_A30D_P1/P2 helpers at $08F6/$097A.  The two
+        ; INTERLACE_RESTORE helpers at $09FE / $0B4B are carved out
+        ; as their own chunks below.  STRIPE_COPY_PAGE1/PAGE2 and the
+        ; four ROW_PAINT / TEXT_ROW helpers are still awaiting full
+        ; carve-out (each is still hex-dumped inside this chunk).
 
         HEX A0 00 A6 59 E0 28 90 08
         HEX 98 18 69 23 A8 4C 02 07
@@ -5549,10 +5554,63 @@ CLEAR_PAGE2_TEXT_ENTRY:
         HEX 49 9D 8C 4D 9D 8C 51 9D
         HEX 8C 55 9D 8C 59 9D 8C 5D
         HEX C8 CA 30 03 4C 7E 09 60
-        HEX A6 2B E4 2C D0 01 60 BD
-        HEX 00 03 20 0F 0A CA 4C 00
-        HEX 0A
 @
+
+<<interlace restore p1>>=
+
+        ORG $09FE
+INTERLACE_RESTORE_P1:
+        SUBROUTINE
+        ; Page-1 text-strip restore: repaint the column range
+        ; [[[ZP_SCORE_0] .. [ZP_SCORE_1]+1]] of hi-res page 1 from the
+        ; 40-byte [$0300..$0327] buffer, using [[INTERLACE_FILL_P1]]
+        ; ([[$0A0F]]) per column to broadcast one source byte across
+        ; 105 interlaced rows.
+        ;
+        ; Inputs:
+        ;   ZP_SCORE_0  ($2B) --- high (starting) column (inclusive).
+        ;   ZP_SCORE_1  ($2C) --- low terminator (the loop stops WHEN
+        ;                         X == ZP_SCORE_1; the terminator itself
+        ;                         is NOT painted).
+        ;   $0300,X  --- 40-byte text-area source buffer
+        ;                (same buffer that CLEAR_PAGE1's text_restore
+        ;                loop copies into the bottom 12 hi-res rows).
+        ;
+        ; Behavior:
+        ;   X starts at ZP_SCORE_0 and decrements.  For each X, load
+        ;   the source byte at $0300,X and call INTERLACE_FILL_P1 to
+        ;   broadcast it across 105 hi-res rows at column X (rows
+        ;   72-106 / 112-146 / 152-186 --- the same 3-band interlace
+        ;   pattern as CLEAR_PAGE1).  Exit early when X == ZP_SCORE_1.
+        ;
+        ; Callers:
+        ;   $625C (sibling-paired with JSR STRIPE_COPY_PAGE1 at $054E).
+        ;   $62BC (player-sprite redraw; paired with STRIPE_COPY_PAGE1).
+        ;   BIT $00 gate at each caller selects page 1 (this routine)
+        ;   when ZP_PAGE_FLAG is positive; page 2 (INTERLACE_RESTORE_P2
+        ;   at $0B4B) otherwise.
+        ;
+        ; Note on ZP aliasing:
+        ;   $2B and $2C are aliased as ZP_SCORE_0 / ZP_SCORE_1 (HUD
+        ;   digit sprite slots) --- here they're reused as column
+        ;   bounds for the text-restore helper.  CLEAR_PAGE1 uses the
+        ;   NEXT pair ($2D/$2E = ZP_CLEAR_COL_END / ZP_CLEAR_COL) for
+        ;   its own outer-loop bounds.  The four HUD slots $2B-$2E
+        ;   thus double as two (low, high) column-range pairs for the
+        ;   two restore helpers.
+        ;
+        ; Clobbers: A, X
+        LDX ZP_SCORE_0                  ; $09FE: outer-loop column start
+.loop:
+        CPX ZP_SCORE_1                  ; $0A00: terminator
+        BNE .paint
+        RTS                             ; $0A04
+.paint:
+        LDA $0300,X                     ; $0A05: text-buffer byte for column X
+        JSR INTERLACE_FILL_P1           ; $0A08: paint 105 rows
+        DEX                             ; $0A0B
+        JMP .loop                       ; $0A0C
+@ %def INTERLACE_RESTORE_P1
 
 <<interlace fill p1>>=
 
@@ -5697,18 +5755,34 @@ INTERLACE_FILL_P1:
         RTS                             ; $0B4A
 @ %def INTERLACE_FILL_P1
 
-<<game code 0B4B>>=
+<<interlace restore p2>>=
 
         ORG $0B4B
+INTERLACE_RESTORE_P2:
         SUBROUTINE
-        ; INTERLACE_RESTORE_P2 ($0B4B-$0B5B, 17 bytes, not yet carved):
-        ; page-2 counterpart of INTERLACE_RESTORE_P1 at $09FE.  Loops
-        ; X=$2B..$2C+1 painting $0300,X into 105 interlaced rows of
-        ; page 2 at column X via INTERLACE_FILL_P2.  Full RE pending.
-        HEX A6 2B E4 2C D0 01 60 BD
-        HEX 00 03 20 5C 0B CA 4C 4D
-        HEX 0B
-@
+        ; Page-2 twin of INTERLACE_RESTORE_P1 at [[$09FE]]: repaint
+        ; column range [[[ZP_SCORE_0] .. [ZP_SCORE_1]+1]] of hi-res page
+        ; 2 from the $0300 buffer, using INTERLACE_FILL_P2 ($0B5C) for
+        ; the per-column 105-row broadcast.  Byte-for-byte identical to
+        ; INTERLACE_RESTORE_P1 except the inner JSR targets the page-2
+        ; fill helper.
+        ;
+        ; Inputs / Callers / Behavior: see INTERLACE_RESTORE_P1 docs
+        ; above; the BIT $00 gate at each caller selects this routine
+        ; (page 2) when ZP_PAGE_FLAG is negative.
+        ;
+        ; Clobbers: A, X
+        LDX ZP_SCORE_0                  ; $0B4B: outer-loop column start
+.loop:
+        CPX ZP_SCORE_1                  ; $0B4D: terminator
+        BNE .paint
+        RTS                             ; $0B51
+.paint:
+        LDA $0300,X                     ; $0B52: text-buffer byte for column X
+        JSR INTERLACE_FILL_P2           ; $0B55: paint 105 rows
+        DEX                             ; $0B58
+        JMP .loop                       ; $0B59
+@ %def INTERLACE_RESTORE_P2
 
 <<interlace fill p2>>=
 
@@ -13502,10 +13576,12 @@ RESCUE_UPDATE:
 <<clear page2>>
 ; --- ORG $054E: Hi-res framebuffer library tail (hex) ---
 <<game code 03A8>>
+; --- ORG $09FE: Hi-res page 1 interlace-restore (text strip from $0300) ---
+<<interlace restore p1>>
 ; --- ORG $0A0F: Hi-res page 1 interlace-fill helper ---
 <<interlace fill p1>>
-; --- ORG $0B4B: Hi-res page 2 interlace-restore (17-byte stub, not yet carved) ---
-<<game code 0B4B>>
+; --- ORG $0B4B: Hi-res page 2 interlace-restore (text strip from $0300) ---
+<<interlace restore p2>>
 ; --- ORG $0B5C: Hi-res page 2 interlace-fill helper ---
 <<interlace fill p2>>
 ; --- ORG $0C98: Rescue draw + collision + projectile-spawn ---

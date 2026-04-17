@@ -15,11 +15,18 @@ library of hi-res framebuffer routines, NOT game logic.  It contains:
   copy from `($FE),Y` into hi-res row-decimated stripes.  Column range
   `$58..$59`.  Called from $62XX.
 - Small row painters at $08C8, $08DF, $08F6, $097A.
-- `INTERLACE_RESTORE_P1` ($09FE-$0B4A) / `INTERLACE_RESTORE_P2`
-  ($0B4B-$0C97): text-row restore from $0300,X buffer.
-- `INTERLACE_FILL_P1` ($0A0F) / `INTERLACE_FILL_P2` ($0B5C): core
-  helpers that fan-out a single byte to 60+ interlaced hi-res
-  positions.  Called from within CLEAR_PAGE1/2.
+- `INTERLACE_RESTORE_P1` ($09FE, 16 bytes) / `INTERLACE_RESTORE_P2`
+  ($0B4B, 16 bytes): per-column walker from `ZP_SCORE_0` ($2B) down
+  to `ZP_SCORE_1` ($2C), loading `$0300,X` and calling the paired
+  INTERLACE_FILL on each column.  Called paired with STRIPE_COPY
+  from $625C/$62BC (page selected by `BIT $00; BMI`).
+- `INTERLACE_FILL_P1` ($0A0F-$0B4A, 316 bytes) / `INTERLACE_FILL_P2`
+  ($0B5C-$0C97, 316 bytes): unrolled 105 `STA abs,X` broadcast of
+  A across 3 interlaced row bands (rows 72-106, 112-146, 152-186)
+  at column X.  Strict twin pair: P2 = P1 with +$20 on every STA
+  operand's high byte.  Inputs: A (paint byte), X (column $00..$27);
+  clobbers none.  Callers: CLEAR_PAGEN (per outer iteration with
+  A=$00) and INTERLACE_RESTORE_PN (per column with A=$0300,X).
 
 Why: originally suspected to contain entity routines and projectile
 logic.  It's actually display-list code used for level transitions

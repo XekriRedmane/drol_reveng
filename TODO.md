@@ -129,6 +129,26 @@ Review existing chunks for violations:
       "Page flip preparation" stub name (real page flip is at $6138
       `DISPLAY_PAGE_FLIP`).
 - [x] `$1536` — `ENEMY_B_ADVANCE`: enemy-B slot up-counter; see triplet section below.
+- [x] `$1591` — `ENEMY_B_DRAW`: enemy-B sprite draw + player-collision
+      handler, replacing the `SPRITE_DRAW_3` stub.  Steady-mode
+      draws a $05x$11 body sprite from `SPRITE_TABLE_B_LO/HI`
+      ($B025/$B0A5); drift-mode draws a $02x$06 puff sprite from the
+      per-level pointer pair at `ENEMY_B_PUFF_LO/HI` ($755A/$765A).
+      The player-overlap body at $15FE writes $FF to
+      `ZP_ENEMY_B_STATE` only (putting B into drift mode for
+      deferred self-deactivation), awards +300 BCD via
+      `SCORE_ADD`, and decrements `ZP_GAME_OVER` ($39).
+      **Correction to prior docs**: the B->{A,C} handshake is
+      *not* in this routine --- the $1757-$1763 writes to $D4/$DC
+      live in `PLAYER_RENDER` (enemy-C draw).  Enemy-B's collision
+      only touches its own state $E0.  Introduces ZP EQUs
+      `ZP_CLIP_X_LO` ($AF), `ZP_CLIP_X_HI` ($B0), `ZP_SPRITE_XREF`
+      ($4C), `ZP_GAME_OVER` ($39); data EQUs `PERSPECTIVE_XOFF_LO`
+      ($1A8F), `PERSPECTIVE_XOFF_HI` ($198F), `SPRITE_TABLE_B_LO`
+      ($B025), `SPRITE_TABLE_B_HI` ($B0A5), `ENEMY_B_PUFF_LO`
+      ($755A), `ENEMY_B_PUFF_HI` ($765A).  Retires the
+      `SPRITE_DRAW_3 = $1591` EQU stub and carves $1591-$1645 out
+      of the `<<sprite player code 1591>>` HEX blob.
 - [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page.
 - [x] `$65D5` — `DRAW_SPRITE_PLAYFIELD`: sibling of DRAW_SPRITE.
       Identical structure, but inner-loop column check rejects col

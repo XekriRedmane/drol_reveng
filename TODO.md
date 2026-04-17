@@ -9,16 +9,18 @@ routines and all three enemy draw routines are byte-perfect RE'd
 With the triplet, `BEAM_UPDATE` ($130A), `DRAW_ENTITIES` ($683C),
 `DISPLAY_UPDATE` ($10AB), `DIFFICULTY_UPDATE` ($719D),
 `LEVEL_INTRO_TICK` ($699C), `SFX_TONE` ($67C1), `INPUT_DISPATCH`
-($6000), `DRAW_PLAYER` ($64DF), and the three blitters
-(`DRAW_SPRITE`, `DRAW_SPRITE_PLAYFIELD`, `DRAW_SPRITE_OPAQUE`) all
-documented, the MAIN_LOOP dispatch is now essentially complete ---
-every `JSR` target in the main loop either has its own ORG chunk or
-sits inside one of the named hex blobs awaiting further carve-out.
-The remaining high-priority work is: `GAME_START_INIT` ($13A4),
-the large `$6ABA-$719C` "game engine B tail" blob (sound/animation/
-entity processing/level logic, 1763 bytes still as HEX), and the
-remaining hex tail of `<<game engine A>>` at $614B-$64DE (movement
-and action dispatch --- input-driven game state transitions).
+($6000), `DRAW_PLAYER` ($64DF), `PLAYER_MOVE_TICK` ($64CB), and the
+three blitters (`DRAW_SPRITE`, `DRAW_SPRITE_PLAYFIELD`,
+`DRAW_SPRITE_OPAQUE`) all documented, the MAIN_LOOP dispatch is now
+fully named --- every `JSR` target in the main loop either has its
+own ORG chunk or sits inside one of the named hex blobs awaiting
+further carve-out.  The remaining high-priority work is:
+`GAME_START_INIT` ($13A4), the large `$6ABA-$719C` "game engine B
+tail" blob (sound/animation/entity processing/level logic, 1763
+bytes still as HEX), and the remaining hex tail of
+`<<game engine A>>` at $614B-$64CA (player movement-tick handlers
+and the DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT input
+handlers called via SMC from MAIN_LOOP).
 
 ## Immediate: apply new code chunk rules
 
@@ -254,6 +256,34 @@ Review existing chunks for violations:
       to the draw-player defines chunk (where they are physically
       declared).  Carved out of `<<game engine A>>`, which now
       ends at $64DE (was $656E, 1060 bytes; now 916 bytes).
+- [x] `$64CB` — `PLAYER_MOVE_TICK`: per-frame player-movement
+      dispatcher, first JSR from MAIN_LOOP (retires the
+      `COLLISION_DETECT` EQU stub --- misnomer: the routine is a
+      tri-state dispatcher, not collision logic).  Dispatches on
+      `ZP_MOVE_DIR` ($04, formerly misnamed `ZP_FAST_FLAG`):
+      $00 idle --> JSR `PLAYER_TICK_IDLE` ($6184);
+      negative ($FF) --> JSR `PLAYER_TICK_MOVE_LEFT` ($614B);
+      positive ($01) --> JSR `PLAYER_TICK_MOVE_RIGHT` ($619A).
+      All three tick handlers live inside the `<<game engine A>>`
+      blob; the left and right variants advance `ZP_PLAYER_Y` ($4A)
+      by one in the appropriate direction and cycle the walking-
+      animation state at $4B/$4C before falling through (left) or
+      re-joining (right via `JMP`) the 7-call per-frame update
+      chain that `PLAYER_TICK_IDLE` runs on its own.
+      $04 is set to $01 / $FF by the `DO_MOVE_RIGHT` / `DO_MOVE_LEFT`
+      input handlers at $6409/$646D (still inside the game engine
+      A hex tail), and cleared on direction change, clamp, rescue
+      (by INPUT_DO_ASCEND/DESCEND), INIT_LEVEL_STATE, or LEVEL_INTRO
+      init.  Also read by `HAZARD_CHECK` as a parallax cue:
+      projectiles moving opposite the player's horizontal motion
+      gain +2 pixels of speed per frame, giving a pseudo-parallax
+      effect.  Only 20 bytes; carved from the tail of
+      `<<game engine A>>` whose hex blob now ends at $64CA (was
+      $64DE, 916 bytes; now 896 bytes).  New ZP EQU:
+      `ZP_MOVE_DIR` ($04, replaces the misleading `ZP_FAST_FLAG`).
+      New handler EQUs: `PLAYER_TICK_IDLE` ($6184),
+      `PLAYER_TICK_MOVE_LEFT` ($614B),
+      `PLAYER_TICK_MOVE_RIGHT` ($619A).
 - [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page.
 - [x] `$65D5` — `DRAW_SPRITE_PLAYFIELD`: sibling of DRAW_SPRITE.
       Identical structure, but inner-loop column check rejects col

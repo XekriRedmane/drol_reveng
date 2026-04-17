@@ -2191,7 +2191,7 @@ ZP_HGR_DST      = $2F           ; Hi-res copy destination pointer (2 bytes)
 ; --- Main loop subroutines (in hex data blocks, not yet disassembled) ---
 ; (LEVEL_INTRO_TICK has its own ORG chunk at $699C)
 PAUSE_HANDLER   = $0E51         ; Wait for keypress (pause handler ORG)
-COLLISION_DETECT = $64CB        ; Collision detection (game engine A hex)
+; (PLAYER_MOVE_TICK has its own ORG chunk at $64CB; formerly stubbed as COLLISION_DETECT.)
 ; (DRAW_PLAYER is the label at ORG $64DF, formerly stubbed as SPRITE_RENDER.)
 SCORE_DISPLAY   = $673B         ; Score / status display (entity process hex)
 SOUND_UPDATE    = $6ABA         ; Sound effects (game engine B hex)
@@ -3023,9 +3023,12 @@ SCREEN_ROW_COPY:
 Each frame the Y position increments by~2 (projectiles always fall).
 If Y reaches a floor boundary (\$6B, \$93, or~\$BB) the projectile
 deactivates. The horizontal position moves left or right by 4~pixels
-(or~6 when ZP~\$04 is positive and nonzero, representing faster
-difficulty). If the horizontal position exceeds \$91 the projectile is
-also deactivated.
+per frame.  An extra 2~pixels are added when the player is moving in
+the \emph{opposite} horizontal direction (parallax cue from
+[[ZP_MOVE_DIR]] at \$04): left-moving projectiles speed up when
+\$04 is positive (player moving right); right-moving projectiles
+speed up when \$04 is negative (player moving left). If the
+horizontal position exceeds \$91 the projectile is also deactivated.
 
 After drawing, a collision check tests whether the projectile overlaps
 the player. The player's horizontal position is taken as column range
@@ -3043,7 +3046,7 @@ ZP_PROJ_MAX     = $31           ; Max active projectile slot index
 ZP_PROJ_DIR     = $C5           ; Projectile direction (4 bytes: $C5-$C8)
 ZP_PROJ_X       = $C9           ; Projectile horizontal position (4 bytes: $C9-$CC)
 ZP_PROJ_Y       = $CD           ; Projectile vertical position (4 bytes: $CD-$D0)
-ZP_FAST_FLAG    = $04           ; Difficulty speed flag (positive nonzero = fast)
+ZP_MOVE_DIR     = $04           ; Player horizontal motion: $00 idle, $01 right, $FF left
 ZP_PLAYER_COL   = $06           ; Player screen column
 ZP_HIT_FLAG     = $1E           ; Hit detection flag ($FF = player hit)
 
@@ -3103,7 +3106,7 @@ HAZARD_CHECK:
         LDA ZP_PROJ_X,X          ; Current X position
         SEC
         SBC #$04                  ; Move left 4 pixels
-        BIT ZP_FAST_FLAG          ; Check speed flag
+        BIT ZP_MOVE_DIR           ; Check move direction
         BEQ .store_left_x         ; Zero = normal speed
         BMI .store_left_x         ; Negative = normal speed
         SEC
@@ -3156,7 +3159,7 @@ HAZARD_CHECK:
         LDA ZP_PROJ_X,X          ; Current X position
         CLC
         ADC #$04                  ; Move right 4 pixels
-        BIT ZP_FAST_FLAG
+        BIT ZP_MOVE_DIR
         BPL .store_right_x        ; Positive = normal speed
         CLC
         ADC #$02                  ; Move right 2 more (total 6)
@@ -3470,7 +3473,7 @@ SMC_MOVE_RIGHT = *
         BIT DO_MOVE_RIGHT       ; Move right (JSR when active)
 
         JSR DISPLAY_PAGE_FLIP   ; Toggle hi-res display page
-        JSR COLLISION_DETECT    ; Collision detection
+        JSR PLAYER_MOVE_TICK    ; Player movement tick dispatcher
         JSR ENEMY_AI_1          ; Enemy AI (part 1)
         JSR ENEMY_AI_2          ; Enemy AI (part 2)
 SMC_RENDER = *
@@ -3886,8 +3889,9 @@ Three block copies restore ZP regions from saved buffers:
 \end{itemize}
 
 After restoring state, it zeroes the entity activity table at
-\$03A8--\$03BB, the movement slots at \$C5--\$C8, ZP~\$04 (unknown
-flag), and the frame counter~\$FD. It also zeroes \$03FF, sets
+\$03A8--\$03BB, the movement slots at \$C5--\$C8,
+[[ZP_MOVE_DIR]] (\$04, player horizontal move direction), and the
+frame counter~\$FD. It also zeroes \$03FF, sets
 \$4B/\$4C~=~2, \$39~=~1, fills \$0237--\$023B with \$FF, and patches
 the four direction slots in the main loop to [[BIT]] (\$2C, inactive).
 Finally it loads two bytes from \$029A/\$029B into \$42/\$43.
@@ -3944,7 +3948,7 @@ INIT_LEVEL_STATE:
         DEX
         BPL .zero_movement
 
-        STA $04                   ; Clear unknown flag
+        STA ZP_MOVE_DIR           ; Clear player horizontal move direction
         STA $FD                   ; Clear frame counter
         STA $03FF                 ; Clear floor flag
 
@@ -7685,10 +7689,15 @@ ENEMY_C_DRAW:
 
         ORG $614B
         SUBROUTINE
-        ; Game engine (\$614B-\$64DE): movement, collision, action dispatch.
-        ; The sprite-setup tail that originally lived here through \$656E
-        ; has been extracted as [[DRAW_PLAYER]] at \$64DF.
-        ; Raw data --- 916 bytes
+        ; Game engine (\$614B-\$64CA): movement handlers + per-frame
+        ; tick subroutines.  Entry points called by PLAYER_MOVE_TICK:
+        ;   \$614B  PLAYER_TICK_MOVE_LEFT
+        ;   \$6184  PLAYER_TICK_IDLE
+        ;   \$619A  PLAYER_TICK_MOVE_RIGHT
+        ; The movement-tick dispatcher that originally tailed this blob
+        ; at \$64CB has been extracted as [[PLAYER_MOVE_TICK]]; the
+        ; sprite-setup tail at \$64DF is now [[DRAW_PLAYER]].
+        ; Raw data --- 896 bytes
 
         HEX A5 4A C9 01 90 33 A5 4C
         HEX C9 03 F0 12 C9 02 F0 0E
@@ -7802,10 +7811,93 @@ ENEMY_C_DRAW:
         HEX FD 29 01 D0 03 CA 86 03
         HEX 60 A9 00 85 04 F0 BD A5
         HEX 1D 10 04 A9 FF 85 04 60
-        HEX A5 04 F0 0C A5 04 30 04
-        HEX 20 9A 61 60 20 4B 61 60
-        HEX 20 84 61 60
 @
+
+\section{Player movement tick dispatcher}
+
+[[PLAYER_MOVE_TICK]] at \$64CB is the first routine called from
+[[MAIN_LOOP]] each frame (formerly stubbed as \texttt{COLLISION\_DETECT}
+--- the name was a misnomer: the routine is a tri-state dispatcher, not a
+collision check).  It reads the player's horizontal movement state from
+[[ZP_MOVE_DIR]] (\$04) and routes to one of three per-frame tick handlers
+that live inside the \texttt{<<game engine A>>} hex blob at
+\$614B-\$64CA:
+
+\begin{itemize}
+\item [[PLAYER_TICK_IDLE]] (\$6184): seven per-frame subroutine calls
+  --- executed on every frame regardless of motion.
+\item [[PLAYER_TICK_MOVE_LEFT]] (\$614B): when [[ZP_MOVE_DIR]] is
+  negative, the player is moving left.  If [[ZP_PLAYER_Y]] (\$4A) is
+  already at the low clamp ($<$\$01), fall through into
+  [[PLAYER_TICK_IDLE]]; otherwise decrement \$4A by~1, cycle the
+  walking-animation state at \$4B (mod~12, stepping by~2) and \$4C
+  (state-machine with constants \$FE/\$FF/\$02 at the transitions),
+  then fall through into [[PLAYER_TICK_IDLE]].
+\item [[PLAYER_TICK_MOVE_RIGHT]] (\$619A): when [[ZP_MOVE_DIR]] is
+  positive nonzero, the player is moving right.  If [[ZP_PLAYER_Y]]
+  (\$4A) is already at the high clamp ($\geq$\$D7), jump directly to
+  the per-frame update tail; otherwise increment \$4A by~1, cycle \$4B
+  (mod~12, stepping by~-2) and \$4C (\$07/\$08/\$FE transitions), then
+  \texttt{JMP} into the middle of the per-frame update chain so the
+  same 7 routines run (in a slightly reshuffled order that swaps
+  \$61F0 and \$626A).
+\end{itemize}
+
+\paragraph{Who writes ZP\_MOVE\_DIR.}  \$04 is set to \$01 (moving
+right) by the \texttt{DO\_MOVE\_RIGHT} input handler at \$6452 and
+\$6468, and to \$FF (moving left) by \texttt{DO\_MOVE\_LEFT} at
+\$64AA and \$64C8.  It is cleared to~0 when direction changes or
+motion is clamped at either edge ($6417, $6438, $643E, $647B, $64BE),
+and also by [[INPUT_DO_ASCEND]] / [[INPUT_DO_DESCEND]] on a
+successful entity find, by [[INIT_LEVEL_STATE]], and during
+[[LEVEL_INTRO_TICK]] initialization.
+
+\paragraph{Interaction with [[HAZARD_CHECK]].}  The same \$04 byte is
+read by [[HAZARD_CHECK]] as a parallax cue: left-moving projectiles
+speed up by~2 pixels when \$04 is positive (player moving right), and
+right-moving projectiles speed up by~2 when \$04 is negative (player
+moving left), producing a pseudo-parallax effect.
+
+<<player move tick defines>>=
+
+; --- Player movement tick handler targets (inside game engine A blob) ---
+PLAYER_TICK_MOVE_LEFT  = $614B  ; Called when ZP_MOVE_DIR is negative
+PLAYER_TICK_IDLE       = $6184  ; Called when ZP_MOVE_DIR is zero
+PLAYER_TICK_MOVE_RIGHT = $619A  ; Called when ZP_MOVE_DIR is positive
+
+@
+
+<<player move tick>>=
+
+        ORG $64CB
+PLAYER_MOVE_TICK:
+        SUBROUTINE
+        ; Per-frame player-movement dispatcher.  Tri-state on ZP_MOVE_DIR:
+        ; routes to the idle, move-left, or move-right tick handler.
+        ;
+        ; Inputs:
+        ;   ZP_MOVE_DIR ($04) --- $00 idle, $01 moving right, $FF moving left.
+        ;
+        ; Behavior:
+        ;   $04 == $00  --> JSR PLAYER_TICK_IDLE        ($6184)
+        ;   $04 <  0    --> JSR PLAYER_TICK_MOVE_LEFT   ($614B)
+        ;   $04 >  0    --> JSR PLAYER_TICK_MOVE_RIGHT  ($619A)
+        ;
+        ; Clobbers: A (plus whatever the chosen handler clobbers)
+
+        LDA ZP_MOVE_DIR         ; $04
+        BEQ .idle               ; zero: no motion
+        LDA ZP_MOVE_DIR
+        BMI .move_left          ; negative: moving left
+        JSR PLAYER_TICK_MOVE_RIGHT
+        RTS
+.move_left:
+        JSR PLAYER_TICK_MOVE_LEFT
+        RTS
+.idle:
+        JSR PLAYER_TICK_IDLE
+        RTS
+@ %def PLAYER_MOVE_TICK PLAYER_TICK_IDLE PLAYER_TICK_MOVE_LEFT PLAYER_TICK_MOVE_RIGHT
 
 \section{Player sprite renderer}
 
@@ -9253,7 +9345,7 @@ LEVEL_INTRO_TICK:
         LDA #$00
         STA $05                         ; Clear scratch
         STA $1E                         ; State $00 = intro running
-        STA $04                         ; Clear fast-flag / state
+        STA ZP_MOVE_DIR                 ; Clear player horizontal move direction
         STA $0C                         ; Clear scratch
         LDA #$D0
         STA ZP_PLAYER_COL               ; Seed player column
@@ -10564,6 +10656,9 @@ LEVEL_INTRO_TICK:
 <<display page flip>>
 ; --- ORG $614B: Game engine A ---
 <<game engine A>>
+; --- ORG $64CB: Player movement tick dispatcher ---
+<<player move tick defines>>
+<<player move tick>>
 ; --- ORG $64DF: Player sprite renderer ---
 <<draw player defines>>
 <<draw player>>

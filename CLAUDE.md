@@ -163,23 +163,30 @@ The `/annotate` skill automates these passes for an existing routine.
 
 ### Prose rules
 
-In LaTeX prose (sections, paragraphs, captions, figure labels), never write a raw numeric address when a symbolic name exists for it. Use the `[[SYMBOL]]` noweb code ref — it renders as a tt-styled hyperlink to the defining chunk, so readers can navigate without consulting a memory map. Raw hex in prose (`\$XXXX`) is purely decorative and fails the reader.
+LaTeX prose in `main.nw` (sections, paragraphs, captions, figure labels, list items, table-cell text) must follow two standing rules for memory addresses:
 
-Applies to: addresses with ORG labels, EQU-defined constants (ZP aliases, table offsets, soft switches, SMC operand-byte labels), and any `@ %def`-exported symbol. When the prose describes *where* in memory something lives and the reader benefits from the numeric address, write `[[LABEL]] (\$XXXX)` — the symbol is still the primary reference.
+**1. Every numeric address gets wrapped in `[[ ]]`.** Never write a bare `\$XXXX` or `$XXXX` in prose. Always `[[$XXXX]]` or `[[SYMBOL]]`. A raw `\$XXXX` renders as plain hex with no navigation; the `[[ ]]` form renders as a tt-styled chunk-cross-reference hyperlink in the PDF. No exceptions in normal prose — not captions, not parentheticals, not "for example $XXXX", nothing. The wrap is mechanical and total.
 
-When no symbol exists yet (common during active RE), the raw form `[[$XXXX]]` is acceptable, but flag it with a LaTeX comment so it's easy to upgrade later:
+**2. Prefer the symbol over the hex.** When a label, EQU, or `@ %def`-exported name exists for the address, write `[[SYMBOL]]` not `[[$XXXX]]`. When the numeric address adds genuine information (e.g. the prose is explaining *where* in the memory map the symbol lives), write `[[SYMBOL]] ([[$XXXX]])` — the symbol is primary, the hex is the annotation.
+
+**3. No backslash inside `[[ ]]`.** Write `[[$XXXX]]`, never `[[\$XXXX]]`. Noweb `[[ ]]` content is literal code; weave.py LaTeX-escapes automatically. Any `\` you write inside `[[ ]]` renders as a visible backslash in the PDF. (weave.py now strips `\_ \$ \& \# \% \{ \}` inside `[[ ]]` as a safety net, but the source must stay clean.)
+
+**Unsymbolized addresses during active RE** (no label yet) are fine as `[[$XXXX]]`, but flag them so a later pass can upgrade:
 
 ```latex
 The routine reads from [[$XXXX]] % TODO-SYM: needs label
 ```
 
-Grep for `TODO-SYM` periodically to find unresolved prose addresses. When adding a new label/EQU for an address, grep main.nw for `$XXXX` occurrences in prose and replace them with the symbol in the same commit.
+Grep for `TODO-SYM` periodically. When introducing a new label for an address, grep main.nw for `$XXXX` occurrences in prose and replace with the symbol in the same commit.
 
-Exceptions where raw addresses are expected:
-- Memory-map tables and disk-layout tables showing raw addresses by design
-- `ORG` directives in code (already symbolic-free by definition)
-- Comments explaining *why* a specific numeric value matters (e.g. "chosen so the address is page-aligned")
-- Code chunks themselves — governed by the separate code chunk rules above, which already require symbolic addresses
+**Exceptions where raw (unwrapped) addresses are expected** — narrow and specific:
+
+- Memory-map tables and disk-layout tables designed to show raw addresses in their own column. Even then, consider whether wrapping makes the PDF more navigable.
+- `ORG` directives in code chunks (governed by assembly rules, not prose).
+- Comments explaining *why* a specific numeric value matters mechanically (e.g. "chosen because the address is page-aligned"). The address is the subject, not a reference.
+- Code chunks themselves — governed by the separate code chunk rules above, which already require symbolic addresses in code.
+
+If you're unsure whether something is prose or an exception, wrap it. Over-wrapping produces a navigable PDF; under-wrapping produces a worse one.
 
 ## Assembly pitfalls
 

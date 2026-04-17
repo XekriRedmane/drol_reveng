@@ -304,26 +304,28 @@ session that finds graphics without rendering them is leaving the document
 less useful than it should be. Treat graphics rendering with the same
 priority as writing prose or annotating assembly.
 
-## Standing rule: use symbolic addresses in prose
+## Standing rule: addresses in prose
 
-Applies every session, not just to graphics work. In LaTeX prose (sections,
-paragraphs, captions) inside `main.nw`, never write a raw numeric address
-when a symbolic name exists for it. Use `[[LABEL]]` or `[[ZP_ALIAS]]` noweb
-code refs — they render as navigable tt-styled hyperlinks to the defining
-chunk; raw hex in prose fails the reader.
+Applies every session, not just graphics work. Three rules for numeric
+addresses in LaTeX prose inside `main.nw`:
 
-When no symbol exists yet, the raw form `[[$XXXX]]` is acceptable during
-active RE, but mark it with a LaTeX comment so it can be upgraded later:
+1. **Wrap every address in `[[ ]]`.** Never bare `\$XXXX` in prose — always
+   `[[$XXXX]]` or `[[SYMBOL]]`. The `[[ ]]` form renders as a navigable
+   tt-styled hyperlink; raw hex does not.
+2. **Prefer symbol over hex.** If a label/EQU exists, use `[[SYMBOL]]`. If
+   the numeric address still adds information, use `[[SYMBOL]] ([[$XXXX]])`.
+3. **No backslash inside `[[ ]]`.** `[[$XXXX]]`, never `[[\$XXXX]]`.
+
+During active RE with no symbol yet, `[[$XXXX]]` is fine but flag it:
 
 ```latex
 The routine reads from [[$XXXX]] % TODO-SYM: needs label
 ```
 
-When a new label is introduced for an address, grep main.nw for the raw
-hex in prose and replace with the symbol in the same commit. See the
-"Prose rules" section of `CLAUDE.md` for the full policy, including the
-exceptions (memory-map tables, ORG directives, numeric-value-matters
-comments) where raw addresses are expected.
+When introducing a label, grep prose for the raw hex and replace with the
+symbol in the same commit. Full policy (including exceptions for
+memory-map tables and ORG directives) lives in the `### Prose rules`
+section of `CLAUDE.md`.
 
 ## Chunk hygiene
 

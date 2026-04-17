@@ -35,18 +35,23 @@ main loop either has its own ORG chunk or sits inside one of the
 named hex blobs awaiting further carve-out.  Prior sessions carved
 `SPECIAL_TICK` ($6ABA, 127 bytes) out of the head of
 `<<game engine B tail>>`, retiring the `SOUND_UPDATE` EQU stub.
-This session carved `SPECIAL_DRAW` ($6B39, 262 bytes),
+A prior session carved `SPECIAL_DRAW` ($6B39, 262 bytes),
 `SPECIAL_BODY_STEP1..6` ($6C3F, 156 bytes) and
-`SPECIAL_INACTIVE_DRAW` ($6CDB, 35 bytes) --- 453 bytes total ---
-out of the same hex blob, retiring the `SPECIAL_DRAW = $6B39` EQU
-stub and documenting the six-step SMC-chained palindromic walk cycle
-and the perspective-transformed body/puff/peek draws.  The
-`<<game engine B tail>>` now starts at $6CFE (1183 bytes remaining).
-The remaining high-priority work is: the `$6CFE-$719C` tail
-(1183 bytes HEX, likely containing companion-slot tick+draw,
-projectile handler, entity-list processing, and level-transition
-logic), and the remaining hex tail of `<<game engine A>>` at
-$614B-$64CA (player movement-tick handlers and the
+`SPECIAL_INACTIVE_DRAW` ($6CDB, 35 bytes) --- 453 bytes --- out of
+the same hex blob, retiring the `SPECIAL_DRAW = $6B39` EQU stub.
+This session carves `COMPANION_UPDATE` ($6CFE, 670 bytes) ---
+the two-slot "hostile walker" tick+draw pair --- out of the same
+hex blob, retiring the `ENTITY_PROCESS = $6CFE` EQU stub and
+giving the subsystem its first real documentation: three-state
+machine per slot, 3-pose SMC walk cycle per direction, floor-climb
+drift triggered by rescue-entity proximity, player-catch
+hit-box.  The `<<game engine B tail>>` now starts at $6F9C
+(513 bytes remaining).
+The remaining high-priority work is: the `$6F9C-$719C` tail
+(513 bytes HEX, the entity-list update over the 20-slot $03A8
+table --- the "rescue children" tick+spawn logic), and the
+remaining hex tail of `<<game engine A>>` at $614B-$64CA
+(player movement-tick handlers and the
 DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT input handlers
 called via SMC from MAIN_LOOP).
 
@@ -586,14 +591,43 @@ Individual TODO entries:
       semantics live in `SPECIAL_TICK`'s drift-mode code, not in
       the draw).  Carved 453 bytes out of `<<game engine B tail>>`
       which now starts at $6CFE (1183 bytes remaining).
-- [ ] `$6CFE-$719C` — Game engine B tail (entity processing, level
-      logic, HEX --- 1183 bytes).  Begins with what looks like a
-      sibling draw gated on `ZP_COMPANION_GATE` ($33) at $6CFE
-      (LDA $33 / BPL / RTS / LDX #$01 / LDA $B3,X ...) — probably
-      the companion-slot tick+draw pair referenced by
-      `DRAW_ENTITIES` phase 4.  Other likely contents: projectile
-      tick, entity-list processing ($6F24+), level-transition
-      state machine, score-display routines.
+- [x] `$6CFE` — `COMPANION_UPDATE`: per-frame tick+draw routine for
+      the two-slot "companion" walker subsystem (retires the
+      `ENTITY_PROCESS = $6CFE` EQU stub and carves 670 bytes out of
+      `<<game engine B tail>>`, which now starts at $6F9C with 513
+      bytes remaining).  Despite the name inherited from
+      DRAW_ENTITIES phase 4, companions are \emph{hostile}
+      walker-creatures (not helpers): each slot patrols the
+      perspective floor with a 16-bit world-X ($11/$13,X), flips
+      direction ($B1,X) with ~5% PRNG chance per frame, damages the
+      player on contact (writes `ZP_HIT_FLAG` $1E=$FF in a
+      $40..$4F x $1A-row catch box), and enters a 4-px/frame
+      floor-climb drift when it crosses a rescue-entity's row in
+      the $40..$46 proximity window.  Three-state machine per slot
+      (inactive $00 / active +ve / drift $FF), 3-pose SMC-chained
+      walk cycle with separate pose tables for each direction at
+      $75A2/$75A9/$75B0 (-dir) and $75B7/$75BE/$75C5 (+dir).  Gate
+      is `ZP_COMPANION_GATE` ($33): active on all non-minimum
+      difficulty tiers (score >= 4000).  Both slots auto-activate
+      on the first frame the gate opens --- nothing externally
+      writes $B3,X.  Introduced ZP EQUs `ZP_COMPANION_STATE` ($B3),
+      `ZP_COMPANION_DIR` ($B1), `ZP_COMPANION_POS_LO/HI` ($11/$13,
+      aliases for `ZP_COMPANION_COL/OFF`), `ZP_PLAYER_FLOOR` ($0A),
+      `ENTITY_HIT_ROW` ($72); SMC labels
+      `SMC_COMPANION_POS_LO/HI` ($6E31/$6E32) and
+      `SMC_COMPANION_NEG_LO/HI` ($6EAA/$6EAB); sprite-table labels
+      `COMPANION_POS_POSE1..3_LO/HI`, `COMPANION_NEG_POSE1..3_LO/HI`.
+- [ ] `$6F9C-$719C` — Game engine B tail (entity-list update +
+      level logic, HEX --- 513 bytes).  Begins with `LDY #$13;
+      LDA $03A8,Y` (20-slot iteration over `ENTITY_ACTIVE`), the
+      same table DRAW_ENTITIES phase 5 iterates.  Per-slot state
+      machine on $03A8,Y with parallel tables at
+      $0358/$036C/$0380/$0394/$03BC/$03D0/$03E4; uses PRNG
+      ($5F EOR), frame counter ($1F EOR) for gating.  Likely the
+      "rescue entities" (children) walking routine: activate,
+      walk left/right, animate, handle player pickup, etc.
+      Expected carve as `ENTITY_LIST_UPDATE` replacing the
+      `LEVEL_LOGIC = $6F9C` EQU stub.
 - [ ] `$72A0-$72A2` — 3 bytes between attract loop exit and copy routine (JMP $67CB at $72A0)
 
 ## Fix reference binary build process

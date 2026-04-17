@@ -267,7 +267,7 @@ TEXT_SCREEN      = $0400         ; First line of text screen
         ;
         ; Modifies:
         ;   SOFTEV, SOFTEV_CHK, NMIVEC, LDR_SLOT, LDR_PHASE, LDR_TRACK,
-        ;   $BE00-$BFFF (RWTS), $D000-$D7FF (loader backup), language card RAM
+        ;   RWTS_RELOAD-$BFFF (RWTS), $D000-$D7FF (loader backup), language card RAM
 
 BOOT1_SECTORS:
         .BYTE $01               ; Sector count for boot0 (just this sector)
@@ -411,7 +411,7 @@ BOOT1_ENTRY:
         JMP LOADER_INIT         ; Loader init entry point
 
 ; Pad to fill the rest of the sector with zeros.
-; $08D0-$08F7: splash text (XOR-encoded, all zeros in this image).
+; SPLASH_TEXT-$08F7: splash text (XOR-encoded, all zeros in this image).
 
         DS $D0-(*-$0800),0
 
@@ -873,7 +873,7 @@ SEEK:
 ; SET_PHASE uses ZP_CUR_HTRK; SET_PHASE_A takes half-track in A.
 SET_PHASE:
         LDA ZP_CUR_HTRK
-SET_PHASE_A:                    ; $511D - entry with A = half-track
+SET_PHASE_A:                    ; SET_PHASE_A- entry with A = half-track
         AND #$03                ; Phase 0-3
         ROL                     ; Shift: carry→bit0, makes 0/1/2/3 → 0/1/2/3/4/5/6/7
         ORA ZP_SLOT_X16         ; Add slot offset
@@ -1074,9 +1074,9 @@ TRACK_TABLE:
 ; =========================================================================
 ;  Nibble buffers and translate table ($5200-$53FF)
 ;
-;  $5200-$52FF: Primary nibble buffer (256 bytes, overwritten each read)
-;  $5300-$5355: Auxiliary nibble buffer (86 bytes, overwritten each read)
-;  $52D6-$53D5: 6-and-2 nibble translate table (256 bytes, persistent)
+;  NIBBLE_BUF_PRI-$52FF: Primary nibble buffer (256 bytes, overwritten each read)
+;  NIBBLE_BUF_AUX-$5355: Auxiliary nibble buffer (86 bytes, overwritten each read)
+;  NIBBLE_XLAT-$53D5: 6-and-2 nibble translate table (256 bytes, persistent)
 ;
 ;  The translate table maps raw disk byte values to 6-bit values (0-63).
 ;  Only entries at offsets $96-$FF are valid; others are zero.
@@ -1086,7 +1086,7 @@ TRACK_TABLE:
 ; =========================================================================
 
         ORG $5200
-NIBBLE_BUF_PRI:                 ; $5200 - primary nibble buffer
+NIBBLE_BUF_PRI:                 ; NIBBLE_BUF_PRI- primary nibble buffer
 
 ; Initial contents from disk (overwritten during first read).
 ; This data happens to partially duplicate code from $555F but is never executed.
@@ -1130,7 +1130,7 @@ NIBBLE_XLAT:
         HEX 00 00 20 20 2F 00 00 01
 
         ORG $5300
-NIBBLE_BUF_AUX:                 ; $5300 - auxiliary nibble buffer
+NIBBLE_BUF_AUX:                 ; NIBBLE_BUF_AUX- auxiliary nibble buffer
 ; First $6C bytes are work buffer (overwritten during reads).
 ; $536C-$53D5: 6-and-2 decode values (disk bytes $96-$FF → 0-63).
 ; Value 0 at $536C maps disk byte $96 to decoded value 0.
@@ -1521,7 +1521,7 @@ RESET_HANDLERS:
         HEX 5B 9D D0 5F CA 10 EE 60
 
 ; Hi-res screen address lookup table.
-SCREEN_ADDR_TABLE:              ; $59C0 → $BFC0
+SCREEN_ADDR_TABLE:              ; SCREEN_ADDR_TABLE→ $BFC0
         HEX 80 40 00 41 80 41 00 42
         HEX 00 44 80 44 00 45 80 45
         HEX 00 48 80 48 00 49 80 49
@@ -1615,7 +1615,7 @@ RWTS_RELOAD:
         ;   calls LOADER_ENTRY, then jumps to SCREEN_RESTORE.
         ;
         ; Modifies:
-        ;   $5000-$57FF (loader restored), $A0-$A1, screen buffer
+        ;   RWTS_ENTRY-$57FF (loader restored), $A0-$A1, screen buffer
         ; Clobbers: A, X
         LDX LDR_SLOT
         LDA DISK_MOTOR_ON,X    ; Turn motor on
@@ -1778,7 +1778,7 @@ and clears the hi-res screen holes.
         ORG $BEA0
 ; Call game screen callback at $5C00, then fall through to SCREEN_RESTORE.
 SCREEN_PRE_RESTORE:
-        JSR GAME_SCREEN_RTN     ; $5C00 (game callback)
+        JSR GAME_SCREEN_RTN     ; STAGE_STACK(game callback)
 
 SCREEN_RESTORE:
         SUBROUTINE
@@ -1918,7 +1918,7 @@ RESET_BANG:
         ;   LDR_SLOT — boot slot * 16
         ;
         ; Modifies:
-        ;   $0800-$BDFF (zeroed), language card RAM, screen
+        ;   BOOT1_SECTORS-$BDFF (zeroed), language card RAM, screen
         ; Clobbers: A, X, Y
         PHA                     ; Save error character
         JSR COPY_ROM_TO_LC      ; Restore language card
@@ -1999,7 +1999,7 @@ SCROLL_UP_PRE:
         ;   overlaps with the JMP operand bytes (LDY #$28).
         ;
         ; Modifies:
-        ;   $4000-$44FF, $A0-$A3
+        ;   GAME_INIT_NOP-$44FF, $A0-$A3
         ; Clobbers: A, X, Y
         TAY                     ; Save A
         INY
@@ -2268,7 +2268,7 @@ GAME_INIT_NOP:
         ;   Hi-res page 1 ($2000-$3FFF)
         ; Clobbers: A, Y
 
-; $4000-$4012: NOPs (copy protection removed).
+; GAME_INIT_NOP-$4012: NOPs (copy protection removed).
         DS 19,$EA
 
 GAME_INIT:
@@ -2317,7 +2317,7 @@ to a specific hi-res page 1 address.
 
 <<game init padding>>=
 
-; $4045-$40FF: unused space after GAME_INIT code.
+; GAME_INIT_PAD-$40FF: unused space after GAME_INIT code.
         ORG $4045
 GAME_INIT_PAD:
         DS $4100-*,0
@@ -2646,7 +2646,7 @@ assembly against [[reference/drol.bin]].
 
 <<sector residue 47xx>>=
 
-; $4713-$47FF: sector-image residue --- 237 bytes of dead code.
+; SECTOR_RESIDUE_47XX-$47FF: sector-image residue --- 237 bytes of dead code.
 ; Byte-exact copy of $0513-$05FF (CLEAR_PAGE2 tail, CLEAR_PAGE2_TEXT_ENTRY
 ; body, and truncated first half of INTERLACE_BLIT_P1).  Statically
 ; unreachable (no JSR/JMP in any reference binary targets it, and the
@@ -3624,7 +3624,7 @@ DISPLAY_PAGE_FLIP:
         ;
         ; Behavior:
         ;   XOR-patches its own operand byte to alternate between
-        ;   $C054 (page 1) and $C055 (page 2) each frame. Also
+        ;   SW_PAGE1(page 1) and $C055 (page 2) each frame. Also
         ;   advances ZP $00 by $80.
         ;
         ; Modifies:
@@ -4294,7 +4294,7 @@ GAME_RESTART:
         STX $46                  ; Write-only byte (never read)
         DEX
         STX ZP_RESTART_FLAG      ; $FF cold-start marker; only read at
-                                 ;   $5EC5 (dead code) --- effectively
+                                 ;   RESTART_DISPATCH(dead code) --- effectively
                                  ;   a dead store in the live engine
 
 ; --- Tail-call: resume main-loop input/render ---
@@ -5149,7 +5149,7 @@ ENTITY_ACTIVE:
         ; (first 4 tables live in the game-data-02C6 chunk).  On disk these
         ; initial bytes are loaded with the level, but the game zeros the
         ; entire block during normal play; the non-zero bytes at $03BC and
-        ; $03E4-$03EF are stale disk-image residue and never observed at
+        ; RESCUE_COUNTDOWN-$03EF are stale disk-image residue and never observed at
         ; runtime.
 
         ; ENTITY_ACTIVE ($03A8-$03BB): per-slot state byte.
@@ -6685,7 +6685,7 @@ RESCUE_DRAW:
         BEQ .slot_next                     ; $FE exit-anim: invisible
 ; Drift-mode (any other -ve): play descending click + enable flicker patch.
         LDA #$29                           ; AND #imm opcode
-        STA SMC_SPRITE_MASK_OP             ; $65B7 (flicker the next draw)
+        STA SMC_SPRITE_MASK_OP             ; SMC_SPRITE_MASK_OP(flicker the next draw)
         LDX RESCUE_COUNTDOWN,Y             ; RESCUE_COUNTDOWN[Y] in 1..4
         LDA $D7,X                          ; quasi-random AND-mask byte
         STA SMC_SPRITE_MASK_ARG
@@ -9686,7 +9686,7 @@ REFRESH_RIGHT_WALL:
         STA HUD_LIVES_COL               ; right-bound = \Delta-2
         SEC
         SBC #$01                        ; A = \Delta-3
-        JMP .store_clear_col            ; $6214 -> $6220
+        JMP .store_clear_col            ; > $6220
 
 ; --- Case general: HUD_LIVES_COL = \Delta-1 ---
 .general:
@@ -9853,7 +9853,7 @@ REFRESH_LEFT_WALL:
 
 ; --- Case \Delta == 0: wall at col 0 ---
 .delta_zero:
-        STA ZP_SCORE_2                  ; $629E (A was 0)
+        STA ZP_SCORE_2                  ; (A was 0)
         STA HUD_SCORE_COL               ; left-bound = $00
         SEC
         SBC #$04                        ; A = $FC (-4)
@@ -10086,7 +10086,7 @@ REFRESH_PILLARS:
         SEC
         SBC #$04                        ; left terminator = \Delta-4
         STA ZP_BLIT_X_END
-        JMP .paint                      ; $62F6 -> $62FD
+        JMP .paint                      ; > $62FD
 .next:
         DEX
         BPL .slot_loop
@@ -10105,10 +10105,10 @@ REFRESH_PILLARS:
         JSR INTERLACE_BLIT_P1
 .paint_resume:
         LDX $5C                         ; restore loop index
-        JMP .next                       ; $6314 -> $62F9
+        JMP .next                       ; > $62F9
 .page2:
         JSR INTERLACE_BLIT_P2
-        JMP .paint_resume               ; $631A -> $6312 (shared tail)
+        JMP .paint_resume               ; > $6312 (shared tail)
 @ %def REFRESH_PILLARS
 
 <<game engine A tail>>=
@@ -10724,8 +10724,8 @@ SPRITE_PTR_HI = *+2               ; High of LDA abs,Y operand --- caller sets
 ; Disk-image bytes $24 $00 encode BIT $00, which is a 2-byte NOP for
 ; normal callers.  LEVEL_INTRO_TICK patches to AND #imm for intro
 ; flicker frames, then restores $24 $00 before returning.
-SMC_SPRITE_MASK_OP  = *           ; $65B7 --- opcode byte (BIT zp / AND imm)
-SMC_SPRITE_MASK_ARG = *+1         ; $65B8 --- operand byte (ZP addr / AND imm)
+SMC_SPRITE_MASK_OP  = *           ; SMC_SPRITE_MASK_OP--- opcode byte (BIT zp / AND imm)
+SMC_SPRITE_MASK_ARG = *+1         ; SMC_SPRITE_MASK_ARG--- operand byte (ZP addr / AND imm)
         DC.B $24, $00             ; BIT $00 --- flicker-mask SMC slot
 SMC_ORA_LO = *+1                  ; Low of ORA abs,X operand --- patched
 SMC_ORA_HI = *+2                  ; High of ORA abs,X operand --- patched
@@ -10740,7 +10740,7 @@ SMC_STA_HI = *+2                  ; High of STA abs,X operand --- patched
         BPL .col_loop             ; More bytes on this row?
 
 ; --- Advance to next row ---
-.advance_row:                     ; $65C5 --- BMI target from dead tail
+.advance_row:                     ; -- BMI target from dead tail
         INC ZP_SPRITE_Y           ; Next screen row
         DEC ZP_SPRITE_H           ; Rows remaining?
         BNE .next_row
@@ -10753,7 +10753,7 @@ SMC_STA_HI = *+2                  ; High of STA abs,X operand --- patched
 .dead_tail:
         DEX
         DEC ZP_SPRITE_ROW_REMAIN
-        BMI .advance_row          ; $65CF --- target $65C5
+        BMI .advance_row          ; -- target $65C5
         INY
         JMP .dead_tail
 @ %def DRAW_SPRITE SPRITE_PTR_LO SPRITE_PTR_HI

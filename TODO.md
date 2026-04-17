@@ -28,8 +28,12 @@ Review existing chunks for violations:
       SFX_TONE ($67C1).
 - [ ] `$719D` — Scroll / camera
 - [ ] `$683C` — Page flip routine
-- [ ] `$67C1` — `SFX_TONE` stub: nested delay loop with CMP ($36),Y —
-      needs RE once $36 pointer/flag role is nailed down
+- [x] `$67C1` — `SFX_TONE`: speaker-click tone / delay generator.
+      Classic nested delay loop; A = pitch, X = duration; clicks the
+      speaker via `CMP ($36),Y` where ($36,$37) is an indirect pointer
+      built so that bit 4 of $36 toggles between $C030 (speaker, sound
+      on) and $C020 (silent cassette output, sound off).  Renamed
+      `ZP_SOUND_A`/`_B` to `ZP_SFX_CLICK` / `ZP_SFX_CLICK_SAVED`.
 - [ ] `$10AB` — Display update
 - [ ] `$130A` — Page flip preparation
 - [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page. Sibling variants at `$65D5` (narrow column range, OR blit) and `$662C` (`BLIT_TILE`, opaque STA blit) still to do.

@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Render the post-GAME_INIT hi-res page 1 as a PNG.
+"""Render the post-GAME_INIT HUD/frame hi-res page 1 as a PNG.
 
-Simulates Drol's title-screen unpacker at $4013: it walks 37 records of
+Simulates Drol's HUD/frame unpacker (GAME_INIT at $4013): it walks 37 records of
 the form [dest_lo, dest_hi, 40 bytes] starting at $4100, terminated by
 $FF. Each record writes its 40 bytes (in reverse, since the unpacker
 counts Y from $27 down to 0) to the hi-res page-1 address.
 
-Rendered output: images/title_screen.png (280x192 scaled 3x).
+Rendered output: images/hud_frame.png (280x192 scaled 3x).
 
-The unpacker only fills 37 specific scanlines (rows 0-32 and 188-191);
-all other rows are rendered as black here, matching what the hi-res
-framebuffer looks like before any other init code touches it.
+The unpacker only fills 37 specific scanlines (rows 0-32 and 188-191)
+-- the static HUD strip on top and a thin strip on the bottom. All
+other rows are rendered as black here. The DROL logo and other
+title-screen foreground are drawn later by code that has not yet
+been reverse engineered.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ def hires_row_address(y: int) -> int:
     return HIRES_BASE + (y & 7) * 0x400 + ((y >> 3) & 7) * 0x80 + (y >> 6) * 0x28
 
 
-def unpack_title_screen(drol: bytes) -> bytearray:
+def unpack_hud_frame(drol: bytes) -> bytearray:
     """Run the GAME_INIT unpack on a blank framebuffer and return it."""
     fb = bytearray(HIRES_SIZE)
     ptr = TITLE_DATA_ADDR - DROL_BASE  # offset into drol.bin
@@ -98,7 +100,7 @@ def render_row(row_bytes: bytes) -> list[tuple[int, int, int]]:
 
 def main() -> None:
     drol = DROL_BIN.read_bytes()
-    fb = unpack_title_screen(drol)
+    fb = unpack_hud_frame(drol)
 
     img = Image.new("RGB", (280 * SCALE, 192 * SCALE), COLOR_BLACK)
     for y in range(192):
@@ -113,7 +115,7 @@ def main() -> None:
                 for sx in range(SCALE):
                     img.putpixel((x * SCALE + sx, y * SCALE + sy), color)
 
-    out = pathlib.Path("images/title_screen.png")
+    out = pathlib.Path("images/hud_frame.png")
     out.parent.mkdir(exist_ok=True)
     img.save(out)
     print(f"Wrote {out} ({280 * SCALE}x{192 * SCALE}).")

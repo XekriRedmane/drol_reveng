@@ -2139,10 +2139,12 @@ via [[JSR $4000]]. The first 19 bytes (\$4000--\$4012) are NOPs --- the
 original copy protection was patched out. The real initialization begins
 at \$4013.
 
-\section{Title screen unpacker}
+\section{HUD/frame unpacker}
 
 [[GAME_INIT]] at \$4013 unpacks a data stream from \$4100 into hi-res
-page~1 (\$2000--\$3FFF), drawing the title screen. The stream consists
+page~1 (\$2000--\$3FFF), drawing the static HUD and playfield frame
+(score panels, lives/level indicators, and wall/floor borders --- \emph{not}
+the DROL logo, which is drawn later). The stream consists
 of 37 records, each containing a 2-byte destination address (lo/hi)
 followed by 40 data bytes. A \$FF terminator ends the stream.
 
@@ -2154,7 +2156,7 @@ swappable level data area loaded from track~5.
 
 The 37 records only touch rows 0--32 and 188--191 of hi-res page~1;
 every other scanline is left in whatever state the framebuffer was in
-when [[GAME_INIT]] started. Figure~\ref{fig:title-screen} shows what
+when [[GAME_INIT]] started. Figure~\ref{fig:hud-frame} shows what
 the page looks like immediately after [[GAME_INIT]] returns, assuming
 a cleared framebuffer: the static score/hiscore HUD, the player-lives
 and level indicators, and the purple wall/floor frame of the playfield.
@@ -2164,12 +2166,12 @@ by the game code itself.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{images/title_screen.png}
+\includegraphics[width=0.9\textwidth]{images/hud_frame.png}
 \caption{Hi-res page~1 contents immediately after [[GAME_INIT]]
 returns. Rendered by simulating the unpacker on
 [[reference/drol.bin]] and applying Apple~II hi-res palette rules
-(see [[.claude/scripts/render_title_screen.py]]).}
-\label{fig:title-screen}
+(see [[.claude/scripts/render_hud_frame.py]]).}
+\label{fig:hud-frame}
 \end{figure}
 
 <<drol defines>>=
@@ -2234,7 +2236,7 @@ ZP_INPUT_2      = $54           ; Input handler pointer 2 (2 bytes)
         ORG $4000
 GAME_INIT_NOP:
         SUBROUTINE
-        ; Title screen unpacker — draws initial hi-res display.
+        ; HUD/frame unpacker — draws the static playfield chrome.
         ;
         ; Inputs:
         ;   Data stream at $4100: [dest_lo, dest_hi, 40 bytes]... $FF
@@ -2253,8 +2255,8 @@ GAME_INIT_NOP:
         DS 19,$EA
 
 GAME_INIT:                      ; $4013
-        LDY #<TITLE_SCREEN_DATA ; Stream pointer low ($00)
-        LDA #>TITLE_SCREEN_DATA ; Stream pointer high ($41)
+        LDY #<HUD_FRAME_DATA ; Stream pointer low ($00)
+        LDA #>HUD_FRAME_DATA ; Stream pointer high ($41)
         STY ZP_STREAM
         STA ZP_STREAM+1
 .next_record:
@@ -2289,10 +2291,11 @@ READ_BYTE:                     ; $4036
         RTS
 @ %def GAME_INIT_NOP GAME_INIT READ_BYTE
 
-\section{Title screen data}
+\section{HUD/frame data}
 
 The packed data stream at \$4100--\$4712 contains 37 records (1555 bytes)
-of hi-res screen data for the title screen. Each record writes 40 bytes
+of hi-res screen data for the HUD and playfield frame. Each record writes
+40 bytes
 to a specific hi-res page 1 address.
 
 <<game init padding>>=
@@ -2303,10 +2306,10 @@ GAME_INIT_PAD:
         DS $4100-*,0
 @ %def GAME_INIT_PAD
 
-<<title screen data>>=
+<<hud frame data>>=
 
         ORG $4100
-TITLE_SCREEN_DATA:
+HUD_FRAME_DATA:
 ; 37 records of [dest_lo, dest_hi, 40 data bytes] + $FF terminator.
 ; Record 0: hi-res row at $2000.
         DC.W $2000
@@ -2569,7 +2572,7 @@ TITLE_SCREEN_DATA:
         HEX 2A 55 2A 55 2A 55 2A 55
 ; Terminator.
         DC.B $FF
-@ %def TITLE_SCREEN_DATA
+@ %def HUD_FRAME_DATA
 
 <<game init remaining>>=
 
@@ -7458,7 +7461,7 @@ PAGE_FLIP:
 ; --- ORG $4000: Game init ---
 <<game init>>
 <<game init padding>>
-<<title screen data>>
+<<hud frame data>>
 <<game init remaining>>
 ; --- ORG $4800: Unused ---
 <<unused 4800>>

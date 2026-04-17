@@ -3444,8 +3444,9 @@ MAIN_LOOP:
         ;
         ; Behavior:
         ;   Calls ~25 subroutines for rendering, input, physics, AI.
-        ;   Increments frame counter. Checks $5E (level complete) and
-        ;   $39 (game over) flags to exit the loop.
+        ;   Increments frame counter. Checks $5E (lives exhausted ->
+        ;   LIFE_LOST_HANDLER) and $39 (hit credits exhausted ->
+        ;   GAME_OVER) to exit the loop.
         ;
         ; Modifies:
         ;   All game state via subroutine calls, ZP $FD (frame counter)
@@ -3503,13 +3504,13 @@ SMC_ATTRACT = *
         JSR POST_FRAME          ; Post-frame cleanup
 
 ; --- Exit checks ---
-        LDA $5E                 ; Level-complete flag
+        LDA ZP_LIVES_BCD        ; HUD lives counter (BCD)
         BPL .check_game_over
-        JMP LEVEL_COMPLETE      ; Level complete handler
+        JMP LIFE_LOST_HANDLER   ; Lives exhausted (BCD underflow -> $99)
 .check_game_over:
-        LDA $39                 ; Game-over flag
+        LDA ZP_GAME_OVER        ; Per-hit credit counter
         BPL .next_frame
-        JMP GAME_OVER           ; Game over handler
+        JMP GAME_OVER           ; Hit credits exhausted
 .next_frame:
         JMP MAIN_LOOP           ; Next frame
 @ %def MAIN_LOOP SMC_INPUT ATTRACT_ENTRY SMC_ASCEND SMC_DESCEND SMC_MOVE_LEFT SMC_MOVE_RIGHT SMC_RENDER SMC_ATTRACT
@@ -4079,7 +4080,8 @@ Addr & Name & Initial value \\
 \$D3     & [[ZP_SCORE_LO]]       & \$00 \\
 \$5E     & [[ZP_LIVES_BCD]]      & \$04 (four lives, BCD-decremented on death) \\
 \$46     & \$46 (write-only)     & \$00 (never read --- likely dead store) \\
-\$44     & [[ZP_RESTART_FLAG]]   & \$FF (cold-start flag, tested at \$5EC5) \\
+\$44     & [[ZP_RESTART_FLAG]]   & \$FF (write-only in practice; the
+only read is at [[RESTART_DISPATCH]] which is dead code) \\
 \end{tabular}
 \end{center}
 
@@ -4116,7 +4118,8 @@ ZP_SCORE_1      = $2C           ; Score HUD digit 1
 ZP_SCORE_2      = $2D           ; Score HUD digit 2
 ZP_CLEAR_COL    = $2E           ; Playfield-clear column counter / right edge
 ZP_LIVES_BCD    = $5E           ; BCD lives counter (shown in HUD; <0 = game over)
-ZP_RESTART_FLAG = $44           ; Restart dispatch flag ($FF = cold start)
+ZP_RESTART_FLAG = $44           ; Dispatch flag written to $FF on cold start;
+                                ; only read at $5EC5 (dead code)
 
 ; --- Playfield-column HUD bounds (read by BEAM_UPDATE, written here) ---
 HUD_SCORE_COL   = $65AB         ; Score-HUD right edge / playfield left bound
@@ -4127,8 +4130,10 @@ ZP_SCORE_HI     = $D1           ; BCD score, high byte (ten-thousands / hundred-
 ZP_SCORE_MID    = $D2           ; BCD score, middle byte (thousands / hundreds)
 ZP_SCORE_LO     = $D3           ; BCD score, low byte (tens / ones)
 
-; --- Tail-call target (in game-engine B hex blob) ---
-RESUME_GAMEPLAY_SMC = $6AA7     ; Re-patches MAIN_LOOP SMC slots to enable input/render
+; --- Tail-call target (sub-entry inside LEVEL_INTRO_TICK's .activate) ---
+; RESUME_GAMEPLAY_SMC is a module-level label at $6AA7, inside the
+; LEVEL_INTRO_TICK chunk; it's the 13-byte SMC-patch tail of the
+; .activate block, also reached directly by GAME_START_INIT's JMP.
 @
 
 <<game start init>>=
@@ -4178,8 +4183,12 @@ GAME_START_INIT:
         JSR INIT_LEVEL_STATE     ; Restore ZP from master buffers
 
 GAME_RESTART:
-        ; Sub-entry: called from $5ECB to reset lives/score/flags
-        ; without re-seeding player position or HUD columns.
+        ; Sub-entry: skips player-Y and HUD-column reseed.  The only
+        ; textual caller is the [[JSR GAME_RESTART]] at $5ECB inside
+        ; [[RESTART_DISPATCH]], which is statically dead code --- so
+        ; this entry is also unreached in practice.  Kept as a
+        ; documented sub-entry so the GAME_RESTART semantics (the
+        ; lives/score/flag subset of GAME_START_INIT) remain explicit.
 
 ; --- Reset lives / score / flags ---
         LDA #$04
@@ -4190,7 +4199,9 @@ GAME_RESTART:
         STX ZP_SCORE_LO
         STX $46                  ; Write-only byte (never read)
         DEX
-        STX ZP_RESTART_FLAG      ; $FF = cold start (tested at $5EC5)
+        STX ZP_RESTART_FLAG      ; $FF cold-start marker; only read at
+                                 ;   $5EC5 (dead code) --- effectively
+                                 ;   a dead store in the live engine
 
 ; --- Tail-call: resume main-loop input/render ---
         JMP RESUME_GAMEPLAY_SMC  ; Re-patches SMC slots in MAIN_LOOP
@@ -4367,38 +4378,58 @@ DIFFICULTY_RESET:
         RTS
 @ %def DIFFICULTY_UPDATE DIFFICULTY_RESET
 
-\section{Level complete handler}
+\section{Life-lost handler (``game over'')}
 
-[[LEVEL_COMPLETE]] at \$7208 runs when the level-complete flag (\$5E)
-goes negative. It first clears the keyboard strobe, calls a transition
-routine, then patches the main loop to disable attract behavior.
+[[LIFE_LOST_HANDLER]] at \$7208 is the end-of-life handler reached
+from MAIN_LOOP when the on-screen lives counter [[ZP_LIVES_BCD]]
+(\$5E) goes negative.  Earlier prose called this
+\texttt{LEVEL\_COMPLETE}, but \$5E is the BCD lives counter, not a
+level-state flag --- this routine runs after the last on-screen life
+has been consumed.  It is one of two end-game paths; the other is
+[[GAME_OVER]] at \$BDA0 (reached when [[ZP_GAME_OVER]] \$39 goes
+negative, per-hit credit exhausted).
 
-If extra lives remain (\$8C $>$ 0), the handler loops showing an
-extra-life animation. Each iteration decrements the extra-life counter,
-sets up sprite parameters, draws a sprite, and runs one frame of the
-main loop. During this animation, keyboard or joystick input is polled;
-if detected, control transfers to the attract loop's input-detection
-code.
+On entry, the handler clears the keyboard strobe, runs the level
+transition effect, and patches the main loop's attract-control slot
+to an [[RTS]] so that inner frames of the extra-life animation do
+not re-enter attract animation callbacks.
 
-When the extra-life count reaches zero, [[GAME_START_INIT]] is called
-to reset game state, the sound flag is refreshed, sprite rendering is
-re-enabled, and execution falls through into [[ATTRACT_LOOP]].
+If the ``extras'' stash [[ZP_EXTRA_LIVES]] (\$8C) is positive, the
+handler draws one extra-life sprite, polls for input, and calls
+[[MAIN_LOOP]] once.  MAIN\_LOOP itself terminates via [[JMP
+LIFE_LOST_HANDLER]] (not RTS), so each ``iteration'' of the extras
+animation is a fresh entry from \$682F with a slowly-growing stack;
+the JSR/JMP loop structure here is only a local fallback in case
+MAIN\_LOOP ever did return normally.
 
-<<level complete defines>>=
+When the extras stash reaches zero, control enters
+[[RESTART_NEW_GAME]] at \$7255 which [[JSR GAME_START_INIT]] resets
+score/lives/flags, rearms the silent SFX pointer, re-enables the
+sprite-render main-loop slot, and falls through into [[ATTRACT_LOOP]]
+to display the title screen.
 
-; --- Subroutine stubs (level complete) ---
+During the animation, any detected key or joystick press diverts to
+[[ATTRACT_KEY_DETECT]]/[[ATTRACT_JOY_DETECT]] at the end of
+[[ATTRACT_LOOP]], which starts the next game immediately.
+
+<<life lost handler defines>>=
+
+; --- Subroutine stubs (life-lost handler) ---
 ; (LEVEL_TRANSITION has its own ORG chunk)
 ; (DRAW_SPRITE / SPRITE_PTR_LO / SPRITE_PTR_HI have their own ORG chunk)
 ; (ZP_SPRITE_W / _H / _Y / _X live in draw sprite defines)
-SMC_ATTRACT_RTS = $6827         ; Self-mod: attract loop control
+SMC_ATTRACT_RTS = $6827         ; Self-mod: attract-loop control slot
 ; SMC_SR_YSRC ($64FA) / SMC_SR_HEIGHT ($64F6) are the operand bytes of
 ; DRAW_PLAYER's idle-path "LDA $06" and "LDA #$13" (sprite Y source and
-; height).  Declared in the draw-player defines chunk.  LEVEL_COMPLETE
-; reasserts their default values ($06 / $13) on entry because
-; LEVEL_INTRO_TICK may have patched them for the countdown animation.
+; height).  Declared in the draw-player defines chunk.
+; LIFE_LOST_HANDLER reasserts their default values ($06 / $13) on
+; entry because LEVEL_INTRO_TICK may have patched them for the
+; countdown animation.
 
-; --- Zero-page (level complete) ---
-ZP_EXTRA_LIVES  = $8C           ; Extra lives counter for animation
+; --- Zero-page (life-lost handler) ---
+ZP_EXTRA_LIVES  = $8C           ; Stash of extra lives (separate from
+                                ;   HUD counter ZP_LIVES_BCD); animated
+                                ;   down when the HUD counter bottoms out.
 ; ZP_SFX_CLICK / ZP_SFX_CLICK_SAVED are the low bytes of the speaker-click
 ; pointer used by SFX_TONE ($67C1).  See the sound section of the input
 ; processor for how $36/$38 encode sound on/off via bit 4.
@@ -4406,28 +4437,40 @@ ZP_SFX_CLICK       = $36        ; Current SFX click pointer low ($20 silent, $30
 ZP_SFX_CLICK_SAVED = $38        ; Preserved copy across attract/game transitions
 @
 
-<<level complete>>=
+<<life lost handler>>=
 
         ORG $7208
-LEVEL_COMPLETE:
+LIFE_LOST_HANDLER:
         SUBROUTINE
-        ; Level complete handler — shows extra-life animation, restarts.
+        ; End-of-life handler --- fires when ZP_LIVES_BCD ($5E) goes
+        ; negative (BCD underflow below $00 yields $99, bit~7 set).
+        ; MAIN_LOOP reaches this via [[JMP LIFE_LOST_HANDLER]] at $682F.
         ;
         ; Inputs:
-        ;   ZP_EXTRA_LIVES ($8C) — extra lives to animate
+        ;   ZP_EXTRA_LIVES ($8C)  --- stash of extra lives to animate
         ;
         ; Behavior:
-        ;   Animates each extra life with a sprite loop.
-        ;   Polls input during animation.
-        ;   When done, calls GAME_START_INIT and falls into ATTRACT_LOOP.
+        ;   Clears keyboard strobe, runs level-transition effect, pins
+        ;   the attract-control main-loop slot to RTS.  Then draws one
+        ;   extra-life sprite per iteration, polls for input (diverts
+        ;   to ATTRACT_KEY_DETECT / ATTRACT_JOY_DETECT if found), and
+        ;   runs one frame of MAIN_LOOP between draws.  When the
+        ;   extras stash is empty, enters the RESTART_NEW_GAME tail
+        ;   ($7255) which resets game state and falls through to
+        ;   ATTRACT_LOOP.
         ;
         ; Modifies:
-        ;   $8C, sprite parameters, main loop patches
+        ;   ZP_EXTRA_LIVES, sprite-draw params, ZP_SFX_CLICK,
+        ;   ZP_SFX_CLICK_SAVED, SMC_ATTRACT_RTS, SMC_SR_YSRC,
+        ;   SMC_SR_HEIGHT, SMC_RENDER.
         ; Clobbers: A, X, Y
 
 ; --- Initialization ---
         LDA KBDSTROBE            ; Clear keyboard strobe
         JSR LEVEL_TRANSITION     ; Transition effects
+LIFE_LOST_RESUME:
+        ; Sub-entry: RESTART_DISPATCH's flag=0 path JMPs here, skipping
+        ; the strobe clear + transition effect above.
         LDA #$60                 ; RTS opcode
         STA SMC_ATTRACT_RTS      ; Patch: disable attract subroutine
         LDA #$06
@@ -4437,9 +4480,9 @@ LEVEL_COMPLETE:
 
 ; --- Extra-life animation loop ---
 .check_extra:
-        LDA ZP_EXTRA_LIVES       ; Extra lives remaining?
-        BEQ .no_more_lives       ; None left → start new game
-        DEC ZP_EXTRA_LIVES       ; Consume one extra life
+        LDA ZP_EXTRA_LIVES       ; Extras stash > 0?
+        BEQ RESTART_NEW_GAME     ; Empty --- reset game and fall to attract
+        DEC ZP_EXTRA_LIVES       ; Consume one extra
 
 ; --- Draw extra-life sprite ---
         LDA #$06
@@ -4454,31 +4497,36 @@ LEVEL_COMPLETE:
         STA SPRITE_PTR_LO        ; Sprite data pointer low
         LDA #$B6
         STA SPRITE_PTR_HI        ; Sprite data pointer high
-        JSR DRAW_SPRITE     ; Draw extra-life sprite
+        JSR DRAW_SPRITE          ; Draw extra-life sprite
 
 ; --- Poll input during animation ---
         LDA KEYBOARD             ; Check keyboard
-        BMI ATTRACT_KEY_DETECT   ; Key pressed → handle input
+        BMI ATTRACT_KEY_DETECT   ; Key pressed --- start next game
         LDY #$00
         LDA (ZP_INPUT_1),Y       ; Check joystick button 1
-        BMI ATTRACT_JOY_DETECT   ; Pressed → handle input
+        BMI ATTRACT_JOY_DETECT   ; Pressed --- start next game
         LDA (ZP_INPUT_2),Y       ; Check joystick button 2
-        BMI ATTRACT_JOY_DETECT   ; Pressed → handle input
+        BMI ATTRACT_JOY_DETECT   ; Pressed --- start next game
 
 ; --- Run one frame and continue loop ---
         JSR MAIN_LOOP            ; Run one game frame
-        JMP .check_extra         ; Check for more extra lives
+        JMP .check_extra         ; (MAIN_LOOP normally re-enters at $7208
+                                 ;  via JMP, so this JMP is fallback only)
 
-; --- No more extra lives: reset and restart ---
-.no_more_lives:
-        JSR GAME_START_INIT      ; Reset game state
+; --- No more extras: reset game and fall through to attract ---
+RESTART_NEW_GAME:
+        ; First of three GAME_START_INIT callers (the others are $6121
+        ; for Ctrl-R and $7299 inside ATTRACT_LOOP).  Reached when
+        ; LIFE_LOST_HANDLER's extras stash is empty; performs a
+        ; full game reset and falls through into ATTRACT_LOOP.
+        JSR GAME_START_INIT      ; Reset score/lives/flags
         LDA ZP_SFX_CLICK         ; Save current sound-on/off state
         STA ZP_SFX_CLICK_SAVED   ;   into the preserved slot
-        LDA #OPCODE_JSR          ; $20 — JSR opcode AND "silent" pointer low
+        LDA #OPCODE_JSR          ; $20 --- JSR opcode AND "silent" pointer low
         STA ZP_SFX_CLICK         ; Force attract mode to silent
         STA SMC_RENDER           ; Re-enable sprite rendering (same $20 byte)
                                  ; Fall through to ATTRACT_LOOP
-@ %def LEVEL_COMPLETE
+@ %def LIFE_LOST_HANDLER LIFE_LOST_RESUME RESTART_NEW_GAME
 
 \section{Attract entity movement}
 
@@ -4784,7 +4832,9 @@ The attract loop at [[ATTRACT_LOOP]] (\$7263) calls the main game loop's
 attract entry point ([[JSR $67D7]]), which runs the game's rendering and
 animation subsystems without input handling. After each frame, it polls
 the joystick buttons and keyboard. When input is detected, it patches
-the main loop for game mode and jumps to [[MAIN_LOOP]].
+the main loop for game mode, enters the [[START_GAME_FROM_ATTRACT]]
+sub-entry (at \$7299), calls [[GAME_START_INIT]] and jumps to
+[[MAIN_LOOP]].
 
 <<attract loop>>=
 
@@ -4836,11 +4886,17 @@ ATTRACT_SET_MODE:
         STA SMC_RENDER          ; $67EF: enable sprite rendering
 
 ; --- Start game ---
+START_GAME_FROM_ATTRACT:
+        ; Third of three GAME_START_INIT callers (the others are $6121
+        ; for Ctrl-R restart and $7255 inside LIFE_LOST_HANDLER when
+        ; the extras stash runs out).  Reached after input has been
+        ; detected at the attract screen; performs a full game reset
+        ; then enters MAIN_LOOP.
         JSR GAME_START_INIT     ; Game start initialization
         LDA ZP_SFX_CLICK_SAVED  ; Restore saved sound-on/off state
         STA ZP_SFX_CLICK        ;   into the working SFX click pointer
         JMP MAIN_LOOP           ; Enter main game loop
-@ %def ATTRACT_LOOP ATTRACT_KEY_DETECT ATTRACT_JOY_DETECT ATTRACT_SET_MODE
+@ %def ATTRACT_LOOP ATTRACT_KEY_DETECT ATTRACT_JOY_DETECT ATTRACT_SET_MODE START_GAME_FROM_ATTRACT
 
 <<start attract>>=
 
@@ -7728,9 +7784,62 @@ ENEMY_C_DRAW:
         HEX 85 2B 85 2C 85 2D 8D AB
         HEX 65 A9 27 85 2E A9 28 8D
         HEX A7 65 A9 6B 85 4A 20 B8
-        HEX 11 A9 01 85 39 A5 44 F0
-        HEX 08 30 03 20 C2 13 4C CB
-        HEX 67 4C 0E 72 20 95 BE CE
+        HEX 11 A9 01 85 39
+@
+
+<<restart dispatch>>=
+
+        ORG $5EC5
+RESTART_DISPATCH:
+        SUBROUTINE
+        ; Restart-flag dispatcher (STATICALLY DEAD CODE).
+        ;
+        ; No JMP/JSR anywhere in boot1.bin, loader.bin, rwts.bin, or
+        ; drol.bin targets $5EC5 (nor any address in the $5E00-$5EFF
+        ; block that this routine sits at the end of).  The 15 bytes
+        ; here appear to be a leftover from a development restart
+        ; flow that was superseded by the live LIFE_LOST_HANDLER /
+        ; START_GAME_FROM_ATTRACT / INPUT_PROCESS Ctrl-R paths.
+        ; ZP_RESTART_FLAG ($44) is written to $FF by GAME_START_INIT
+        ; but never read at runtime --- this is the only read in the
+        ; whole binary and it never executes.
+        ;
+        ; Were the routine live, the intent (per the branch layout)
+        ; would be a 3-way dispatch on ZP_RESTART_FLAG:
+        ;   flag < 0 ($FF cold)    --> JMP MAIN_LOOP  (plain resume)
+        ;   flag == 0              --> JMP LIFE_LOST_RESUME ($720E;
+        ;                             skip-prologue re-entry into the
+        ;                             life-lost animation)
+        ;   flag > 0               --> JSR GAME_RESTART (skip player/
+        ;                             HUD reseed) then JMP MAIN_LOOP
+        ;
+        ; The GAME_RESTART sub-entry ($13C2) is tailored for exactly
+        ; this caller --- it skips the player-Y and HUD-column reseed
+        ; that GAME_START_INIT does from the main entry --- which is
+        ; further evidence that this dispatcher was the originally
+        ; intended gateway between restart flows before the code was
+        ; reorganised around the MAIN_LOOP exit-check style.
+
+        LDA ZP_RESTART_FLAG             ; $44
+        BEQ .flag_zero                  ; == 0 --> life-lost resume
+        BMI .flag_negative              ; < 0  --> plain main-loop entry
+        JSR GAME_RESTART                ; > 0  --> partial reset then...
+.flag_negative:
+        JMP MAIN_LOOP                   ;         MAIN_LOOP
+.flag_zero:
+        JMP LIFE_LOST_RESUME            ; Skip-prologue re-entry into
+                                        ;   the life-lost handler.
+@ %def RESTART_DISPATCH
+
+<<staging buffers 5ED4>>=
+
+        ORG $5ED4
+        SUBROUTINE
+        ; Remainder of the staging-buffers hex blob ($5ED4-$5FFF).
+        ; Immediately preceded by RESTART_DISPATCH ($5EC5-$5ED3).
+        ; Raw data --- 300 bytes
+
+        HEX 20 95 BE CE
         HEX F8 06 F0 28 A9 04 8D F8
         HEX 04 A9 00 20 5A BE 68 20
         HEX 5A BE 4C BC BD A4 2E CC
@@ -9552,6 +9661,11 @@ LEVEL_INTRO_TICK:
         RTS
 
 ; --- Activation: restore main-loop slots and flip state to "running" ---
+; The tail of this block (from RESUME_GAMEPLAY_SMC onward) is a second
+; entry point jumped to by GAME_START_INIT --- the 13-byte SMC-patch
+; that re-enables input and sprite rendering in MAIN_LOOP.  The prefix
+; ($6A95..$6AA6) reseeds player column + gameplay-active flags and is
+; only reached by falling through from the wait-for-start branch above.
 .activate:
         LDA ZP_INTRO_Y
         STA ZP_PLAYER_COL               ; Restore player column
@@ -9562,6 +9676,10 @@ LEVEL_INTRO_TICK:
         LDA #$01
         STA $1E                         ; State = gameplay active
         STA $0D
+RESUME_GAMEPLAY_SMC:
+        ; Sub-entry: re-patch MAIN_LOOP's SMC slots to enable input
+        ; dispatch and sprite rendering.  Called via [[JMP]] from
+        ; GAME_START_INIT when starting (or restarting) a game.
         LDA #$06
         STA SMC_SR_YSRC                 ; DRAW_PLAYER reads ZP_PLAYER_COL again
         LDA #$20                        ; JSR opcode
@@ -9570,7 +9688,7 @@ LEVEL_INTRO_TICK:
         LDA #$13
         STA SMC_SR_HEIGHT               ; Restore default sprite height
         RTS
-@ %def LEVEL_INTRO_TICK
+@ %def LEVEL_INTRO_TICK RESUME_GAMEPLAY_SMC
 
 <<game engine B tail>>=
 
@@ -10632,7 +10750,7 @@ LEVEL_INTRO_TICK:
 <<joystick handler defines>>
 <<input process defines>>
 <<game start init defines>>
-<<level complete defines>>
+<<life lost handler defines>>
 <<attract anim 1 defines>>
 <<attract anim 2 defines>>
 <<attract anim 3 defines>>
@@ -10733,8 +10851,12 @@ LEVEL_INTRO_TICK:
 <<unused 4800>>
 ; --- ORG $5000: Loader zeros ---
 <<loader zeros>>
-; --- ORG $5C00: Staging buffers ---
+; --- ORG $5C00: Staging buffers (first slice, $5C00-$5EC4) ---
 <<staging buffers>>
+; --- ORG $5EC5: Restart-flag dispatcher (DEAD CODE) ---
+<<restart dispatch>>
+; --- ORG $5ED4: Staging buffers (second slice, $5ED4-$5FFF) ---
+<<staging buffers 5ED4>>
 ; --- ORG $6000: Input dispatch ---
 <<input dispatch>>
 <<input process>>
@@ -10770,8 +10892,8 @@ LEVEL_INTRO_TICK:
 <<game engine B tail>>
 ; --- ORG $719D: Difficulty update ---
 <<difficulty update>>
-; --- ORG $7208: Level complete ---
-<<level complete>>
+; --- ORG $7208: Life-lost handler (end-of-life / game-over) ---
+<<life lost handler>>
 ; --- ORG $7263: Attract loop ---
 <<attract loop>>
 ; --- ORG $72A3: Start attract ---

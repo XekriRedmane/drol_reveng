@@ -2,6 +2,24 @@
 
 ## Status snapshot (2026-04-17)
 
+The **attract/game/restart state machine is now fully documented**:
+MAIN_LOOP's two exit arms (`$7208` on lives-out, `$BDA0` on hit-
+credits-out) reach `LIFE_LOST_HANDLER` and `GAME_OVER` respectively;
+LIFE_LOST_HANDLER exhausts the extras stash `$8C` via animated
+frames and tails into `RESTART_NEW_GAME` ($7255) which resets game
+state and falls through to `ATTRACT_LOOP`; ATTRACT_LOOP polls input
+and on keypress enters `START_GAME_FROM_ATTRACT` ($7299) which
+re-resets and jumps into MAIN_LOOP.  The three callers of
+`GAME_START_INIT` are now all labeled sub-entries
+(`START_GAME_FROM_ATTRACT` at $7299, `RESTART_NEW_GAME` at $7255,
+`INPUT_PROCESS.check_restart` at $6121).  `RESUME_GAMEPLAY_SMC`
+($6AA7) is now a module-level sub-entry inside LEVEL_INTRO_TICK's
+`.activate` (retiring the EQU stub).  `RESTART_DISPATCH` ($5EC5)
+has been carved out of `<<staging buffers>>` and is documented as
+statically dead code --- no JMP/JSR in any of the four reference
+binaries targets it, and the `ZP_RESTART_FLAG` ($44) write at
+GAME_START_INIT's tail is effectively a dead store.
+
 The **entity-draw triplet is complete**: all three enemy advance
 routines and all three enemy draw routines are byte-perfect RE'd
 (`$13D6`, `$1423`, `$1536`, `$1591`, `$1646`, `$16AC`).  See the
@@ -21,6 +39,54 @@ still as HEX), and the remaining hex tail of `<<game engine A>>` at
 $614B-$64CA (player movement-tick handlers and the
 DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT input handlers
 called via SMC from MAIN_LOOP).
+
+### State-machine topology
+
+```
+ cold-start
+      |
+      v
+ GAME_START_INIT ($13A4) --resets score/lives/HUD--> RESUME_GAMEPLAY_SMC ($6AA7)
+      ^     ^                                                 |
+      |     |                                                 v (RTS)
+      |     +-- $6121 INPUT_PROCESS.check_restart (Ctrl-R)    |
+      |                                                       |
+      |    +-- $7255 RESTART_NEW_GAME (lives-out fall-through)|
+      |    |                                                  |
+      |    +-- $7299 START_GAME_FROM_ATTRACT (input detected) |
+      |                                                       v
+      |                                                 MAIN_LOOP ($67CB)
+      |                                                    |     |
+      |                                                    |     |
+      |     +------ $5E < 0 (BCD underflow)  JMP $7208 ----+     |
+      |     |                                                    |
+      |     v                                                    |
+      |  LIFE_LOST_HANDLER ($7208) --+                           |
+      |    |                         |                           |
+      |    |  $8C > 0 ->             |  $8C == 0 fall-through    |
+      |    |    one-frame anim       |                           |
+      |    |    then RE-ENTER        v                           |
+      |    |    via $682F      RESTART_NEW_GAME ($7255)          |
+      |    |                         |                           |
+      |    |                         |  fall through             |
+      |    |                         v                           |
+      |    |                   ATTRACT_LOOP ($7263)              |
+      |    |                         |                           |
+      |    |            input detect |                           |
+      |    |                         v                           |
+      |    |                   START_GAME_FROM_ATTRACT ($7299)   |
+      |    +-------------------------+                           |
+      |                                                          |
+      |         $39 < 0 (hit-credit out)    JMP $BDA0 -----------+
+      |                                           |
+      |                                           v
+      |                                       GAME_OVER (at $BDA0,
+      |                                         in relocated RWTS)
+      |
+      +-- $5EC5 RESTART_DISPATCH (dead code; originally dispatched
+          on ZP_RESTART_FLAG $44 to pick among three restart flows
+          but has no live caller in any of the reference binaries)
+```
 
 ## Immediate: apply new code chunk rules
 
@@ -357,8 +423,55 @@ Individual TODO entries:
 
 ### Game flow routines
 
-- [ ] `$7208` — Game-over handler (jumped to when `ZP_LIVES_BCD` $5E goes negative)
-- [ ] `$BDA0` — Game over handler (jumped to when $39 < 0)
+- [x] `$7208` — `LIFE_LOST_HANDLER`: end-of-life handler fired when
+      `ZP_LIVES_BCD` ($5E) goes negative via BCD underflow.  Clears
+      keyboard strobe, runs LEVEL_TRANSITION, pins SMC_ATTRACT_RTS
+      to RTS ($60) so attract callbacks are silenced.  Then per
+      iteration decrements the extras stash `ZP_EXTRA_LIVES` ($8C),
+      draws a B6-sprite from $B67D, polls for input (diverts to
+      ATTRACT_KEY_DETECT / ATTRACT_JOY_DETECT on press), and calls
+      MAIN_LOOP.  MAIN_LOOP exits via `JMP LIFE_LOST_HANDLER`
+      rather than RTS, so each animation frame is a fresh entry
+      with slow stack growth.  When `$8C == 0`, falls through to
+      `RESTART_NEW_GAME` ($7255).  **Correction:** this was
+      previously stubbed as `LEVEL_COMPLETE`, but $5E is the BCD
+      lives counter (not a level-complete flag), so the routine is
+      actually the lives-out game-over path.  Sub-entry
+      `LIFE_LOST_RESUME` at $720E skips the strobe/transition
+      prologue --- reached only by the dead `RESTART_DISPATCH`
+      ($5EC5).
+- [x] `$7255` — `RESTART_NEW_GAME`: sub-entry of LIFE_LOST_HANDLER
+      reached when extras stash is empty.  `JSR GAME_START_INIT`,
+      save+replace `ZP_SFX_CLICK`, enable `SMC_RENDER`, fall
+      through to `ATTRACT_LOOP`.  One of three GAME_START_INIT
+      call sites (the others: `$6121` Ctrl-R restart, `$7299`
+      START_GAME_FROM_ATTRACT).
+- [x] `$7299` — `START_GAME_FROM_ATTRACT`: sub-entry at the end of
+      ATTRACT_LOOP's input-detected path.  `JSR GAME_START_INIT`,
+      restore `ZP_SFX_CLICK` from saved, `JMP MAIN_LOOP`.  Third
+      GAME_START_INIT call site.
+- [x] `$6AA7` — `RESUME_GAMEPLAY_SMC`: 13-byte SMC patch re-enables
+      input dispatch (`SMC_INPUT = $20`), sprite render
+      (`SMC_RENDER = $20`), and restores `SMC_SR_YSRC = $06` /
+      `SMC_SR_HEIGHT = $13` for `DRAW_PLAYER`.  Sub-entry inside
+      `LEVEL_INTRO_TICK`'s `.activate` block (the prefix at
+      $6A95-$6AA6 reseeds player column + state flags on normal
+      activation; the `.activate` fall-through reaches this label
+      naturally, and `GAME_START_INIT` jumps here directly to
+      skip the prefix).  Retired the EQU stub; now a proper
+      module-level label.
+- [x] `$5EC5` — `RESTART_DISPATCH`: 15-byte 3-way dispatch on
+      `ZP_RESTART_FLAG` ($44).  **Statically dead code.**  No
+      JMP/JSR in boot1/loader/rwts/drol.bin reaches this routine
+      (nor anywhere in $5E00-$5EFF, a leftover RWTS-ish fragment
+      around it).  Were it live: flag<0 --> MAIN_LOOP; flag==0 -->
+      LIFE_LOST_RESUME; flag>0 --> `JSR GAME_RESTART` then
+      MAIN_LOOP.  `$44` write at GAME_START_INIT's tail is
+      effectively a dead store; `GAME_RESTART` ($13C2) is also
+      unreached in practice.  Carved out of `<<staging buffers>>`
+      as its own ORG chunk and documented.
+- [ ] `$BDA0` — Game over handler (jumped to when $39 < 0).
+      Outside drol.bin (in relocated RWTS region $BE00-$BFFF).
 - [x] `$13A4` — `GAME_START_INIT`: resets BCD score triple, BCD lives
       counter ($5E=$04), HUD column bounds ($65AB/$65A7), restart flag
       ($44=$FF), player Y ($4A=$6B), and the two-entry sub-routine chain
@@ -394,11 +507,18 @@ Individual TODO entries:
 ### Undocumented regions
 
 - [ ] `$4713-$47FF` — Screen init routines (currently HEX blob, has code at $471C+)
-- [ ] `$4800-$67CA` — Large gap between game init and main loop (sprites, tables, game code)
+- [ ] `$4800-$67CA` — Large gap between game init and main loop
+      (sprites, tables, game code).  Carved this session:
+      `$5EC5` RESTART_DISPATCH (15 bytes, dead code) out of
+      `<<staging buffers>>`, splitting it into two slices
+      `$5C00-$5EC4` (709 bytes) and `$5ED4-$5FFF` (300 bytes).
 - [x] `$683C-$699B` — Game engine B head: now documented as `DRAW_ENTITIES`
       (see above).  No longer a HEX blob.
 - [ ] `$6ABA-$719C` — Game engine B tail (sound, animation, entity processing,
-      level logic, HEX — 1763 bytes)
+      level logic, HEX — 1763 bytes).  Unchanged this session (the
+      `$6AA7` RESUME_GAMEPLAY_SMC carve-out landed in LEVEL_INTRO_TICK's
+      `.activate` block inside `<<level intro tick>>`, not in this
+      blob).
 - [ ] `$72A0-$72A2` — 3 bytes between attract loop exit and copy routine (JMP $67CB at $72A0)
 
 ## Fix reference binary build process

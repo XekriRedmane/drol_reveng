@@ -7,3 +7,4 @@
 - [Drol DRAW_PLAYER at $64DF](drol-draw-player.md) — main-loop player draw; NOT DRAW_ENTITIES phase-2 (which is perspective-grid sprite); gates on $02/$03, SMC patched by intro/complete
 - [Drol movement dispatch](drol-move-dispatch.md) — $04=ZP_MOVE_DIR (0/+/-); PLAYER_MOVE_TICK at $64CB routes to three tick handlers still inside game engine A HEX
 - [Drol GAME_START_INIT corrections](drol-game-start-init.md) — $6AA7 is SMC-resume not LOAD_LEVEL; $5E is lives-BCD not level-state; $65AB/$65A7 are column bounds; $2E is clear-col loop idx
+- [Drol state-machine topology](drol-state-machine.md) — $7208 LIFE_LOST_HANDLER (lives-out); $7255/$7299/$6121 three GAME_START_INIT callers; $5EC5 RESTART_DISPATCH is dead code

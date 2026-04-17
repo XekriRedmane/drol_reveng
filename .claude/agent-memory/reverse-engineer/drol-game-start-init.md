@@ -5,9 +5,15 @@ type: project
 ---
 
 GAME_START_INIT at $13A4 is the attract→game and in-game restart reset.
-Callers: $6121 (start key handler), $7255, $7299 (restart paths inside
-game-engine HEX blob).  Second entry point GAME_RESTART at $13C2 is
-called from $5ECB; it skips player-Y and HUD-column reseed.
+Callers (all labeled sub-entries now):
+- $6121 INPUT_PROCESS.check_restart (Ctrl-R key)
+- $7255 RESTART_NEW_GAME (LIFE_LOST_HANDLER tail, extras stash empty)
+- $7299 START_GAME_FROM_ATTRACT (ATTRACT_LOOP input-detected path)
+
+Second entry point GAME_RESTART at $13C2 is called only from $5ECB,
+inside RESTART_DISPATCH ($5EC5) which is statically dead code --- so
+GAME_RESTART is also unreached in practice.  Kept as a documented
+sub-entry anyway.
 
 **Why:** Several ZP/memory addresses touched by this routine were
 previously guessed labels that turned out to be wrong in a misleading

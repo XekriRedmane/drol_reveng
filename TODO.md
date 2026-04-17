@@ -41,7 +41,9 @@ Review existing chunks for violations:
       New ZP EQUs: `ZP_PROJ_GATE` ($32), `ZP_DIFF_THRESH_A/B` ($34/$35),
       `ZP_ADVANCE_RATE` ($40), `ZP_DIFF_TMP` ($5C), `ZP_FRAME_COUNTER`
       ($FD).  `$32` and `$40` are read by the not-yet-RE'd routines at
-      `$130A` (BPL gate) and `$13F7` / `$1675` (SBC decrement).
+      `$130A` (BPL gate) and `$13F7` / `$1675` (SBC decrement).  `$40`
+      consumer at `$13F7` is now documented as `ENEMY_A_ADVANCE` (see
+      below); `$1675` remains open as `ENEMY_C_ADVANCE`.
 - [x] `$683C` — `DRAW_ENTITIES`: final per-frame drawing dispatcher in
       MAIN_LOOP (misnamed "page flip" previously --- no display-page
       toggle here; that's `DISPLAY_PAGE_FLIP` at $6138).  Five phases:
@@ -66,6 +68,23 @@ Review existing chunks for violations:
       on) and $C020 (silent cassette output, sound off).  Renamed
       `ZP_SOUND_A`/`_B` to `ZP_SFX_CLICK` / `ZP_SFX_CLICK_SAVED`.
 - [ ] `$10AB` — Display update
+- [x] `$13D6` — `ENEMY_A_ADVANCE`: per-frame tick for the first of
+      three ``moving hazard'' slots at $D4--$EC.  Emits an SFX click
+      from `SND_PITCH_TBL_A` ($0229) gated on `ZP_ENEMY_A_SND_CTR`
+      ($B8), then decrements the 16-bit advance counter
+      `ZP_ENEMY_A_POS` ($DD/$DE) by `ZP_ADVANCE_RATE` ($40).  Gated by
+      `ZP_ENEMY_A_STATE` ($DC): $00 off; positive = steady tick;
+      negative = PRNG-gated drift (tick only when `ZP_PRNG_A` $5F <
+      $09, ~3.5% per frame).  On narrow-band crossing ($0000..$003D),
+      rearms: promotes drift->steady, writes $01 to
+      `ZP_ENEMY_C_STATE` ($D4 --- cross-slot handshake that wakes the
+      companion slot handled by `PLAYER_STATE`/`PLAYER_RENDER`),
+      reloads counter to $0361, and sets `ZP_ENEMY_A_ROW` ($DF) :=
+      `ZP_ENEMY_C_ROW` ($D7) + 7.  Retires the `BG_RESTORE`
+      misnomer --- this routine does no background restore.  Carved
+      $13D6--$1422 out of the old 976-byte `<<sprite player code>>`
+      HEX blob; the tail at $1423 is now labelled `SPRITE_DRAW_1`
+      (stub EQU removed).
 - [x] `$130A` — `BEAM_UPDATE`: player laser-beam subsystem, gated on
       `ZP_PROJ_GATE` ($32).  Inactive at difficulty tiers minimum and
       moderate ($32 = $FF); active at standard and maximum ($32 = $01).

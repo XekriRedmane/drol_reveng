@@ -3071,6 +3071,27 @@ PROJ_SPR_R_HI   = $76F7         ; Right-moving projectile sprite table, high
 
 @
 
+\paragraph{Projectile sprite art.}  Each projectile slot is rendered
+as a $3\times 3$-byte sprite (that is, [[ZP_SPRITE_W]]~=~2 and
+[[ZP_SPRITE_H]]~=~3), indexed by the perspective-frame index
+[[PROJ_FRAME_IDX]].  Figure~\ref{fig:projectile_sprites} shows the 8
+right-moving frames (top row, pointers fetched from \$75F7/\$76F7)
+and the 8 left-moving frames (bottom row, from \$AFD3/\$B053 in the
+level-swappable region).  The right-moving pointer table is in
+[[drol.bin]] but the sprite bytes themselves live beyond it, so
+rendering requires replaying the loader's phase-0 track read; the
+left-moving table is entirely inside the swappable region.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{images/projectile_sprites.png}
+\caption{Projectile sprite frames.  Top row: right-moving
+([[PROJ_SPR_R]]).  Bottom row: left-moving ([[PROJ_SPR_L]]).  Eight
+frames per direction, chosen by the projectile's perspective row via
+[[PROJ_FRAME_IDX]].}
+\label{fig:projectile_sprites}
+\end{figure}
+
 <<hazard check>>=
 
         ORG $0E5A
@@ -4767,6 +4788,27 @@ tables at \$B006 and \$B086. Each entity is drawn with height~8 via
 After the entity loop, it draws a fixed ``logo'' sprite at column~\$1D,
 row~\$A5, dimensions \$12$\times$\$08, with sprite data at \$BCF1.
 
+\paragraph{The ``logo'' sprite at \$BCF1.}  Despite the code comment,
+rendering the \$13$\times$\$08 byte region at \$BCF1
+(Figure~\ref{fig:drol_logo}) reveals that this fixed sprite is not
+the game title at all --- it is the \textbf{\textcopyright 1983
+Broderbund} attribution strip shown during the attract sequence.
+The title-screen ``DROL'' logo is drawn by a different routine via
+the [[ATTRACT_SPR2]] / [[ATTRACT_SPR]] tables at \$B002/\$B006 whose
+sprite widths and heights come from the runtime ZP slots
+\$E5..\$ED and \$F1..\$F6, so those cannot be rendered without
+simulating the attract-mode animation state.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.60\textwidth]{images/drol_logo.png}
+\caption{The fixed sprite at \$BCF1, dimensions $\$13\times\$08$
+bytes (W=\$12, H=\$08).  Drawn by [[ATTRACT_ANIM_4]] after the
+variable-entity loop.  The sprite renders the ``(c) 1983
+Broderbund'' attribution.}
+\label{fig:drol_logo}
+\end{figure}
+
 <<attract anim 4 defines>>=
 
 ; --- Zero-page (attract sprites) ---
@@ -5636,6 +5678,30 @@ screen-X residue as
 match required, so off-screen entities are clipped to the off-camera
 ``next slot'' branch via the [[BNE \$0CAA]] guard).
 
+\paragraph{Sprite art.}  Figure~\ref{fig:rescue_sprites} shows all
+28~rescue-child body frames.  The four rows correspond to the four
+animation variants from the selection table above (+dir end,
++dir mid, -dir end, -dir mid); each row has seven frames indexed by
+[[PROJ_FRAME_IDX]] (\$1B8F).  All 28~sprites are \$04~bytes per row
+(that is, [[ZP_SPRITE_W]]~=~\$03) with the end-step variants at
+height~\$1A and the mid-step variants at height~\$1C.  The pointer
+tables are inside [[drol.bin]] but the sprite bytes themselves
+(\$A3C3--\$AF8F) live in the swappable level-data region and were
+extracted from [[drol.dsk]] by replaying the loader's phase-0 track
+read.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/rescue_sprites.png}
+\caption{Rescue-child body sprite frames.  Rows from top to bottom:
+[[RESCUE_SPR_POS_END]], [[RESCUE_SPR_POS_MID]],
+[[RESCUE_SPR_NEG_END]], [[RESCUE_SPR_NEG_MID]] --- indexed by
+perspective-frame index 0..6.  The leftmost (closest) frames are
+purple/blue; the farthest (smallest) are orange --- palette-bit 7 of
+the sprite bytes flips across the perspective receding axis.}
+\label{fig:rescue_sprites}
+\end{figure}
+
 <<rescue draw defines>>=
 
 ; --- Zero-page (rescue draw working values) ---
@@ -6136,6 +6202,27 @@ parallel tables for enemies tracked by the beam.  These overlap the
 ESC-key location at \$9B (renamed here from [[KEY_ESC]] for the
 purposes of this subsystem; the ESC-key alias only aliases \$9B when
 the input dispatcher polls it).
+
+\paragraph{Beam sprite and ready-prompt.}  The beam source pointer
+\$B529 is sprite id~0 of the general [[SPRITE_TABLE]] family at
+\$B000/\$B080 (the main 128-entry sprite pointer table shared by
+attract, enemy-B, and UI draws).  Adjacent id~1 at \$B535 is the
+``ready'' prompt sprite drawn at the top of each level intro by
+[[LEVEL_INTRO_TICK]].  Both live in the swappable level-data region
+and are shown in Figure~\ref{fig:sprite_table_ui} --- the beam's
+sprite bytes are the first \$0C bytes at \$B529 and render as a
+short vertical dashed trail; the ready-prompt sprite is
+$\$04\times\$0F$ (W=\$03, H=\$0F).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.35\textwidth]{images/sprite_table_ui.png}
+\caption{[[SPRITE_TABLE]] UI sprites.  Left: the beam sprite at id~0
+(\$B529), drawn by [[BEAM_TARGET_DRAW]] as a variable-height trail
+1..4~rows tall between [[BEAM_Y]] and the target floor.  Right: the
+``ready'' prompt at id~1 (\$B535), drawn by [[LEVEL_INTRO_TICK]].}
+\label{fig:sprite_table_ui}
+\end{figure}
 
 <<beam target draw hex>>=
 
@@ -6721,6 +6808,26 @@ for walk-variant~2.  Because the paired (lo,\,hi) tables are exactly
 \$80 apart, the two \texttt{STA} instructions patch
 [[SMC_DS_SRC_LO]] and [[SMC_DS_SRC_HI]] from a single X index.
 
+\paragraph{Sprite art.}  Figure~\ref{fig:enemy_a_sprites} shows all
+four enemy-A pointer tables laid out as 7-frame rows.  The top row
+is the large body sprite [[SPRITE_TABLE_A_BODY]] (\$04$\times$\$13),
+rendered at a smaller scale so it fits alongside the tiny
+stance-feet and walk-feet tables below it.  All four tables are
+indexed by [[PROJ_FRAME_IDX]] and share the same $X$ index for
+paired lo/hi access.  Sprite bytes live in the level-swappable
+region (\$B6DF--\$BA27) and were extracted from [[drol.dsk]] phase~0.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{images/enemy_a_sprites.png}
+\caption{Enemy-A sprite family.  Row~1: [[SPRITE_TABLE_A_BODY]]
+(\$B6DF..).  Row~2: [[SPRITE_TABLE_A_FEET]] (stance feet,
+$\$04\times\$03$).  Row~3: [[SPRITE_TABLE_A_STEP1]] (walk phase~3,
+$\$04\times\$04$).  Row~4: [[SPRITE_TABLE_A_STEP2]] (walk phase~1,
+$\$04\times\$04$).}
+\label{fig:enemy_a_sprites}
+\end{figure}
+
 <<enemy a draw defines>>=
 
 ; --- Scratch ZP used only by the walking-frame animation ---
@@ -7265,6 +7372,25 @@ enemy-B drift-puff sprite.  This is different from the steady-mode
 draw which reads from the persistent [[SPRITE_TABLE_LO]] / [[SPRITE_TABLE_HI]]
 tables at \$B000.
 
+\paragraph{Sprite art.}  Figure~\ref{fig:enemy_b_sprites} shows the
+seven enemy-B body frames at the seven perspective depths.  The
+small drift-mode puff is part of
+Figure~\ref{fig:enemy_c_auxiliary} (the level-specific auxiliary
+set, shared with enemy-C and the special-sprite peek marker).  All
+enemy-B bytes live in the swappable region (\$BA27--\$BCF0) and
+were extracted from [[drol.dsk]] phase~0.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/enemy_b_sprites.png}
+\caption{Enemy-B body sprite frames ([[SPRITE_TABLE_B]]).  Seven
+perspective-depth frames at $\$06\times\$11$ (that is,
+[[ZP_SPRITE_W]]~=~\$05 so the decoder reads six bytes per row).
+The palette swap from blue (close) to orange (far) is the usual
+palette-bit-7 flip along the perspective axis.}
+\label{fig:enemy_b_sprites}
+\end{figure}
+
 <<enemy b draw defines>>=
 
 ; --- Zero-page used by enemy-B draw (shared with ENEMY_A_DRAW) ---
@@ -7775,6 +7901,38 @@ by striking the player.  Combined with enemy-A's rearm writing
 is: A wakes C on its own rearm; C arms both itself and A into drift
 mode when it kills a floor-enemy; B has no outgoing handshake and
 only affects its own state.
+
+\paragraph{Sprite art.}
+Figure~\ref{fig:enemy_c_sprites} shows the seven enemy-C body frames;
+Figure~\ref{fig:enemy_c_auxiliary} shows the secondary
+``tail'' sprite (7 frames from [[ENEMY_C_TAIL]] at \$7549/\$7649)
+together with the three un-indexed single-frame sprites that share
+the neighbouring pointer bytes at \$7559, \$755A, and \$755B ---
+[[ENEMY_C_PUFF]], [[ENEMY_B_PUFF]], and [[SPECIAL_PEEK]] (the
+last three are a \$03$\times$\$06 (W=2) triplet at adjacent
+addresses, easy to mistake for a single three-frame sprite).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/enemy_c_sprites.png}
+\caption{Enemy-C body ([[SPRITE_TABLE_C]]) at $\$03\times\$0B$
+(3~bytes/row by 11~rows).  Seven perspective frames indexed by
+[[PROJ_FRAME_IDX]]; palette flips from green (close) to purple
+(far) along the perspective axis.}
+\label{fig:enemy_c_sprites}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/enemy_c_auxiliary.png}
+\caption{Enemy-C auxiliary sprite set.  First seven cells:
+[[ENEMY_C_TAIL]] ($\$02\times\$07$), seven frames indexed by
+[[PROJ_FRAME_IDX]].  Last three cells: the single-frame
+drift/peek sprites at adjacent level-data pointers --- [[ENEMY_C_PUFF]]
+(\$7559/\$7659), [[ENEMY_B_PUFF]] (\$755A/\$765A), and
+[[SPECIAL_PEEK]] (\$755B/\$765B), all $\$03\times\$06$.}
+\label{fig:enemy_c_auxiliary}
+\end{figure}
 
 <<enemy c draw defines>>=
 
@@ -8773,6 +8931,39 @@ player's representation in the \emph{depth} axis (which floor they are
 on).  [[DRAW_PLAYER]], by contrast, always draws at column~\$14 (screen
 centre) with a much larger $3\times\$13$ (idle) or $3\times\$14$
 (active) body sprite indexed by the stance byte [[ZP_PLAYER_STANCE]].
+
+\paragraph{Sprite art.}  The seven used stances of the idle-path body
+(\$7527/\$7627[\$03..\$09]) and the active-path body
+(\$7531/\$7631[\$03..\$09]) are shown in
+Figure~\ref{fig:player_sprites_idle} and
+Figure~\ref{fig:player_sprites_active}.  Both tables point into
+\$8500--\$8ABF inside [[drol.bin]] (persistent data), so no level
+swapping is required to render them.  Remember that
+[[DRAW_SPRITE]]'s [[ZP_SPRITE_W]] is one less than the actual bytes
+per row --- here [[W]]~=~\$03 means each row occupies four bytes of
+sprite data (28 pixel columns), and rows are stored rightmost-byte-
+first so the decoder reverses each row before rendering.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/player_sprites_idle.png}
+\caption{[[PLAYER_SPR_IDLE]] --- idle-path body sprites at
+[[ZP_PLAYER_STANCE]]~=~\$03 (top floor, leftmost) through \$09 (bottom
+floor, rightmost).  Dimensions \$03$\times$\$13 (four bytes per row
+by 19 rows).  Pointer table at \$7527/\$7627; sprite bytes at
+\$8500--\$87FF.}
+\label{fig:player_sprites_idle}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/player_sprites_active.png}
+\caption{[[PLAYER_SPR_ACTIVE]] --- active-path body sprites used during
+ascent/descent, same stance index.  Dimensions \$03$\times$\$14 (one
+row taller than idle).  Pointer table at \$7531/\$7631; sprite bytes
+at \$87AC--\$8ABF.}
+\label{fig:player_sprites_active}
+\end{figure}
 
 <<draw player defines>>=
 
@@ -10604,6 +10795,37 @@ the routine is the draw partner of [[SPECIAL_TICK]], emitting the
 sprite, running two collision tests, awarding score, and managing the
 defeat/catch state transitions.
 
+\paragraph{Body-sprite art.}  Figure~\ref{fig:special_body_sprites}
+shows all 28 body frames: four poses (the palindromic ring visits
+them in order \{0,\,1,\,2,\,3,\,2,\,1\}) across seven perspective
+depths.  Each body sprite is $\$07\times\$14$ in bytes
+([[ZP_SPRITE_W]]~=~\$06, [[ZP_SPRITE_H]]~=~\$14).  The drift-mode
+puff set is shown in Figure~\ref{fig:special_puff_sprites}, and the
+single $\$03\times\$06$ ``peek'' marker drawn during the inactive
+countdown is included in Figure~\ref{fig:enemy_c_auxiliary} above.
+All special-slot sprites live in the swappable level-data region
+(\$8CBF for the peek through \$9D00+ for the body poses) and were
+extracted from [[drol.dsk]] phase~0.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/special_body_sprites.png}
+\caption{[[SPECIAL_DRAW]] body sprites, four poses $\times$ seven
+perspective frames.  The SMC ring visits poses 0, 1, 2, 3, 2, 1,
+producing a six-frame palindromic walk cycle.}
+\label{fig:special_body_sprites}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/special_puff_sprites.png}
+\caption{[[SPECIAL_PUFF]] drift-mode puff sprites at
+$\$05\times\$0F$ (W=\$04, H=\$0F), seven perspective frames indexed
+by Y~=~perspective-frame-index from [[PROJ_FRAME_IDX]].  Drawn by
+the [[.drift_puff]] branch of [[SPECIAL_DRAW]].}
+\label{fig:special_puff_sprites}
+\end{figure}
+
 <<special draw defines>>=
 
 ; --- Zero-page (special slot, draw side) ---
@@ -11108,6 +11330,29 @@ preamble, so both slots self-activate on the first frame that
 \$00 except the direction-specific deactivation window during the
 entity-proximity check; thus companions are effectively always
 present once the score-tier unlocks them.
+
+\paragraph{Sprite art.}  Figure~\ref{fig:companion_sprites} shows all
+42 companion body frames: six pose/direction combinations (the three
+negative-direction poses [[N1]]/[[N2]]/[[N3]] in rows~1--3, then the
+three positive-direction poses [[P1]]/[[P2]]/[[P3]] in rows~4--6),
+each with seven perspective frames.  The body sprite is $\$04\times
+\$08$ bytes ([[ZP_SPRITE_W]]~=~\$03, [[ZP_SPRITE_H]]~=~\$08) with 32
+bytes per frame.  The SMC walk cycle at \$6E33/\$6EAC visits poses
+1 $\to$ 2 $\to$ 3 $\to$ 1 on successive frames for whichever
+direction the slot is moving.  Sprite bytes live at
+\$9DB1--\$A2F0 in the swappable level-data region.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/companion_sprites.png}
+\caption{Companion body sprite frames.  Rows top-to-bottom:
+[[COMPANION_NEG_POSE1]], [[COMPANION_NEG_POSE2]], [[COMPANION_NEG_POSE3]],
+[[COMPANION_POS_POSE1]], [[COMPANION_POS_POSE2]],
+[[COMPANION_POS_POSE3]].  Seven perspective frames per row indexed
+by Y~=~[[PROJ_FRAME_IDX]]; the palette flips from purple/violet at
+the near end to green at the far end.}
+\label{fig:companion_sprites}
+\end{figure}
 
 <<companion update defines>>=
 

@@ -10,3 +10,4 @@
 - [Drol state-machine topology](drol-state-machine.md) — $7208 LIFE_LOST_HANDLER (lives-out); $7255/$7299/$6121 three GAME_START_INIT callers; $5EC5 RESTART_DISPATCH is dead code
 - [Drol special-sprite slot](drol-special-slot.md) — $6ABA SPECIAL_TICK + $6B39 SPECIAL_DRAW, bonus creature kills 4 floor-enemies then falls for +500 BCD
 - [Drol companion slot](drol-companion-slot.md) — $6CFE COMPANION_UPDATE; two-slot hostile walker, $B3/$B1/$11/$13/$15,X parallel arrays, gate $33, auto-activates on tier unlock
+- [Drol rescue subsystem](drol-rescue-subsystem.md) — $6F9C RESCUE_UPDATE ticks 20-slot rescue-child entities; sibling draw+collision at $0C98 awards +$0035 BCD on pickup

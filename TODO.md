@@ -1,5 +1,22 @@
 # TODO
 
+## Milestone: `<<game engine B tail>>` FULLY RETIRED (2026-04-17)
+
+The 1763-byte "game engine B tail" HEX blob that started as raw data
+has been fully carved out.  Final session retires the last 513 bytes
+at `$6F9C-$719C` as `RESCUE_UPDATE` --- the per-frame tick for the
+20-slot rescue-child entity subsystem (Drol's scoring objective).
+Together with prior carves:
+
+- `SPECIAL_TICK` ($6ABA, 127 bytes) --- bonus creature tick
+- `SPECIAL_DRAW` + `SPECIAL_BODY_STEP1..6` + `SPECIAL_INACTIVE_DRAW`
+  ($6B39..$6CFD, 453 bytes) --- bonus creature draw + palindromic
+  walk cycle
+- `COMPANION_UPDATE` ($6CFE, 670 bytes) --- two-slot hostile walker
+- `RESCUE_UPDATE` ($6F9C, 513 bytes) --- 20-slot rescue children
+
+`drol.bin` is now **100.0% documented, zero gaps**.
+
 ## Status snapshot (2026-04-17)
 
 The **attract/game/restart state machine is now fully documented**:
@@ -39,21 +56,26 @@ A prior session carved `SPECIAL_DRAW` ($6B39, 262 bytes),
 `SPECIAL_BODY_STEP1..6` ($6C3F, 156 bytes) and
 `SPECIAL_INACTIVE_DRAW` ($6CDB, 35 bytes) --- 453 bytes --- out of
 the same hex blob, retiring the `SPECIAL_DRAW = $6B39` EQU stub.
-This session carves `COMPANION_UPDATE` ($6CFE, 670 bytes) ---
+A prior session carved `COMPANION_UPDATE` ($6CFE, 670 bytes) ---
 the two-slot "hostile walker" tick+draw pair --- out of the same
-hex blob, retiring the `ENTITY_PROCESS = $6CFE` EQU stub and
-giving the subsystem its first real documentation: three-state
-machine per slot, 3-pose SMC walk cycle per direction, floor-climb
-drift triggered by rescue-entity proximity, player-catch
-hit-box.  The `<<game engine B tail>>` now starts at $6F9C
-(513 bytes remaining).
-The remaining high-priority work is: the `$6F9C-$719C` tail
-(513 bytes HEX, the entity-list update over the 20-slot $03A8
-table --- the "rescue children" tick+spawn logic), and the
-remaining hex tail of `<<game engine A>>` at $614B-$64CA
-(player movement-tick handlers and the
-DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT input handlers
-called via SMC from MAIN_LOOP).
+hex blob, retiring the `ENTITY_PROCESS = $6CFE` EQU stub.
+This session carves `RESCUE_UPDATE` ($6F9C, 513 bytes) --- the
+20-slot rescue-child entity tick --- retiring the
+`LEVEL_LOGIC = $6F9C` EQU stub and fully eliminating
+`<<game engine B tail>>` from the blob list.  The rescue-child
+subsystem is Drol's actual scoring objective: children walk
+across the perspective floors, chase the player when on the
+same floor, and award +$0035 BCD (35 decimal) when intercepted
+in the $40..$50 screen-X centre band.  Sibling draw +
+collision logic lives at $0C98 (still inside the $03A8..$0C97
+HEX blob); marker-sprite draw in DRAW_ENTITIES phase 5 at
+$694E.
+The remaining high-priority work is the remaining hex tail of
+`<<game engine A>>` at $614B-$64CA (player movement-tick
+handlers and the DO_ASCEND/DO_DESCEND/DO_MOVE_LEFT/DO_MOVE_RIGHT
+input handlers called via SMC from MAIN_LOOP), plus the huge
+$0348..$0C97 ("game code 03A8") blob that contains the rescue
+draw sibling at $0C98 and the projectile + hazard subsystems.
 
 ### State-machine topology
 
@@ -617,17 +639,34 @@ Individual TODO entries:
       `SMC_COMPANION_POS_LO/HI` ($6E31/$6E32) and
       `SMC_COMPANION_NEG_LO/HI` ($6EAA/$6EAB); sprite-table labels
       `COMPANION_POS_POSE1..3_LO/HI`, `COMPANION_NEG_POSE1..3_LO/HI`.
-- [ ] `$6F9C-$719C` — Game engine B tail (entity-list update +
-      level logic, HEX --- 513 bytes).  Begins with `LDY #$13;
-      LDA $03A8,Y` (20-slot iteration over `ENTITY_ACTIVE`), the
-      same table DRAW_ENTITIES phase 5 iterates.  Per-slot state
-      machine on $03A8,Y with parallel tables at
-      $0358/$036C/$0380/$0394/$03BC/$03D0/$03E4; uses PRNG
-      ($5F EOR), frame counter ($1F EOR) for gating.  Likely the
-      "rescue entities" (children) walking routine: activate,
-      walk left/right, animate, handle player pickup, etc.
-      Expected carve as `ENTITY_LIST_UPDATE` replacing the
-      `LEVEL_LOGIC = $6F9C` EQU stub.
+- [x] `$6F9C-$719C` — `RESCUE_UPDATE`: per-frame tick for the
+      20-slot rescue-child entity subsystem (Drol's scoring
+      objective).  Iterates Y=$13..0 through seven parallel
+      tables: `ENTITY_ACTIVE` ($03A8), `ENTITY_FLOOR_COL`
+      ($0358), `ENTITY_XOFF_IDX` ($036C), `ENTITY_FLOOR_POS`
+      ($0380), `RESCUE_DIR` ($0394), `RESCUE_ANIM` ($03BC),
+      `RESCUE_FLOOR` ($03D0), `RESCUE_COUNTDOWN` ($03E4).  Five
+      states: $00 inactive (PRNG-gated spawn + one-shot
+      player-floor trigger via BIT/JMP opcode patch at $705F),
+      $01..$7F active walking (steps $\pm$ 3 world-X per frame,
+      row bobble via 7-byte `RESCUE_BOBBLE` ($BD) table, chase
+      AI when player on same floor), $FE exit animation
+      (INC floor-col, deactivate on wrap), other negative drift
+      countdown ($03E4 decrements every 2 frames, transitions
+      to $FE).  Awards +$0035 BCD (35 decimal) on player
+      pickup via sibling `$0C98` draw+collision, which sets
+      `ZP_HIT_FLAG` $1E=$FF (reusing the player-hit flicker as
+      the rescue-pickup animation).  No DEC $39 --- pickup is
+      not a life-loss event.  Spawn direction alternates by
+      slot parity (+dir at world-X $003E, -dir at $035C).
+      New ZPs: `ZP_RESCUE_SPAWN_CTR` ($4D, free-running slot
+      counter), `ZP_PLAYER_FLOOR_CUR` ($0C, per-frame copy of
+      `ZP_PLAYER_FLOOR` $0A seeded at $6A9D),
+      `PERSPECTIVE_XOFF_BYTE` ($B9, byte-domain perspective
+      X-offset table also read by DRAW_ENTITIES phases 3/4/5).
+      Retires `LEVEL_LOGIC = $6F9C` EQU stub and fully
+      eliminates `<<game engine B tail>>` from the blob list
+      (drol.bin now 100.0% documented).
 - [ ] `$72A0-$72A2` — 3 bytes between attract loop exit and copy routine (JMP $67CB at $72A0)
 
 ## Fix reference binary build process

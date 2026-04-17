@@ -11,6 +11,9 @@
 % To prevent floatables like tables from leaving their sections.
 \usepackage[section]{placeins}
 
+% Provides the [H] "here, exactly" placement specifier for figures.
+\usepackage{float}
+
 % To make \thead in tables bold.
 \usepackage{makecell}
 \renewcommand\theadfont{\bfseries}
@@ -2148,6 +2151,26 @@ the joystick, applies machine-specific patches, restores zero page from
 [[ZP_SAVE]], and enters the game via [[JMP ($004E)]]. The initial
 value of \$4E/\$4F from [[ZP_SAVE]] is \$72A3, which is in the
 swappable level data area loaded from track~5.
+
+The 37 records only touch rows 0--32 and 188--191 of hi-res page~1;
+every other scanline is left in whatever state the framebuffer was in
+when [[GAME_INIT]] started. Figure~\ref{fig:title-screen} shows what
+the page looks like immediately after [[GAME_INIT]] returns, assuming
+a cleared framebuffer: the static score/hiscore HUD, the player-lives
+and level indicators, and the purple wall/floor frame of the playfield.
+The DROL logo and any other foreground content are drawn later by the
+screen-init routines at \$4713--\$47FF (not yet reverse engineered) and
+by the game code itself.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{images/title_screen.png}
+\caption{Hi-res page~1 contents immediately after [[GAME_INIT]]
+returns. Rendered by simulating the unpacker on
+[[reference/drol.bin]] and applying Apple~II hi-res palette rules
+(see [[.claude/scripts/render_title_screen.py]]).}
+\label{fig:title-screen}
+\end{figure}
 
 <<drol defines>>=
 

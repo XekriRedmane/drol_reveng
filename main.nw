@@ -2204,7 +2204,7 @@ PLAYER_RENDER   = $16AC         ; Player rendering (sprite player hex)
 SPRITE_DRAW_1   = $1423         ; Sprite draw part 1 (sprite player hex)
 SPRITE_DRAW_2   = $1536         ; Sprite draw part 2 (sprite player hex)
 SPRITE_DRAW_3   = $1591         ; Sprite draw part 3 (sprite player hex)
-PAGE_FLIP_PREP  = $130A         ; Page flip preparation (score routines hex)
+; (BEAM_UPDATE at $130A has its own ORG chunk)
 GAME_OVER       = $BDA0         ; Game over handler (outside drol.bin range)
 
 ; --- Attract-mode subroutine stubs ---
@@ -3488,7 +3488,7 @@ SMC_RENDER = *
         JSR SPRITE_DRAW_1       ; Sprite draw (part 1)
         JSR SPRITE_DRAW_2       ; Sprite draw (part 2)
         JSR SPRITE_DRAW_3       ; Sprite draw (part 3)
-        JSR PAGE_FLIP_PREP      ; Page flip preparation
+        JSR BEAM_UPDATE         ; Player laser-beam subsystem
         JSR DISPLAY_UPDATE      ; Display update
         JSR DRAW_ENTITIES       ; Entity draw dispatcher
 
@@ -4138,15 +4138,18 @@ Maximum (18000+)   & \$18+  & \$03 & \$01 & \$01 & \$F0 & \$30 & \$03 \\
 
 A cell of~--- means that preset does not touch that variable, so it
 retains the value left by the previous tier or by [[DIFFICULTY_RESET]].
-The three ``slot count'' variables ($31, $32, $33) are maxima for
+The three ``slot count'' variables ($31, $32, $33) are gates for
 indexed loops elsewhere in the engine: \$FF flags the BMI-guarded
-loops as empty (see [[HAZARD_CHECK]] at \$0E5A, which reads
-[[ZP_PROJ_MAX]] ($31), and the [[DRAW_ENTITIES]] phase-4 companion
-draw, which gates on [[ZP_COMPANION_GATE]] ($33)).  \$40
-([[ZP_ADVANCE_RATE]]) is the per-tick decrement applied to the
-16-bit counters at \$DD/\$DE and \$D5/\$D6 by the as-yet-unlabelled
-routines at \$13F4 and \$1670 --- a larger rate means those events
-fire more often.
+loops as empty.  [[HAZARD_CHECK]] at \$0E5A reads [[ZP_PROJ_MAX]]
+($31); [[BEAM_UPDATE]] at \$130A checks [[ZP_PROJ_GATE]] ($32) as a
+single-bit enable (\$FF~=~subsystem off, otherwise on); and the
+[[DRAW_ENTITIES]] phase-4 companion draw gates on
+[[ZP_COMPANION_GATE]] ($33).  Thus the beam is disabled at the
+minimum and moderate tiers and enabled from ``standard'' onward
+($\geq$~10000 points).  \$40 ([[ZP_ADVANCE_RATE]]) is the per-tick
+decrement applied to the 16-bit counters at \$DD/\$DE and
+\$D5/\$D6 by the as-yet-unlabelled routines at \$13F4 and \$1670 ---
+a larger rate means those events fire more often.
 
 The sub-entry at [[DIFFICULTY_RESET]] (\$71D6) also serves as the
 minimum-tier preset and is called directly by [[GAME_START_INIT]] when
@@ -4158,8 +4161,8 @@ placeholder guess and has been retired.
 
 ; --- Zero-page (difficulty tiers) ---
 ZP_DIFF_TMP     = $5C           ; Scratch: holds D2 high nibble shifted right
-ZP_PROJ_GATE    = $32           ; Enemy-slot gate (BPL=active; $FF=suppress)
-                                ; Read by routine at $130A.
+ZP_PROJ_GATE    = $32           ; Beam-subsystem gate (BPL=active; $FF=suppress)
+                                ; Read at entry of BEAM_UPDATE ($130A).
 ZP_DIFF_THRESH_A = $34          ; Primary tier threshold (varies: $00/$40/$80/$F0)
 ZP_DIFF_THRESH_B = $35          ; Secondary tier threshold ($50 min, $30 max)
 ZP_ADVANCE_RATE = $40           ; Per-tick decrement for 16-bit event timers
@@ -5303,12 +5306,53 @@ ENEMY_AI_1:
         HEX D1 36 CA D0 F4 60
 @ %def ENEMY_AI_1
 
-<<score game routines>>=
+\section{Beam subsystem: target controller}
+
+[[BEAM_TARGET_TICK]] at \$1230 is the state machine for the player's
+laser-beam subsystem.  Together with [[BEAM_TARGET_DRAW]] and
+[[BEAM_UPDATE]] it implements a vertical beam that descends between
+floors, telegraphs its target, and sprays short-lived horizontal
+tracers from slots on each floor it crosses.  All three routines are
+called only from [[BEAM_UPDATE]], which is itself gated on
+[[ZP_PROJ_GATE]] ($32)~--- difficulty tier ``standard'' or ``maximum''
+(score $\geq$~10000).
+
+The beam is tracked by a pair of bytes on page~2:
+
+\begin{itemize}
+\item \$03FF~= [[BEAM_STATE]]: \$00 idle, \$0X active-chase, \$8X
+  active-attack (X~=~target floor index, 0--4).
+\item \$03FE~= [[BEAM_Y]]: current scanning Y-coordinate.
+\end{itemize}
+
+[[BEAM_TARGET_TICK]] advances that state machine one step:
+
+\begin{enumerate}
+\item If the sound counter [[ZP_BEAM_SND_CTR]] (\$F9) is non-negative,
+  play the next note of the post-hit jingle from [[BEAM_JINGLE]]
+  (\$0241) and decrement the counter (falls through regardless).
+\item If [[BEAM_STATE]] is $<$\$80 but nonzero (``chase'' phase),
+  decrement [[BEAM_Y]] by~2 each frame, play a pitch-\$10 click; on
+  reaching \$7E,X$+1$, flip to ``attack'' phase (set bit 7).
+\item If [[BEAM_STATE]]$ \geq$\$80 (``attack'' phase), advance
+  [[BEAM_Y]] by~2 toward [[FLOOR_Y_TABLE]]$[{\rm X}]$; on arrival,
+  clear [[BEAM_STATE]].
+\item Otherwise (idle), when [[ZP_BEAM_TICK]] (\$F8) is~0, seed a new
+  target: [[BEAM_Y]]~$\leftarrow$~[[FLOOR_Y_TABLE]]$[\$09]$ and
+  [[BEAM_STATE]]~$\leftarrow$~\$09 (chase phase targeting floor~\$09).
+\end{enumerate}
+
+(The exact meaning of ZP~\$09 is not yet pinned down; it is the
+target-floor index sourced when a new beam is launched, and is used
+again in \$1297 as the index into the per-floor thresholds.)
+
+<<beam target tick hex>>=
 
         ORG $1230
+BEAM_TARGET_TICK:
         SUBROUTINE
-        ; Score and game state routines (\$1230-\$13A3)
-        ; Raw data --- 372 bytes
+        ; Beam target/attack state machine.
+        ; Raw data --- 103 bytes (to be disassembled).
 
         HEX A6 F9 30 0B BD 41 02 CA
         HEX 86 F9 A2 0A 20 9E 10 AD
@@ -5322,42 +5366,321 @@ ENEMY_AI_1:
         HEX 7E C8 CC FE 03 D0 07 8A
         HEX 09 F0 8D FF 03 60 AD FE
         HEX 03 38 E9 02 8D FE 03 A9
-        HEX 10 A2 0A 20 9E 10 60 AD
-        HEX FF 03 D0 01 60 29 0F AA
-        HEX BD F8 03 38 ED FE 03 F0
-        HEX F3 C9 05 90 02 A9 04 85
-        HEX 57 A9 02 85 56 A9 24 85
-        HEX 5D AD FE 03 85 5B A9 29
-        HEX 8D B3 65 A9 B5 8D B4 65
-        HEX 20 6F 65 A2 03 B5 9B F0
-        HEX 35 B4 9F A9 25 D9 34 1C
-        HEX 90 2C A9 23 D9 34 1C B0
-        HEX 25 AD FE 03 D5 A3 B0 1E
-        HEX 18 69 03 D5 A3 90 17 A9
-        HEX 00 95 9B 8D FF 03 A9 0A
-        HEX 85 F9 A9 00 85 1A A9 01
-        HEX 85 1B 20 1A 12 60 CA 10
-        HEX C4 60 A5 32 10 01 60 20
-        HEX 30 12 20 97 12 20 76 13
-        HEX A0 04 BE 37 02 10 04 88
-        HEX 10 F8 60 CA 8A 85 5C 99
-        HEX 37 02 30 F3 C9 13 F0 2E
-        HEX C9 12 F0 2A BE 3C 02 BD
-        HEX 80 73 8D 59 13 BD C0 72
-        HEX 24 00 10 03 18 69 20 8D
-        HEX 5A 13 A6 5C EC A7 65 B0
-        HEX 0A EC AB 65 90 05 A9 7F
-        HEX 9D 00 90 4C 1F 13 A5 06
-        HEX D9 3C 02 B0 CF 18 69 12
-        HEX D9 3C 02 90 C7 A9 FF 85
-        HEX 1E 99 37 02 30 A9 A0 04
-        HEX B9 37 02 30 04 88 10 F8
-        HEX 60 A5 FD 29 01 F0 1C AD
-        HEX FF 03 29 0F AA AD FE 03
-        HEX D5 83 B0 0F 99 3C 02 A9
-        HEX 22 99 37 02 A9 0A A2 0A
-        HEX 20 9E 10 60
+        HEX 10 A2 0A 20 9E 10 60
+@ %def BEAM_TARGET_TICK
+
+\section{Beam subsystem: target draw and collision}
+
+[[BEAM_TARGET_DRAW]] at \$1297 renders a short vertical sprite trail
+between [[BEAM_Y]] and the current target floor's Y, then checks the
+four tracked enemies for collision with that trail.
+
+\begin{enumerate}
+\item If [[BEAM_STATE]] is~\$00, RTS.
+\item Compute $\Delta Y$~=~[[FLOOR_Y_TABLE]]$[{\rm state\_lo}]
+  - $~[[BEAM_Y]].  If zero, RTS.  Clamp to 4 if $\geq$~5, otherwise
+  use the raw delta as sprite height.
+\item Draw the beam sprite at \$B529 via [[DRAW_SPRITE]], using
+  width~2, height~$\Delta Y$, column~\$24, Y~=~[[BEAM_Y]].  (The
+  source-pointer operands at [[SMC_DS_SRC_LO]] /
+  [[SMC_DS_SRC_HI]]~=~\$65B3/\$65B4 are patched to~\$B529.)
+\item For each of four enemy slots X~=~3..0: if [[ZP_ENEMY_FLAG]],X
+  (\$9B) is zero, skip.  Otherwise fetch [[ZP_ENEMY_COL]],X (\$9F)
+  as an index into [[PROJ_SCREEN_COL]] (\$1C34) and require the
+  screen column to be in $[\$23, \$25)$.  If so, compare
+  [[BEAM_Y]] against [[ZP_ENEMY_Y]],X (\$A3) $\pm$~3:
+  a~\emph{hit} zeros the enemy flag, clears [[BEAM_STATE]],
+  re-arms the post-hit jingle ([[ZP_BEAM_SND_CTR]]~$\leftarrow$~\$0A),
+  and awards 100~BCD points via [[SCORE_ADD]].
+\end{enumerate}
+
+The ZP symbols \$9B/\$9F/\$A3/\$A7/\$AB introduced here
+([[ZP_ENEMY_FLAG]], [[ZP_ENEMY_COL]], [[ZP_ENEMY_Y]]) are four-slot
+parallel tables for enemies tracked by the beam.  These overlap the
+ESC-key location at \$9B (renamed here from [[KEY_ESC]] for the
+purposes of this subsystem; the ESC-key alias only aliases \$9B when
+the input dispatcher polls it).
+
+<<beam target draw hex>>=
+
+        ORG $1297
+BEAM_TARGET_DRAW:
+        SUBROUTINE
+        ; Draw beam sprite trail + enemy collision check.
+        ; Raw data --- 115 bytes (to be disassembled).
+
+        HEX AD FF 03 D0 01 60 29 0F
+        HEX AA BD F8 03 38 ED FE 03
+        HEX F0 F3 C9 05 90 02 A9 04
+        HEX 85 57 A9 02 85 56 A9 24
+        HEX 85 5D AD FE 03 85 5B A9
+        HEX 29 8D B3 65 A9 B5 8D B4
+        HEX 65 20 6F 65 A2 03 B5 9B
+        HEX F0 35 B4 9F A9 25 D9 34
+        HEX 1C 90 2C A9 23 D9 34 1C
+        HEX B0 25 AD FE 03 D5 A3 B0
+        HEX 1E 18 69 03 D5 A3 90 17
+        HEX A9 00 95 9B 8D FF 03 A9
+        HEX 0A 85 F9 A9 00 85 1A A9
+        HEX 01 85 1B 20 1A 12 60 CA
+        HEX 10 C4 60
+@ %def BEAM_TARGET_DRAW
+
+\section{Beam subsystem: per-frame update}
+
+[[BEAM_UPDATE]] at \$130A is the main-loop entry for the player's
+laser-beam subsystem.  It is called unconditionally from
+[[MAIN_LOOP]] but returns immediately whenever the difficulty gate
+[[ZP_PROJ_GATE]] ($32) is negative~--- i.e.\ at the minimum and
+moderate tiers (see [[DIFFICULTY_UPDATE]]).  At standard or maximum
+tier the gate is \$01 (positive), and the routine:
+
+\begin{enumerate}
+\item Ticks the beam target state machine ([[BEAM_TARGET_TICK]]).
+\item Draws the beam sprite trail and checks enemy collisions
+  ([[BEAM_TARGET_DRAW]]).
+\item Runs the tracer-spawn scheduler ([[BEAM_TRACER_SPAWN]])~--- see
+  below.
+\item Walks the 5-slot tracer table from Y~=~4 down to 0
+  ([[TRACER_STATE]] at~\$0237, [[TRACER_ROW]] at~\$023C).  Each active
+  slot's state byte (\$0237,Y) is both its remaining lifetime and,
+  via the inner body, the X-coordinate where a single \$7F pixel
+  byte is drawn directly into the hidden hi-res page.
+\end{enumerate}
+
+\paragraph{Per-slot animation.}  An active slot ([[TRACER_STATE]],Y
+is non-negative) decrements its state byte and writes it back.  If
+the new value is negative, the slot becomes inactive and the loop
+moves on.  If it is \$12 or \$13 the slot is in the ``near-player''
+window and a hit test fires: when the player's floor ([[ZP_PLAYER_COL]]
+= \$06) matches [[TRACER_ROW]],Y within a 18-column band, the player
+is killed ([[ZP_HIT_FLAG]] $\leftarrow$ \$FF) and the slot is
+deactivated.  Otherwise, the slot computes the screen row address
+for [[TRACER_ROW]],Y using the [[SCREEN_ROW_ADDR_LO]] /
+[[SCREEN_ROW_ADDR_HI]] tables (with a $+$\$20 high-byte adjust when
+[[ZP_PAGE_FLAG]] is negative, targeting hi-res page~2) and stores the
+constant byte \$7F at screen[row][col~=~new state].  The HUD/playfield
+bounds are enforced by comparing the column against
+[[LIVES_DISPLAY_VAL]] (\$65A7) and [[SCORE_DISPLAY_VAL]] (\$65AB): the
+draw is suppressed whenever the column would overlap the HUD.
+
+[[BEAM_TRACER_SPAWN]] at \$1376 scans the same five slots for the
+first inactive one.  On every other frame ([[ZP_FRAME_COUNTER]] bit 0
+set), when the beam is chasing ([[BEAM_STATE]] nonzero) and the
+current [[BEAM_Y]] is strictly less than the per-level threshold
+[[FLOOR_THRESH]]$[{\rm state\_lo}]$ (\$83), the found slot is
+activated: its [[TRACER_ROW]] $\leftarrow$ [[BEAM_Y]] and its
+[[TRACER_STATE]] $\leftarrow$ \$22 (initial lifetime~=~34).  A
+\$0A-pitch/\$0A-duration click is played through [[SND_DELAY_UP]]
+(\$109E) to emit the spawn tick.
+
+\paragraph{Self-modifying code.}  Two operand bytes inside the inner
+animation loop are patched each iteration to hold the computed screen
+row address: [[SMC_TRACER_ADDR_LO]]~=~\$1359 (low) and
+[[SMC_TRACER_ADDR_HI]]~=~\$135A (high).  They are initialised in the
+on-disk image to~\$00/\$90 respectively, so the unpatched opcode
+would store into \$9000,X; the runtime always rewrites both bytes
+before the store fires.
+
+<<beam update defines>>=
+
+; --- Zero-page (beam subsystem) ---
+ZP_BEAM_TICK    = $F8           ; Pre-activation tick (0 triggers beam seed)
+ZP_BEAM_SND_CTR = $F9           ; Post-hit jingle counter ($00..$0A, $FF=idle)
+; $09 holds the target floor index when a new beam is seeded
+; ($03FF = state byte low nibble after seed).
+
+; --- Page-2 beam state (overlaid on 5-slot tracer table) ---
+TRACER_STATE    = $0237         ; 5-slot lifetime / X-column ($FF = inactive)
+TRACER_ROW      = $023C         ; 5-slot floor-row index (paired with state)
+BEAM_JINGLE     = $0241         ; Post-hit jingle pitch table (read via $F9)
+BEAM_Y          = $03FE         ; Current beam Y scan position
+BEAM_STATE      = $03FF         ; Beam state: $00 idle, $0X chase, $8X attack
+
+; --- Four-slot enemy tracking (read by BEAM_TARGET_DRAW) ---
+ZP_ENEMY_FLAG   = $9B           ; 4-slot enemy active flag (aliases KEY_ESC)
+ZP_ENEMY_COL    = $9F           ; 4-slot enemy column index (PROJ_SCREEN_COL,Y)
+ZP_ENEMY_Y      = $A3           ; 4-slot enemy Y coordinate
+
+; --- Per-floor parameters (read by BEAM_TRACER_SPAWN) ---
+FLOOR_THRESH    = $83           ; Per-level floor threshold (Y-coord limit)
+
+; (ZP_SCORE_ADD_LO/HI at $1A/$1B are defined in score-add defines.)
+
+; --- Sprite-draw SMC operands (patched by BEAM_TARGET_DRAW) ---
+; (SMC_DS_SRC_LO/HI for DRAW_SPRITE are $65B3/$65B4.)
+SMC_DS_SRC_LO   = $65B3         ; DRAW_SPRITE source-ptr low operand
+SMC_DS_SRC_HI   = $65B4         ; DRAW_SPRITE source-ptr high operand
+
+; --- Sound-click wrappers ---
+SND_DELAY_UP    = $109E         ; Speaker-click delay, ascending
+SND_DELAY_DOWN  = $1091         ; Speaker-click delay, descending
+
+; --- Callable routines ---
+DRAW_SPRITE_B529 = $656F        ; DRAW_SPRITE (alias for the beam-draw call)
 @
+
+<<beam update>>=
+
+        ORG $130A
+BEAM_UPDATE:
+        SUBROUTINE
+        ; Per-frame beam subsystem: target-machine + tracer animation.
+        ;
+        ; Called unconditionally from MAIN_LOOP.  Returns immediately
+        ; if ZP_PROJ_GATE (set by DIFFICULTY_UPDATE) is negative ---
+        ; i.e.\ at the minimum and moderate difficulty tiers.
+        ;
+        ; Inputs:
+        ;   ZP_PROJ_GATE ($32)        --- $FF = subsystem off; else on.
+        ;   BEAM_STATE ($03FF)        --- beam target state machine.
+        ;   BEAM_Y ($03FE)            --- current beam Y scan position.
+        ;   TRACER_STATE ($0237..B)   --- 5-slot tracer lifetime/X.
+        ;   TRACER_ROW ($023C..40)    --- 5-slot tracer floor-row.
+        ;   ZP_PAGE_FLAG ($00)        --- select hi-res page 1 vs 2.
+        ;   ZP_PLAYER_COL ($06)       --- player floor number for hit test.
+        ;   ZP_FRAME_COUNTER ($FD)    --- every-other-frame spawn gate.
+        ;
+        ; Behavior:
+        ;   Three sub-handlers advance the beam state
+        ;   (BEAM_TARGET_TICK), draw it and run enemy collision
+        ;   (BEAM_TARGET_DRAW), and spawn tracer particles onto active
+        ;   floors (BEAM_TRACER_SPAWN).  Then a 5-slot loop
+        ;   decrements each tracer's state and, unless the new state
+        ;   enters the $12..$13 hit window, writes a single $7F byte
+        ;   into hi-res memory at the computed row/column.
+        ;
+        ; Modifies:
+        ;   TRACER_STATE, ZP_HIT_FLAG on player hit, and the two SMC
+        ;   operands SMC_TRACER_ADDR_LO/HI inside its own body.
+        ; Clobbers: A, X, Y
+
+; --- Difficulty gate ---
+        LDA ZP_PROJ_GATE                ; $32: $FF when subsystem off
+        BPL .active
+        RTS
+.active:
+        JSR BEAM_TARGET_TICK            ; Advance beam state machine
+        JSR BEAM_TARGET_DRAW             ; Draw beam + enemy collision
+        JSR BEAM_TRACER_SPAWN            ; Spawn tracers on active floors
+
+; --- Walk 5 tracer slots from Y=4 down to 0 ---
+        LDY #$04
+.next_slot:
+        LDX TRACER_STATE,Y
+        BPL .active_slot                ; Active if non-negative
+.advance_y:
+        DEY
+        BPL .next_slot
+        RTS
+
+; --- Active slot: decrement lifetime / advance X ---
+.active_slot:
+        DEX
+        TXA
+        STA ZP_DRAW_LOOP_IDX            ; $5C scratch: new state value
+        STA TRACER_STATE,Y
+        BMI .advance_y                  ; Just retired (went from 0 to $FF)
+        CMP #$13
+        BEQ .hit_check                  ; Near-player hit window: $12 or $13
+        CMP #$12
+        BEQ .hit_check
+
+; --- Still travelling: compute screen row + draw a $7F pixel byte ---
+; Two operand bytes inside the STA at .draw_byte are rewritten each
+; frame by this block: SMC_TRACER_ADDR_LO and SMC_TRACER_ADDR_HI
+; hold the effective screen-row address (low, high).
+.draw_pixel:
+        LDX TRACER_ROW,Y                ; Floor-row index
+        LDA SCREEN_ROW_ADDR_LO,X        ; $7380: row-address low byte
+        DC.B $8D                        ; STA abs opcode (force 3 bytes)
+        DC.W SMC_TRACER_ADDR_LO         ; Patch operand at $1359
+        LDA SCREEN_ROW_ADDR_HI,X        ; $72C0: row-address high byte
+        BIT ZP_PAGE_FLAG                ; $00: +$20 high when page 2
+        BPL .page1
+        CLC
+        ADC #$20
+.page1:
+        DC.B $8D                        ; STA abs opcode (force 3 bytes)
+        DC.W SMC_TRACER_ADDR_HI         ; Patch operand at $135A
+        LDX ZP_DRAW_LOOP_IDX            ; New state = screen column
+        CPX LIVES_DISPLAY_VAL            ; Skip if col >= lives HUD start
+        BCS .skip_draw
+        CPX SCORE_DISPLAY_VAL            ; Skip if col < score HUD end
+        BCC .skip_draw
+        LDA #$7F                        ; Single horizontal-line pixel byte
+        DC.B $9D                        ; STA abs,X opcode (force 3 bytes)
+SMC_TRACER_ADDR_LO:                     ; $1359: operand low (patched)
+        DC.B $00
+SMC_TRACER_ADDR_HI:                     ; $135A: operand high (patched)
+        DC.B $90
+.skip_draw:
+        JMP .advance_y
+
+; --- Near-edge hit test: state reached $12 or $13 ---
+.hit_check:
+        LDA ZP_PLAYER_COL               ; $06: player floor
+        CMP TRACER_ROW,Y
+        BCS .draw_pixel                 ; player_floor >= tracer_floor: safe
+        CLC
+        ADC #$12
+        CMP TRACER_ROW,Y
+        BCC .draw_pixel                 ; player_floor+18 < tracer_floor: safe
+        LDA #$FF
+        STA ZP_HIT_FLAG                 ; $1E: player hit
+        STA TRACER_STATE,Y              ; Retire this tracer
+        BMI .advance_y                  ; Always taken ($FF)
+
+; --- Tracer spawn scheduler (called from BEAM_UPDATE) ---
+BEAM_TRACER_SPAWN:
+        SUBROUTINE
+        ; Find an idle tracer slot and, on odd frames with an active
+        ; beam whose Y is under the per-floor threshold, seed it.
+        ;
+        ; Inputs:
+        ;   TRACER_STATE ($0237..B)   --- 5-slot state (BMI = inactive).
+        ;   ZP_FRAME_COUNTER ($FD)    --- AND #$01 gates spawn.
+        ;   BEAM_STATE ($03FF) / BEAM_Y ($03FE)
+        ;   FLOOR_THRESH ($83,X)      --- per-floor Y threshold.
+        ;
+        ; Behavior:
+        ;   On a successful spawn, TRACER_STATE := $22 (initial lifetime
+        ;   and X-column), TRACER_ROW := BEAM_Y, and a click sound is
+        ;   played.
+        ; Clobbers: A, X, Y
+
+        LDY #$04
+.find_inactive:
+        LDA TRACER_STATE,Y
+        BMI .try_spawn                  ; Found an idle slot
+        DEY
+        BPL .find_inactive
+        RTS                             ; All slots busy: no-op
+
+.try_spawn:
+        LDA ZP_FRAME_COUNTER
+        AND #$01
+        BEQ .done                       ; Every other frame only
+        LDA BEAM_STATE
+        AND #$0F                        ; State low nibble = target floor
+        TAX
+        LDA BEAM_Y
+        CMP FLOOR_THRESH,X              ; $83,X: per-floor Y limit
+        BCS .done
+        STA TRACER_ROW,Y                ; Row := beam Y
+        LDA #$22
+        STA TRACER_STATE,Y              ; Lifetime := $22
+        LDA #$0A
+        LDX #$0A
+        JSR SND_DELAY_UP                ; Spawn click
+.done:
+        RTS
+@ %def BEAM_UPDATE BEAM_TRACER_SPAWN SMC_TRACER_ADDR_LO SMC_TRACER_ADDR_HI
+@ %def TRACER_STATE TRACER_ROW BEAM_JINGLE BEAM_Y BEAM_STATE
+@ %def ZP_BEAM_TICK ZP_BEAM_SND_CTR
+@ %def ZP_ENEMY_FLAG ZP_ENEMY_COL ZP_ENEMY_Y FLOOR_THRESH
+@ %def SMC_DS_SRC_LO SMC_DS_SRC_HI SND_DELAY_UP SND_DELAY_DOWN
+@ %def DRAW_SPRITE_B529
 
 <<sprite player code>>=
 
@@ -8480,8 +8803,13 @@ LEVEL_INTRO_TICK:
 <<init level state>>
 ; --- ORG $121A: Score add ---
 <<score add>>
-; --- ORG $1230: Score/game routines ---
-<<score game routines>>
+; --- ORG $1230: Beam target tick (hex blob) ---
+<<beam target tick hex>>
+; --- ORG $1297: Beam target draw (hex blob) ---
+<<beam target draw hex>>
+; --- ORG $130A: Beam update ---
+<<beam update defines>>
+<<beam update>>
 ; --- ORG $13A4: Game start init ---
 <<game start init>>
 ; --- ORG $13D6: Sprite/player code ---

@@ -66,7 +66,22 @@ Review existing chunks for violations:
       on) and $C020 (silent cassette output, sound off).  Renamed
       `ZP_SOUND_A`/`_B` to `ZP_SFX_CLICK` / `ZP_SFX_CLICK_SAVED`.
 - [ ] `$10AB` — Display update
-- [ ] `$130A` — Page flip preparation
+- [x] `$130A` — `BEAM_UPDATE`: player laser-beam subsystem, gated on
+      `ZP_PROJ_GATE` ($32).  Inactive at difficulty tiers minimum and
+      moderate ($32 = $FF); active at standard and maximum ($32 = $01).
+      Dispatches three sub-routines: `BEAM_TARGET_TICK` ($1230) state
+      machine, `BEAM_TARGET_DRAW` ($1297) sprite-trail draw plus
+      enemy-collision check (awards 100 BCD on hit), and
+      `BEAM_TRACER_SPAWN` ($1376) per-floor tracer scheduler.  Then
+      walks a 5-slot tracer table (`TRACER_STATE` $0237,
+      `TRACER_ROW` $023C) and for each active slot decrements the
+      state/X-column, draws a single $7F byte directly into hi-res at
+      the row/col with HUD-bound clipping, and runs a hit test when
+      the X-column enters the $12/$13 near-player window (sets
+      `ZP_HIT_FLAG` $1E=$FF).  Uses SMC operands `SMC_TRACER_ADDR_LO`
+      ($1359) / `SMC_TRACER_ADDR_HI` ($135A) patched inline.  Retires
+      "Page flip preparation" stub name (real page flip is at $6138
+      `DISPLAY_PAGE_FLIP`).
 - [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page.
 - [x] `$65D5` — `DRAW_SPRITE_PLAYFIELD`: sibling of DRAW_SPRITE.
       Identical structure, but inner-loop column check rejects col

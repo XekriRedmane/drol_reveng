@@ -9,7 +9,7 @@ each time the frame counter wraps ($FD = 0, every ~256 frames).  The bytes
 are read by multiple engine routines:
 
 - `$31` = `ZP_PROJ_MAX` (max projectile slot index, read by HAZARD_CHECK at $0E5A — BMI guard means $FF = no projectiles)
-- `$32` = `ZP_PROJ_GATE` (gate, read at $130A with `LDA $32; BPL ...` — $FF = suppress, else active)
+- `$32` = `ZP_PROJ_GATE` (gate, read at entry of BEAM_UPDATE $130A — $FF = subsystem off; beam disabled at minimum/moderate tiers, enabled at standard/maximum)
 - `$33` = `ZP_COMPANION_GATE` (companion slot gate, read by DRAW_ENTITIES phase 4)
 - `$34` = `ZP_DIFF_THRESH_A` (primary tier threshold — consumer not yet identified)
 - `$35` = `ZP_DIFF_THRESH_B` (secondary tier threshold — consumer not yet identified)

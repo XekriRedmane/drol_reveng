@@ -117,6 +117,7 @@ Omit the Outputs section if the routine doesn't return meaningful values (e.g., 
 
 Additional annotation rules:
 - Comment the **purpose**, not the mechanics: "extract location tier" not "rotate left 4 times".
+- **Never prefix an instruction comment with its own address.** `STA $3CA8,X ; $05B4: row 79` is wrong — drop the `$05B4:` prefix, keep `; row 79`. The `.lst` file shows instruction addresses; repeating them in source is noise. Bare `; $XXXX` comments that carry no other information are removed entirely.
 - Use `; --- section name ---` headers between logical phases within a long routine.
 - Align all `;` comments to the same column within each routine.
 - Routines without `SUBROUTINE` (simple trampolines like `JMP target`) get a one-line `;` comment above instead of a full plate.
@@ -167,7 +168,7 @@ LaTeX prose in `main.nw` (sections, paragraphs, captions, figure labels, list it
 
 **1. Every numeric address gets wrapped in `[[ ]]`.** Never write a bare `\$XXXX` or `$XXXX` in prose. Always `[[$XXXX]]` or `[[SYMBOL]]`. A raw `\$XXXX` renders as plain hex with no navigation; the `[[ ]]` form renders as a tt-styled chunk-cross-reference hyperlink in the PDF. No exceptions in normal prose — not captions, not parentheticals, not "for example $XXXX", nothing. The wrap is mechanical and total.
 
-**2. Prefer the symbol over the hex.** When a label, EQU, or `@ %def`-exported name exists for the address, write `[[SYMBOL]]` not `[[$XXXX]]`. When the numeric address adds genuine information (e.g. the prose is explaining *where* in the memory map the symbol lives), write `[[SYMBOL]] ([[$XXXX]])` — the symbol is primary, the hex is the annotation.
+**2. Prefer the symbol over the hex, and do not annotate the symbol with its own address.** When a label, EQU, or `@ %def`-exported name exists for the address, write `[[SYMBOL]]` — never `[[SYMBOL]] ([[$XXXX]])`. The parenthetical hex adds no information: a reader who wants the numeric address can click the symbol and jump to its defining chunk. The only permissible numeric annotation on a symbol is a **range** that conveys extent (e.g. `[[SYMBOL]] ([[$XXXX]]--[[$YYYY]])` when documenting a region's span), and even then prefer stating the size in bytes (`SYMBOL (256 bytes)`) if that's the actual information being added.
 
 **3. No backslash inside `[[ ]]`.** Write `[[$XXXX]]`, never `[[\$XXXX]]`. Noweb `[[ ]]` content is literal code; weave.py LaTeX-escapes automatically. Any `\` you write inside `[[ ]]` renders as a visible backslash in the PDF. (weave.py now strips `\_ \$ \& \# \% \{ \}` inside `[[ ]]` as a safety net, but the source must stay clean.)
 

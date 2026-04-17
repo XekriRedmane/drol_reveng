@@ -274,7 +274,7 @@ BOOT1_SECTORS:
 
 ; --- Entry point: PROM jumps here after each sector read ---
 
-BOOT1_ENTRY:                    ; $0801
+BOOT1_ENTRY:
         LDA DEST_PAGE           ; Current destination page
         CMP #$09                ; First entry? (boot0 sets $27=$09)
         BNE .check_done         ; No, check if loading is complete
@@ -305,7 +305,7 @@ BOOT1_ENTRY:                    ; $0801
 
 ; --- Phase 2: continue loading, or Phase 3: done ---
 
-.check_done:                    ; $0833
+.check_done:
         LDA DEST_PAGE
         CMP #$5A                ; Loaded all 10 sectors? ($5000-$59FF)
         BCS .loading_done       ; Yes, proceed to phase 3
@@ -314,7 +314,7 @@ BOOT1_ENTRY:                    ; $0801
 
 ; --- Phase 3: all sectors loaded ---
 
-.loading_done:                  ; $083C
+.loading_done:
 
 ; Copy the entire Apple II ROM ($D000-$FFFF) to language card RAM.
 ; Reading $C081 twice selects LC bank 1 for writing with ROM readable.
@@ -616,7 +616,7 @@ RWTS_ENTRY:
 ;  READ_ADDR_FIELD
 ; -------------------------------------------------------------------------
 
-READ_ADDR_FIELD:                ; $5003
+READ_ADDR_FIELD:
         SUBROUTINE
         ; Read and verify a 16-sector address field.
         ;
@@ -681,11 +681,11 @@ READ_ADDR_FIELD:                ; $5003
         BNE ERROR_RETURN
 
 ; Shared return points: carry clear = success, carry set = error.
-SUCCESS_RETURN:                 ; $5048
+SUCCESS_RETURN:
         CLC                     ; Success: carry clear
         RTS
 
-ERROR_RETURN:                   ; $504B
+ERROR_RETURN:
         SEC                     ; Error: carry set
         RTS
 
@@ -693,7 +693,7 @@ ERROR_RETURN:                   ; $504B
 ;  READ_DATA_FIELD
 ; -------------------------------------------------------------------------
 
-READ_DATA_FIELD:                ; $504D
+READ_DATA_FIELD:
         SUBROUTINE
         ; Read and decode a 6-and-2 encoded sector data field.
         ;
@@ -802,16 +802,16 @@ READ_DATA_FIELD:                ; $504D
 ;  Seek step rate tables
 ; =========================================================================
 
-SEEK_ACCEL_RATES:               ; $50C7
+SEEK_ACCEL_RATES:
         HEX 01 30 28 24 20 1E 1D 1C
-SEEK_DECEL_RATES:               ; $50CF
+SEEK_DECEL_RATES:
         HEX 70 2C 26 22 1F 1E 1D 1C
 
 ; =========================================================================
 ;  SEEK
 ; =========================================================================
 
-SEEK:                           ; $50D7
+SEEK:
         SUBROUTINE
         ; Move disk arm to target half-track.
         ;
@@ -871,7 +871,7 @@ SEEK:                           ; $50D7
 
 ; Access a stepper motor phase. Carry selects on (SEC) or off (CLC).
 ; SET_PHASE uses ZP_CUR_HTRK; SET_PHASE_A takes half-track in A.
-SET_PHASE:                      ; $511B
+SET_PHASE:
         LDA ZP_CUR_HTRK
 SET_PHASE_A:                    ; $511D - entry with A = half-track
         AND #$03                ; Phase 0-3
@@ -885,7 +885,7 @@ SET_PHASE_A:                    ; $511D - entry with A = half-track
 ;  DELAY
 ; -------------------------------------------------------------------------
 
-DELAY:                          ; $5127
+DELAY:
         SUBROUTINE
         ; Delay loop (~18 cycles per outer iteration).
         ;
@@ -910,7 +910,7 @@ DELAY:                          ; $5127
 ;  SEEK_TO_TRACK
 ; -------------------------------------------------------------------------
 
-SEEK_TO_TRACK:                  ; $5133
+SEEK_TO_TRACK:
         SUBROUTINE
         ; Seek to a track with automatic motor on/off.
         ;
@@ -942,7 +942,7 @@ SEEK_TO_TRACK:                  ; $5133
 ;  READ_SECTORS
 ; =========================================================================
 
-READ_SECTORS:                   ; $5148
+READ_SECTORS:
         SUBROUTINE
         ; Read all sectors for a track group.
         ;
@@ -1019,13 +1019,13 @@ READ_SECTORS:                   ; $5148
         RTS                     ; Done with this group
 
 ; Set target track (A) and page table offset (Y), then jump to READ_SECTORS.
-SET_TRACK_AND_TABLE:            ; $519E
+SET_TRACK_AND_TABLE:
         STY ZP_TBL_INDEX
         STA ZP_TGT_TRACK
         JMP READ_SECTORS
 
 ; Seek to track A, save track in LDR_TRACK, then restore zero page from ZP_SAVE.
-SEEK_AND_RESTORE_ZP:            ; $51A5
+SEEK_AND_RESTORE_ZP:
         STA LDR_TRACK           ; Remember track position
         JSR SEEK_TO_TRACK       ; Seek (also turns motor off)
         LDX #$00
@@ -1037,7 +1037,7 @@ SEEK_AND_RESTORE_ZP:            ; $51A5
         RTS
 
 ; Save zero page to ZP_SAVE ($5700), then fall through to LOADER_ENTRY.
-SAVE_ZP:                        ; $51B6
+SAVE_ZP:
         LDX #$00
 .save:
         LDA $00,X
@@ -1047,7 +1047,7 @@ SAVE_ZP:                        ; $51B6
         ; Fall through to LOADER_ENTRY
 
 ; Restore persistent state (track, slot) to ZP, then jump to DISPATCH.
-LOADER_ENTRY:                   ; $51C0
+LOADER_ENTRY:
         LDA LDR_TRACK
         STA ZP_CUR_HTRK
         LDA LDR_SLOT
@@ -1062,7 +1062,7 @@ LOADER_ENTRY:                   ; $51C0
 
 ; Track table for the 4 game-data loading phases.
 ; Phase 0: track 5, Phase 1: track 10, Phase 2: track 15, Phase 3: track 20.
-TRACK_TABLE:                    ; $51F8
+TRACK_TABLE:
         HEX 05 0A 0F 14
 
 ; Residual data in sector (not referenced by loader code).
@@ -1121,7 +1121,7 @@ NIBBLE_BUF_PRI:                 ; $5200 - primary nibble buffer
 ; Nibble translate table: maps raw disk byte values to 6-bit values.
 ; Spans $52D6-$53D5 (256 bytes). Only entries for disk bytes $96-$FF
 ; (at offsets $536C-$53D5) contain valid values 0-63.
-NIBBLE_XLAT:                    ; $52D6
+NIBBLE_XLAT:
         HEX 22 31 3E 3F 35 20 20 22
         HEX 3F 3F
         HEX 21 3C 2A 20 20 2F 3F 3E
@@ -1210,7 +1210,7 @@ PAGE_TABLE_RELOAD:
 ; =========================================================================
 
         ORG $5500
-DISPATCH:                       ; $5500
+DISPATCH:
         SUBROUTINE
 
         ; Main loader dispatch — routes to reload or first boot.
@@ -1258,7 +1258,7 @@ DISPATCH:                       ; $5500
 ;  FIRST_BOOT --- First-time boot sequence ($5524)
 ; =========================================================================
 
-FIRST_BOOT:                     ; $5524
+FIRST_BOOT:
         SUBROUTINE
 
         ; First-time boot — loads game, detects hardware, patches code.
@@ -1310,7 +1310,7 @@ FIRST_BOOT:                     ; $5524
         JSR SEEK_AND_RESTORE_ZP
 
 ; --- Phase 2: Initialize game ---
-        JSR GAME_INIT           ; $4000
+        JSR GAME_INIT
 
 ; Initialize floor Y-coordinate table (4 floors, 40 pixels apart).
         LDA #$00
@@ -1368,7 +1368,7 @@ FIRST_BOOT:                     ; $5524
         STA PATCH_72BA          ; Game code patch
 
 ; Check machine type for Apple IIc-specific patches.
-        LDA ROM_MACHID          ; $FBB4
+        LDA ROM_MACHID
         CMP #$08                ; Apple IIc identifier?
         BNE .restore_zp
         LDA #$CB
@@ -1964,9 +1964,9 @@ LDR_SLOT        = $BF49         ; Slot * 16
 LDR_PHASE       = $BF4A         ; Boot phase counter
 
 ; Emit the initial values at these locations.
-        PHP                     ; $BF48: initial value $08
-        RTS                     ; $BF49: initial value $60 (slot 6 * 16)
-        BRK                     ; $BF4A: initial value $00
+        PHP                     ; initial value $08
+        RTS                     ; initial value $60 (slot 6 * 16)
+        BRK                     ; initial value $00
 @ %def RESET_R RESET_P RESET_L RESET_BANG LDR_TRACK LDR_SLOT LDR_PHASE
 
 \section{Screen scroll routines}
@@ -2007,7 +2007,7 @@ SCROLL_UP_PRE:
         JMP GAME_SCROLL_HANDLER ; Otherwise jump to game scroll handler
 
 ; The JMP $28A0 above is $4C $A0 $28. Entry at $BF50 sees $A0 $28 = LDY #$28.
-SCROLL_UP = SCROLL_UP_PRE + 5  ; $BF50: overlapping entry (LDY #$28)
+SCROLL_UP = SCROLL_UP_PRE + 5  ; overlapping entry (LDY #$28)
 
 .skip:
         LDA #$40
@@ -2271,7 +2271,7 @@ GAME_INIT_NOP:
 ; $4000-$4012: NOPs (copy protection removed).
         DS 19,$EA
 
-GAME_INIT:                      ; $4013
+GAME_INIT:
         LDY #<HUD_FRAME_DATA ; Stream pointer low ($00)
         LDA #>HUD_FRAME_DATA ; Stream pointer high ($41)
         STY ZP_STREAM
@@ -2294,7 +2294,7 @@ GAME_INIT:                      ; $4013
         BMI .next_record        ; Always taken — next record
 
 ; Read next byte from the data stream at (ZP_STREAM).
-READ_BYTE:                     ; $4036
+READ_BYTE:
         SUBROUTINE
 
         STY ZP_SAVED_Y
@@ -3986,7 +3986,7 @@ After restoring state, it zeroes the entity activity table at
 [[$03A8]]--[[$03BB]], the movement slots at [[$C5]]--[[$C8]],  % TODO-SYM: $03BB $C8
 [[ZP_MOVE_DIR]] ([[$04]], player horizontal move direction), and the
 frame counter~[[$FD]]. It also zeroes [[$03FF]], sets
-[[ZP_WALK_FRAME]] ([[$4B]]) and [[ZP_SPRITE_XREF]] ([[$4C]])~=~[[$02]], [[$39]]~=~1, fills [[$0237]]--[[$023B]] with [[$FF]], and patches  % TODO-SYM: $023B
+[[ZP_WALK_FRAME]] and [[ZP_SPRITE_XREF]]~=~[[$02]], [[$39]]~=~1, fills [[$0237]]--[[$023B]] with [[$FF]], and patches  % TODO-SYM: $023B
 the four direction slots in the main loop to [[BIT]] ([[$2C]], inactive).
 Finally it loads two bytes from [[$029A]]/[[$029B]] into [[$42]]/[[$43]].  % TODO-SYM: $029A $029B $42 $43
 
@@ -4146,9 +4146,9 @@ score triple, [[$46]], and the restart flag [[$44]] before jumping into  % TODO-
 \paragraph{What [[$6AA7]] actually does.}  Despite its address landing
 inside the [[$6ABA]]-[[$719C]] game-engine HEX blob, [[RESUME_GAMEPLAY_SMC]]  % TODO-SYM: $719C
 is a short 13-byte routine that re-patches main-loop self-modifying
-bytes: [[SMC_SR_YSRC]] ([[$64FA]]) \gets [[$06]] (i.e.\ the operand of
-[[LDA ZP_PLAYER_COL]]), [[SMC_INPUT]] ([[$67D1]]) \gets [[$20]] (JSR opcode),
-[[SMC_RENDER]] ([[$67EF]]) \gets [[$20]], and [[SMC_SR_HEIGHT]] ([[$64F6]])
+bytes: [[SMC_SR_YSRC]] \gets [[$06]] (i.e.\ the operand of
+[[LDA ZP_PLAYER_COL]]), [[SMC_INPUT]] \gets [[$20]] (JSR opcode),
+[[SMC_RENDER]] \gets [[$20]], and [[SMC_SR_HEIGHT]]
 \gets [[$13]] (default sprite height).  These are the exact three/four
 SMC slots [[LEVEL_INTRO_TICK]] inlines the stores to when it flips
 from intro to gameplay; the only difference is that
@@ -4344,7 +4344,7 @@ decrement applied to the 16-bit counters at [[$DD]]/[[$DE]] and  % TODO-SYM: $DE
 [[$D5]]/[[$D6]] by the as-yet-unlabelled routines at [[$13F4]] and [[$1670]] ---  % TODO-SYM: $D6 $13F4 $1670
 a larger rate means those events fire more often.
 
-The sub-entry at [[DIFFICULTY_RESET]] ([[$71D6]]) also serves as the
+The sub-entry at [[DIFFICULTY_RESET]] also serves as the
 minimum-tier preset and is called directly by [[GAME_START_INIT]] when
 a new game begins.  Note that nothing in this routine scrolls or
 touches the camera: the previous label [[SCROLL_CAMERA]] was a
@@ -4475,8 +4475,7 @@ DIFFICULTY_RESET:
 \section{Life-lost handler (``game over'')}
 
 [[LIFE_LOST_HANDLER]] at [[$7208]] is the end-of-life handler reached
-from MAIN_LOOP when the on-screen lives counter [[ZP_LIVES_BCD]]
-([[$5E]]) goes negative.  Earlier prose called this
+from MAIN_LOOP when the on-screen lives counter [[ZP_LIVES_BCD]] goes negative.  Earlier prose called this
 \texttt{LEVEL\_COMPLETE}, but [[$5E]] is the BCD lives counter, not a
 level-state flag --- this routine runs after the last on-screen life
 has been consumed.  It is one of two end-game paths; the other is
@@ -4488,7 +4487,7 @@ transition effect, and patches the main loop's attract-control slot
 to an [[RTS]] so that inner frames of the extra-life animation do
 not re-enter attract animation callbacks.
 
-If the ``extras'' stash [[ZP_EXTRA_LIVES]] ([[$8C]]) is positive, the
+If the ``extras'' stash [[ZP_EXTRA_LIVES]] is positive, the
 handler draws one extra-life sprite, polls for input, and calls
 [[MAIN_LOOP]] once.  MAIN\_LOOP itself terminates via [[JMP
 LIFE_LOST_HANDLER]] (not RTS), so each ``iteration'' of the extras
@@ -4943,7 +4942,7 @@ At startup, [[JMP (ZP_GAME_ENTRY)]] enters [[START_ATTRACT]]
 in the level data area. This copies the title screen from hi-res page~1
 to page~2, clears the keyboard strobe, and enters the attract loop.
 
-The attract loop at [[ATTRACT_LOOP]] ([[$7263]]) calls the main game loop's
+The attract loop at [[ATTRACT_LOOP]] calls the main game loop's
 attract entry point ([[JSR $67D7]]), which runs the game's rendering and
 animation subsystems without input handling. After each frame, it polls
 the joystick buttons and keyboard. When input is detected, it patches
@@ -4995,10 +4994,10 @@ ATTRACT_SET_MODE:
 
 ; --- Patch main loop for game mode ---
         LDA #$EA                ; NOP opcode
-        STA SMC_ATTRACT         ; $6827: disable attract JSR → NOP
+        STA SMC_ATTRACT         ; disable attract JSR → NOP
         LDA #$20                ; JSR opcode
-        STA SMC_INPUT           ; $67D1: enable input handler
-        STA SMC_RENDER          ; $67EF: enable sprite rendering
+        STA SMC_INPUT           ; enable input handler
+        STA SMC_RENDER          ; enable sprite rendering
 
 ; --- Start game ---
 START_GAME_FROM_ATTRACT:
@@ -5234,10 +5233,10 @@ CLEAR_PAGE1:
         ;      text lines, $3028.. $3D50).
         ;
         ; Clobbers: A, X
-        LDX ZP_CLEAR_COL                ; $0400: outer-loop column start
-        LDA #$00                        ; $0402: paint value
+        LDX ZP_CLEAR_COL                ; outer-loop column start
+        LDA #$00                        ; paint value
 .paint_loop:
-        STA $2600,X                     ; $0404: hi-res page 1 row stripes
+        STA $2600,X                     ; hi-res page 1 row stripes
         STA $2A00,X
         STA $2E00,X
         STA $3200,X
@@ -5271,15 +5270,15 @@ CLEAR_PAGE1:
         STA $2028,X                     ; top HUD-row stripes (row 0/4/8)
         STA $2428,X
         STA $2828,X
-        JSR INTERLACE_FILL_P1           ; $046A: fill remaining 63 rows
-        CPX ZP_CLEAR_COL_END            ; $046D: loop terminator
+        JSR INTERLACE_FILL_P1           ; fill remaining 63 rows
+        CPX ZP_CLEAR_COL_END            ; loop terminator
         BEQ .text_restore
         DEX
         JMP .paint_loop
 .text_restore:
-        LDX #$27                        ; $0475: restore bottom text area
+        LDX #$27                        ; restore bottom text area
 .text_loop:
-        LDA $0300,X                     ; $0477: buffered text-row bytes
+        LDA $0300,X                     ; buffered text-row bytes
         STA $3028,X                     ; 12 interlaced bottom rows
         STA $3428,X
         STA $3828,X
@@ -5297,7 +5296,7 @@ CLEAR_PAGE1:
         DEX
         JMP .text_loop
 .done:
-        RTS                             ; $04A6
+        RTS
 @ %def CLEAR_PAGE1
 
 <<clear page2>>=
@@ -5322,10 +5321,10 @@ CLEAR_PAGE2:
         ;   $0300,X --- 40-byte text-area source.
         ;
         ; Clobbers: A, X
-        LDX ZP_CLEAR_COL                ; $04A7
-        LDA #$00                        ; $04A9
+        LDX ZP_CLEAR_COL
+        LDA #$00
 CLEAR_PAGE2_ENTRY:
-        STA $4600,X                     ; $04AB: page-2 row stripes
+        STA $4600,X                     ; page-2 row stripes
         STA $4A00,X
         STA $4E00,X
         STA $5200,X
@@ -5359,15 +5358,15 @@ CLEAR_PAGE2_ENTRY:
         STA $4028,X
         STA $4428,X
         STA $4828,X
-        JSR INTERLACE_FILL_P2           ; $0511: fill remaining 63 rows
-        CPX ZP_CLEAR_COL_END            ; $0514
+        JSR INTERLACE_FILL_P2           ; fill remaining 63 rows
+        CPX ZP_CLEAR_COL_END
         BEQ .text_restore
         DEX
-        JMP CLEAR_PAGE2_ENTRY           ; $0519
+        JMP CLEAR_PAGE2_ENTRY
 .text_restore:
-        LDX #$27                        ; $051C
+        LDX #$27
 CLEAR_PAGE2_TEXT_ENTRY:
-        LDA $0300,X                     ; $051E: sub-entry used by $474A
+        LDA $0300,X                     ; sub-entry used by $474A
         STA $5028,X                     ; 12 interlaced bottom rows (page 2)
         STA $5428,X
         STA $5828,X
@@ -5383,9 +5382,9 @@ CLEAR_PAGE2_TEXT_ENTRY:
         CPX #$00
         BEQ .done
         DEX
-        JMP CLEAR_PAGE2_TEXT_ENTRY      ; $054A
+        JMP CLEAR_PAGE2_TEXT_ENTRY
 .done:
-        RTS                             ; $054D
+        RTS
 @ %def CLEAR_PAGE2 CLEAR_PAGE2_ENTRY CLEAR_PAGE2_TEXT_ENTRY
 
 \section{Perspective-floor sprite blitter}
@@ -5403,7 +5402,7 @@ echoed into rows 72--106, 112--146, and 152--186.
 \subsection{Control-flow shape}
 
 Both routines share the same outer-loop skeleton.  The caller loads a
-sprite pointer into [[ZP_BLIT_SRC]] ([[$FE]]/[[$FF]]) and sets
+sprite pointer into [[ZP_BLIT_SRC]] and sets
 [[ZP_BLIT_X_START]] ([[$59]], the rightmost screen column, inclusive)
 and [[ZP_BLIT_X_END]] ([[$58]], the left terminator --- exclusive: the
 loop stops on equality without painting column [[ZP_BLIT_X_END]]).  The
@@ -5469,11 +5468,7 @@ The four callers are:
 The selectors pick [[INTERLACE_BLIT_P1]] when [[ZP_PAGE_FLAG]] is
 positive and [[INTERLACE_BLIT_P2]] otherwise --- the same gating
 pattern already documented for [[INTERLACE_RESTORE_P1]]/[[P2]].  The
-sprite tables at [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]]
-([[$7500]]/[[$7600]]), [[FLOOR_SPR_LO]]/[[FLOOR_SPR_HI]]
-([[$750E]]/[[$760E]]), [[WALL_L_SPR_LO]]/[[WALL_L_SPR_HI]]
-([[$7519]]/[[$7619]]), and [[WALL_SPR_LO]]/[[WALL_SPR_HI]]
-([[$7520]]/[[$7620]]) hold pointers into the swappable level banks;
+sprite tables at [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]], [[FLOOR_SPR_LO]]/[[FLOOR_SPR_HI]], [[WALL_L_SPR_LO]]/[[WALL_L_SPR_HI]], and [[WALL_SPR_LO]]/[[WALL_SPR_HI]] hold pointers into the swappable level banks;
 the sprites have widths in the 1\,column (40 bytes) to 4\,columns
 (140 bytes) range, producing the thin vertical pillar/column
 decorations visible in the Drol playfield (see
@@ -5560,199 +5555,199 @@ INTERLACE_BLIT_P1:
         ;   (page 2, ZP_PAGE_FLAG negative).
         ;
         ; Clobbers: A, X, Y
-        LDY #$00                        ; $054E: start at source byte 0
-        LDX ZP_BLIT_X_START             ; $0550: X = rightmost column
+        LDY #$00                        ; start at source byte 0
+        LDX ZP_BLIT_X_START             ; X = rightmost column
 .check:
-        CPX #$28                        ; $0552: X off the screen?
-        BCC .paint                      ; $0554: no -> paint it
-        TYA                             ; $0556: yes -> skip, Y += 35
-        CLC                             ; $0557
-        ADC #$23                        ; $0558
-        TAY                             ; $055A
-        JMP .step                       ; $055B
+        CPX #$28                        ; X off the screen?
+        BCC .paint                      ; no -> paint it
+        TYA                             ; yes -> skip, Y += 35
+        CLC
+        ADC #$23
+        TAY
+        JMP .step
 .paint:
-        LDA (ZP_BLIT_SRC),Y             ; $055E: source byte for rows 72/112/152
-        STA $20A8,X                     ; $0560: row 72  (band 0)
-        STA $2328,X                     ; $0563: row 112 (band 1)
-        STA $21D0,X                     ; $0566: row 152 (band 2)
-        INY                             ; $0569
-        LDA (ZP_BLIT_SRC),Y             ; $056A: rows 73/113/153
-        STA $24A8,X                     ; $056C: row 73
-        STA $2728,X                     ; $056F: row 113
-        STA $25D0,X                     ; $0572: row 153
-        INY                             ; $0575
-        LDA (ZP_BLIT_SRC),Y             ; $0576: rows 74/114/154
-        STA $28A8,X                     ; $0578: row 74
-        STA $2B28,X                     ; $057B: row 114
-        STA $29D0,X                     ; $057E: row 154
-        INY                             ; $0581
-        LDA (ZP_BLIT_SRC),Y             ; $0582: rows 75/115/155
-        STA $2CA8,X                     ; $0584: row 75
-        STA $2F28,X                     ; $0587: row 115
-        STA $2DD0,X                     ; $058A: row 155
-        INY                             ; $058D
-        LDA (ZP_BLIT_SRC),Y             ; $058E: rows 76/116/156
-        STA $30A8,X                     ; $0590: row 76
-        STA $3328,X                     ; $0593: row 116
-        STA $31D0,X                     ; $0596: row 156
-        INY                             ; $0599
-        LDA (ZP_BLIT_SRC),Y             ; $059A: rows 77/117/157
-        STA $34A8,X                     ; $059C: row 77
-        STA $3728,X                     ; $059F: row 117
-        STA $35D0,X                     ; $05A2: row 157
-        INY                             ; $05A5
-        LDA (ZP_BLIT_SRC),Y             ; $05A6: rows 78/118/158
-        STA $38A8,X                     ; $05A8: row 78
-        STA $3B28,X                     ; $05AB: row 118
-        STA $39D0,X                     ; $05AE: row 158
-        INY                             ; $05B1
-        LDA (ZP_BLIT_SRC),Y             ; $05B2: rows 79/119/159
-        STA $3CA8,X                     ; $05B4: row 79
-        STA $3F28,X                     ; $05B7: row 119
-        STA $3DD0,X                     ; $05BA: row 159
-        INY                             ; $05BD
-        LDA (ZP_BLIT_SRC),Y             ; $05BE: rows 80/120/160
-        STA $2128,X                     ; $05C0: row 80
-        STA $23A8,X                     ; $05C3: row 120
-        STA $2250,X                     ; $05C6: row 160
-        INY                             ; $05C9
-        LDA (ZP_BLIT_SRC),Y             ; $05CA: rows 81/121/161
-        STA $2528,X                     ; $05CC: row 81
-        STA $27A8,X                     ; $05CF: row 121
-        STA $2650,X                     ; $05D2: row 161
-        INY                             ; $05D5
-        LDA (ZP_BLIT_SRC),Y             ; $05D6: rows 82/122/162
-        STA $2928,X                     ; $05D8: row 82
-        STA $2BA8,X                     ; $05DB: row 122
-        STA $2A50,X                     ; $05DE: row 162
-        INY                             ; $05E1
-        LDA (ZP_BLIT_SRC),Y             ; $05E2: rows 83/123/163
-        STA $2D28,X                     ; $05E4: row 83
-        STA $2FA8,X                     ; $05E7: row 123
-        STA $2E50,X                     ; $05EA: row 163
-        INY                             ; $05ED
-        LDA (ZP_BLIT_SRC),Y             ; $05EE: rows 84/124/164
-        STA $3128,X                     ; $05F0: row 84
-        STA $33A8,X                     ; $05F3: row 124
-        STA $3250,X                     ; $05F6: row 164
-        INY                             ; $05F9
-        LDA (ZP_BLIT_SRC),Y             ; $05FA: rows 85/125/165
-        STA $3528,X                     ; $05FC: row 85
-        STA $37A8,X                     ; $05FF: row 125
-        STA $3650,X                     ; $0602: row 165
-        INY                             ; $0605
-        LDA (ZP_BLIT_SRC),Y             ; $0606: rows 86/126/166
-        STA $3928,X                     ; $0608: row 86
-        STA $3BA8,X                     ; $060B: row 126
-        STA $3A50,X                     ; $060E: row 166
-        INY                             ; $0611
-        LDA (ZP_BLIT_SRC),Y             ; $0612: rows 87/127/167
-        STA $3D28,X                     ; $0614: row 87
-        STA $3FA8,X                     ; $0617: row 127
-        STA $3E50,X                     ; $061A: row 167
-        INY                             ; $061D
-        LDA (ZP_BLIT_SRC),Y             ; $061E: rows 88/128/168
-        STA $21A8,X                     ; $0620: row 88
-        STA $2050,X                     ; $0623: row 128
-        STA $22D0,X                     ; $0626: row 168
-        INY                             ; $0629
-        LDA (ZP_BLIT_SRC),Y             ; $062A: rows 89/129/169
-        STA $25A8,X                     ; $062C: row 89
-        STA $2450,X                     ; $062F: row 129
-        STA $26D0,X                     ; $0632: row 169
-        INY                             ; $0635
-        LDA (ZP_BLIT_SRC),Y             ; $0636: rows 90/130/170
-        STA $29A8,X                     ; $0638: row 90
-        STA $2850,X                     ; $063B: row 130
-        STA $2AD0,X                     ; $063E: row 170
-        INY                             ; $0641
-        LDA (ZP_BLIT_SRC),Y             ; $0642: rows 91/131/171
-        STA $2DA8,X                     ; $0644: row 91
-        STA $2C50,X                     ; $0647: row 131
-        STA $2ED0,X                     ; $064A: row 171
-        INY                             ; $064D
-        LDA (ZP_BLIT_SRC),Y             ; $064E: rows 92/132/172
-        STA $31A8,X                     ; $0650: row 92
-        STA $3050,X                     ; $0653: row 132
-        STA $32D0,X                     ; $0656: row 172
-        INY                             ; $0659
-        LDA (ZP_BLIT_SRC),Y             ; $065A: rows 93/133/173
-        STA $35A8,X                     ; $065C: row 93
-        STA $3450,X                     ; $065F: row 133
-        STA $36D0,X                     ; $0662: row 173
-        INY                             ; $0665
-        LDA (ZP_BLIT_SRC),Y             ; $0666: rows 94/134/174
-        STA $39A8,X                     ; $0668: row 94
-        STA $3850,X                     ; $066B: row 134
-        STA $3AD0,X                     ; $066E: row 174
-        INY                             ; $0671
-        LDA (ZP_BLIT_SRC),Y             ; $0672: rows 95/135/175
-        STA $3DA8,X                     ; $0674: row 95
-        STA $3C50,X                     ; $0677: row 135
-        STA $3ED0,X                     ; $067A: row 175
-        INY                             ; $067D
-        LDA (ZP_BLIT_SRC),Y             ; $067E: rows 96/136/176
-        STA $2228,X                     ; $0680: row 96
-        STA $20D0,X                     ; $0683: row 136
-        STA $2350,X                     ; $0686: row 176
-        INY                             ; $0689
-        LDA (ZP_BLIT_SRC),Y             ; $068A: rows 97/137/177
-        STA $2628,X                     ; $068C: row 97
-        STA $24D0,X                     ; $068F: row 137
-        STA $2750,X                     ; $0692: row 177
-        INY                             ; $0695
-        LDA (ZP_BLIT_SRC),Y             ; $0696: rows 98/138/178
-        STA $2A28,X                     ; $0698: row 98
-        STA $28D0,X                     ; $069B: row 138
-        STA $2B50,X                     ; $069E: row 178
-        INY                             ; $06A1
-        LDA (ZP_BLIT_SRC),Y             ; $06A2: rows 99/139/179
-        STA $2E28,X                     ; $06A4: row 99
-        STA $2CD0,X                     ; $06A7: row 139
-        STA $2F50,X                     ; $06AA: row 179
-        INY                             ; $06AD
-        LDA (ZP_BLIT_SRC),Y             ; $06AE: rows 100/140/180
-        STA $3228,X                     ; $06B0: row 100
-        STA $30D0,X                     ; $06B3: row 140
-        STA $3350,X                     ; $06B6: row 180
-        INY                             ; $06B9
-        LDA (ZP_BLIT_SRC),Y             ; $06BA: rows 101/141/181
-        STA $3628,X                     ; $06BC: row 101
-        STA $34D0,X                     ; $06BF: row 141
-        STA $3750,X                     ; $06C2: row 181
-        INY                             ; $06C5
-        LDA (ZP_BLIT_SRC),Y             ; $06C6: rows 102/142/182
-        STA $3A28,X                     ; $06C8: row 102
-        STA $38D0,X                     ; $06CB: row 142
-        STA $3B50,X                     ; $06CE: row 182
-        INY                             ; $06D1
-        LDA (ZP_BLIT_SRC),Y             ; $06D2: rows 103/143/183
-        STA $3E28,X                     ; $06D4: row 103
-        STA $3CD0,X                     ; $06D7: row 143
-        STA $3F50,X                     ; $06DA: row 183
-        INY                             ; $06DD
-        LDA (ZP_BLIT_SRC),Y             ; $06DE: rows 104/144/184
-        STA $22A8,X                     ; $06E0: row 104
-        STA $2150,X                     ; $06E3: row 144
-        STA $23D0,X                     ; $06E6: row 184
-        INY                             ; $06E9
-        LDA (ZP_BLIT_SRC),Y             ; $06EA: rows 105/145/185
-        STA $26A8,X                     ; $06EC: row 105
-        STA $2550,X                     ; $06EF: row 145
-        STA $27D0,X                     ; $06F2: row 185
-        INY                             ; $06F5
-        LDA (ZP_BLIT_SRC),Y             ; $06F6: rows 106/146/186
-        STA $2AA8,X                     ; $06F8: row 106
-        STA $2950,X                     ; $06FB: row 146
-        STA $2BD0,X                     ; $06FE: row 186
-        INY                             ; $0701
+        LDA (ZP_BLIT_SRC),Y             ; source byte for rows 72/112/152
+        STA $20A8,X                     ; row 72  (band 0)
+        STA $2328,X                     ; row 112 (band 1)
+        STA $21D0,X                     ; row 152 (band 2)
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 73/113/153
+        STA $24A8,X                     ; row 73
+        STA $2728,X                     ; row 113
+        STA $25D0,X                     ; row 153
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 74/114/154
+        STA $28A8,X                     ; row 74
+        STA $2B28,X                     ; row 114
+        STA $29D0,X                     ; row 154
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 75/115/155
+        STA $2CA8,X                     ; row 75
+        STA $2F28,X                     ; row 115
+        STA $2DD0,X                     ; row 155
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 76/116/156
+        STA $30A8,X                     ; row 76
+        STA $3328,X                     ; row 116
+        STA $31D0,X                     ; row 156
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 77/117/157
+        STA $34A8,X                     ; row 77
+        STA $3728,X                     ; row 117
+        STA $35D0,X                     ; row 157
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 78/118/158
+        STA $38A8,X                     ; row 78
+        STA $3B28,X                     ; row 118
+        STA $39D0,X                     ; row 158
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 79/119/159
+        STA $3CA8,X                     ; row 79
+        STA $3F28,X                     ; row 119
+        STA $3DD0,X                     ; row 159
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 80/120/160
+        STA $2128,X                     ; row 80
+        STA $23A8,X                     ; row 120
+        STA $2250,X                     ; row 160
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 81/121/161
+        STA $2528,X                     ; row 81
+        STA $27A8,X                     ; row 121
+        STA $2650,X                     ; row 161
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 82/122/162
+        STA $2928,X                     ; row 82
+        STA $2BA8,X                     ; row 122
+        STA $2A50,X                     ; row 162
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 83/123/163
+        STA $2D28,X                     ; row 83
+        STA $2FA8,X                     ; row 123
+        STA $2E50,X                     ; row 163
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 84/124/164
+        STA $3128,X                     ; row 84
+        STA $33A8,X                     ; row 124
+        STA $3250,X                     ; row 164
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 85/125/165
+        STA $3528,X                     ; row 85
+        STA $37A8,X                     ; row 125
+        STA $3650,X                     ; row 165
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 86/126/166
+        STA $3928,X                     ; row 86
+        STA $3BA8,X                     ; row 126
+        STA $3A50,X                     ; row 166
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 87/127/167
+        STA $3D28,X                     ; row 87
+        STA $3FA8,X                     ; row 127
+        STA $3E50,X                     ; row 167
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 88/128/168
+        STA $21A8,X                     ; row 88
+        STA $2050,X                     ; row 128
+        STA $22D0,X                     ; row 168
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 89/129/169
+        STA $25A8,X                     ; row 89
+        STA $2450,X                     ; row 129
+        STA $26D0,X                     ; row 169
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 90/130/170
+        STA $29A8,X                     ; row 90
+        STA $2850,X                     ; row 130
+        STA $2AD0,X                     ; row 170
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 91/131/171
+        STA $2DA8,X                     ; row 91
+        STA $2C50,X                     ; row 131
+        STA $2ED0,X                     ; row 171
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 92/132/172
+        STA $31A8,X                     ; row 92
+        STA $3050,X                     ; row 132
+        STA $32D0,X                     ; row 172
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 93/133/173
+        STA $35A8,X                     ; row 93
+        STA $3450,X                     ; row 133
+        STA $36D0,X                     ; row 173
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 94/134/174
+        STA $39A8,X                     ; row 94
+        STA $3850,X                     ; row 134
+        STA $3AD0,X                     ; row 174
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 95/135/175
+        STA $3DA8,X                     ; row 95
+        STA $3C50,X                     ; row 135
+        STA $3ED0,X                     ; row 175
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 96/136/176
+        STA $2228,X                     ; row 96
+        STA $20D0,X                     ; row 136
+        STA $2350,X                     ; row 176
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 97/137/177
+        STA $2628,X                     ; row 97
+        STA $24D0,X                     ; row 137
+        STA $2750,X                     ; row 177
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 98/138/178
+        STA $2A28,X                     ; row 98
+        STA $28D0,X                     ; row 138
+        STA $2B50,X                     ; row 178
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 99/139/179
+        STA $2E28,X                     ; row 99
+        STA $2CD0,X                     ; row 139
+        STA $2F50,X                     ; row 179
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 100/140/180
+        STA $3228,X                     ; row 100
+        STA $30D0,X                     ; row 140
+        STA $3350,X                     ; row 180
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 101/141/181
+        STA $3628,X                     ; row 101
+        STA $34D0,X                     ; row 141
+        STA $3750,X                     ; row 181
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 102/142/182
+        STA $3A28,X                     ; row 102
+        STA $38D0,X                     ; row 142
+        STA $3B50,X                     ; row 182
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 103/143/183
+        STA $3E28,X                     ; row 103
+        STA $3CD0,X                     ; row 143
+        STA $3F50,X                     ; row 183
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 104/144/184
+        STA $22A8,X                     ; row 104
+        STA $2150,X                     ; row 144
+        STA $23D0,X                     ; row 184
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 105/145/185
+        STA $26A8,X                     ; row 105
+        STA $2550,X                     ; row 145
+        STA $27D0,X                     ; row 185
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 106/146/186
+        STA $2AA8,X                     ; row 106
+        STA $2950,X                     ; row 146
+        STA $2BD0,X                     ; row 186
+        INY
 .step:
-        DEX                             ; $0702
-        CPX ZP_BLIT_X_END               ; $0703
-        BEQ .done                       ; $0705
-        JMP .check                      ; $0707
+        DEX
+        CPX ZP_BLIT_X_END
+        BEQ .done
+        JMP .check
 .done:
-        RTS                             ; $070A
+        RTS
 @ %def INTERLACE_BLIT_P1
 
 <<interlace blit p2>>=
@@ -5771,199 +5766,199 @@ INTERLACE_BLIT_P2:
         ; Inputs / Behavior / Callers: see INTERLACE_BLIT_P1.
         ;
         ; Clobbers: A, X, Y
-        LDY #$00                        ; $070B
-        LDX ZP_BLIT_X_START             ; $070D
+        LDY #$00
+        LDX ZP_BLIT_X_START
 .check:
-        CPX #$28                        ; $070F
-        BCC .paint                      ; $0711
-        TYA                             ; $0713
-        CLC                             ; $0714
-        ADC #$23                        ; $0715
-        TAY                             ; $0717
-        JMP .step                       ; $0718
+        CPX #$28
+        BCC .paint
+        TYA
+        CLC
+        ADC #$23
+        TAY
+        JMP .step
 .paint:
-        LDA (ZP_BLIT_SRC),Y             ; $071B: rows 72/112/152
-        STA $40A8,X                     ; $071D: row 72  (band 0)
-        STA $4328,X                     ; $0720: row 112 (band 1)
-        STA $41D0,X                     ; $0723: row 152 (band 2)
-        INY                             ; $0726
-        LDA (ZP_BLIT_SRC),Y             ; $0727: rows 73/113/153
-        STA $44A8,X                     ; $0729
-        STA $4728,X                     ; $072C
-        STA $45D0,X                     ; $072F
-        INY                             ; $0732
-        LDA (ZP_BLIT_SRC),Y             ; $0733: rows 74/114/154
-        STA $48A8,X                     ; $0735
-        STA $4B28,X                     ; $0738
-        STA $49D0,X                     ; $073B
-        INY                             ; $073E
-        LDA (ZP_BLIT_SRC),Y             ; $073F: rows 75/115/155
-        STA $4CA8,X                     ; $0741
-        STA $4F28,X                     ; $0744
-        STA $4DD0,X                     ; $0747
-        INY                             ; $074A
-        LDA (ZP_BLIT_SRC),Y             ; $074B: rows 76/116/156
-        STA $50A8,X                     ; $074D
-        STA $5328,X                     ; $0750
-        STA $51D0,X                     ; $0753
-        INY                             ; $0756
-        LDA (ZP_BLIT_SRC),Y             ; $0757: rows 77/117/157
-        STA $54A8,X                     ; $0759
-        STA $5728,X                     ; $075C
-        STA $55D0,X                     ; $075F
-        INY                             ; $0762
-        LDA (ZP_BLIT_SRC),Y             ; $0763: rows 78/118/158
-        STA $58A8,X                     ; $0765
-        STA $5B28,X                     ; $0768
-        STA $59D0,X                     ; $076B
-        INY                             ; $076E
-        LDA (ZP_BLIT_SRC),Y             ; $076F: rows 79/119/159
-        STA $5CA8,X                     ; $0771
-        STA $5F28,X                     ; $0774
-        STA $5DD0,X                     ; $0777
-        INY                             ; $077A
-        LDA (ZP_BLIT_SRC),Y             ; $077B: rows 80/120/160
-        STA $4128,X                     ; $077D
-        STA $43A8,X                     ; $0780
-        STA $4250,X                     ; $0783
-        INY                             ; $0786
-        LDA (ZP_BLIT_SRC),Y             ; $0787: rows 81/121/161
-        STA $4528,X                     ; $0789
-        STA $47A8,X                     ; $078C
-        STA $4650,X                     ; $078F
-        INY                             ; $0792
-        LDA (ZP_BLIT_SRC),Y             ; $0793: rows 82/122/162
-        STA $4928,X                     ; $0795
-        STA $4BA8,X                     ; $0798
-        STA $4A50,X                     ; $079B
-        INY                             ; $079E
-        LDA (ZP_BLIT_SRC),Y             ; $079F: rows 83/123/163
-        STA $4D28,X                     ; $07A1
-        STA $4FA8,X                     ; $07A4
-        STA $4E50,X                     ; $07A7
-        INY                             ; $07AA
-        LDA (ZP_BLIT_SRC),Y             ; $07AB: rows 84/124/164
-        STA $5128,X                     ; $07AD
-        STA $53A8,X                     ; $07B0
-        STA $5250,X                     ; $07B3
-        INY                             ; $07B6
-        LDA (ZP_BLIT_SRC),Y             ; $07B7: rows 85/125/165
-        STA $5528,X                     ; $07B9
-        STA $57A8,X                     ; $07BC
-        STA $5650,X                     ; $07BF
-        INY                             ; $07C2
-        LDA (ZP_BLIT_SRC),Y             ; $07C3: rows 86/126/166
-        STA $5928,X                     ; $07C5
-        STA $5BA8,X                     ; $07C8
-        STA $5A50,X                     ; $07CB
-        INY                             ; $07CE
-        LDA (ZP_BLIT_SRC),Y             ; $07CF: rows 87/127/167
-        STA $5D28,X                     ; $07D1
-        STA $5FA8,X                     ; $07D4
-        STA $5E50,X                     ; $07D7
-        INY                             ; $07DA
-        LDA (ZP_BLIT_SRC),Y             ; $07DB: rows 88/128/168
-        STA $41A8,X                     ; $07DD
-        STA $4050,X                     ; $07E0
-        STA $42D0,X                     ; $07E3
-        INY                             ; $07E6
-        LDA (ZP_BLIT_SRC),Y             ; $07E7: rows 89/129/169
-        STA $45A8,X                     ; $07E9
-        STA $4450,X                     ; $07EC
-        STA $46D0,X                     ; $07EF
-        INY                             ; $07F2
-        LDA (ZP_BLIT_SRC),Y             ; $07F3: rows 90/130/170
-        STA $49A8,X                     ; $07F5
-        STA $4850,X                     ; $07F8
-        STA $4AD0,X                     ; $07FB
-        INY                             ; $07FE
-        LDA (ZP_BLIT_SRC),Y             ; $07FF: rows 91/131/171
-        STA $4DA8,X                     ; $0801
-        STA $4C50,X                     ; $0804
-        STA $4ED0,X                     ; $0807
-        INY                             ; $080A
-        LDA (ZP_BLIT_SRC),Y             ; $080B: rows 92/132/172
-        STA $51A8,X                     ; $080D
-        STA $5050,X                     ; $0810
-        STA $52D0,X                     ; $0813
-        INY                             ; $0816
-        LDA (ZP_BLIT_SRC),Y             ; $0817: rows 93/133/173
-        STA $55A8,X                     ; $0819
-        STA $5450,X                     ; $081C
-        STA $56D0,X                     ; $081F
-        INY                             ; $0822
-        LDA (ZP_BLIT_SRC),Y             ; $0823: rows 94/134/174
-        STA $59A8,X                     ; $0825
-        STA $5850,X                     ; $0828
-        STA $5AD0,X                     ; $082B
-        INY                             ; $082E
-        LDA (ZP_BLIT_SRC),Y             ; $082F: rows 95/135/175
-        STA $5DA8,X                     ; $0831
-        STA $5C50,X                     ; $0834
-        STA $5ED0,X                     ; $0837
-        INY                             ; $083A
-        LDA (ZP_BLIT_SRC),Y             ; $083B: rows 96/136/176
-        STA $4228,X                     ; $083D
-        STA $40D0,X                     ; $0840
-        STA $4350,X                     ; $0843
-        INY                             ; $0846
-        LDA (ZP_BLIT_SRC),Y             ; $0847: rows 97/137/177
-        STA $4628,X                     ; $0849
-        STA $44D0,X                     ; $084C
-        STA $4750,X                     ; $084F
-        INY                             ; $0852
-        LDA (ZP_BLIT_SRC),Y             ; $0853: rows 98/138/178
-        STA $4A28,X                     ; $0855
-        STA $48D0,X                     ; $0858
-        STA $4B50,X                     ; $085B
-        INY                             ; $085E
-        LDA (ZP_BLIT_SRC),Y             ; $085F: rows 99/139/179
-        STA $4E28,X                     ; $0861
-        STA $4CD0,X                     ; $0864
-        STA $4F50,X                     ; $0867
-        INY                             ; $086A
-        LDA (ZP_BLIT_SRC),Y             ; $086B: rows 100/140/180
-        STA $5228,X                     ; $086D
-        STA $50D0,X                     ; $0870
-        STA $5350,X                     ; $0873
-        INY                             ; $0876
-        LDA (ZP_BLIT_SRC),Y             ; $0877: rows 101/141/181
-        STA $5628,X                     ; $0879
-        STA $54D0,X                     ; $087C
-        STA $5750,X                     ; $087F
-        INY                             ; $0882
-        LDA (ZP_BLIT_SRC),Y             ; $0883: rows 102/142/182
-        STA $5A28,X                     ; $0885
-        STA $58D0,X                     ; $0888
-        STA $5B50,X                     ; $088B
-        INY                             ; $088E
-        LDA (ZP_BLIT_SRC),Y             ; $088F: rows 103/143/183
-        STA $5E28,X                     ; $0891
-        STA $5CD0,X                     ; $0894
-        STA $5F50,X                     ; $0897
-        INY                             ; $089A
-        LDA (ZP_BLIT_SRC),Y             ; $089B: rows 104/144/184
-        STA $42A8,X                     ; $089D
-        STA $4150,X                     ; $08A0
-        STA $43D0,X                     ; $08A3
-        INY                             ; $08A6
-        LDA (ZP_BLIT_SRC),Y             ; $08A7: rows 105/145/185
-        STA $46A8,X                     ; $08A9
-        STA $4550,X                     ; $08AC
-        STA $47D0,X                     ; $08AF
-        INY                             ; $08B2
-        LDA (ZP_BLIT_SRC),Y             ; $08B3: rows 106/146/186
-        STA $4AA8,X                     ; $08B5
-        STA $4950,X                     ; $08B8
-        STA $4BD0,X                     ; $08BB
-        INY                             ; $08BE
+        LDA (ZP_BLIT_SRC),Y             ; rows 72/112/152
+        STA $40A8,X                     ; row 72  (band 0)
+        STA $4328,X                     ; row 112 (band 1)
+        STA $41D0,X                     ; row 152 (band 2)
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 73/113/153
+        STA $44A8,X
+        STA $4728,X
+        STA $45D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 74/114/154
+        STA $48A8,X
+        STA $4B28,X
+        STA $49D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 75/115/155
+        STA $4CA8,X
+        STA $4F28,X
+        STA $4DD0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 76/116/156
+        STA $50A8,X
+        STA $5328,X
+        STA $51D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 77/117/157
+        STA $54A8,X
+        STA $5728,X
+        STA $55D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 78/118/158
+        STA $58A8,X
+        STA $5B28,X
+        STA $59D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 79/119/159
+        STA $5CA8,X
+        STA $5F28,X
+        STA $5DD0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 80/120/160
+        STA $4128,X
+        STA $43A8,X
+        STA $4250,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 81/121/161
+        STA $4528,X
+        STA $47A8,X
+        STA $4650,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 82/122/162
+        STA $4928,X
+        STA $4BA8,X
+        STA $4A50,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 83/123/163
+        STA $4D28,X
+        STA $4FA8,X
+        STA $4E50,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 84/124/164
+        STA $5128,X
+        STA $53A8,X
+        STA $5250,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 85/125/165
+        STA $5528,X
+        STA $57A8,X
+        STA $5650,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 86/126/166
+        STA $5928,X
+        STA $5BA8,X
+        STA $5A50,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 87/127/167
+        STA $5D28,X
+        STA $5FA8,X
+        STA $5E50,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 88/128/168
+        STA $41A8,X
+        STA $4050,X
+        STA $42D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 89/129/169
+        STA $45A8,X
+        STA $4450,X
+        STA $46D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 90/130/170
+        STA $49A8,X
+        STA $4850,X
+        STA $4AD0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 91/131/171
+        STA $4DA8,X
+        STA $4C50,X
+        STA $4ED0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 92/132/172
+        STA $51A8,X
+        STA $5050,X
+        STA $52D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 93/133/173
+        STA $55A8,X
+        STA $5450,X
+        STA $56D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 94/134/174
+        STA $59A8,X
+        STA $5850,X
+        STA $5AD0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 95/135/175
+        STA $5DA8,X
+        STA $5C50,X
+        STA $5ED0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 96/136/176
+        STA $4228,X
+        STA $40D0,X
+        STA $4350,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 97/137/177
+        STA $4628,X
+        STA $44D0,X
+        STA $4750,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 98/138/178
+        STA $4A28,X
+        STA $48D0,X
+        STA $4B50,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 99/139/179
+        STA $4E28,X
+        STA $4CD0,X
+        STA $4F50,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 100/140/180
+        STA $5228,X
+        STA $50D0,X
+        STA $5350,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 101/141/181
+        STA $5628,X
+        STA $54D0,X
+        STA $5750,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 102/142/182
+        STA $5A28,X
+        STA $58D0,X
+        STA $5B50,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 103/143/183
+        STA $5E28,X
+        STA $5CD0,X
+        STA $5F50,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 104/144/184
+        STA $42A8,X
+        STA $4150,X
+        STA $43D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 105/145/185
+        STA $46A8,X
+        STA $4550,X
+        STA $47D0,X
+        INY
+        LDA (ZP_BLIT_SRC),Y             ; rows 106/146/186
+        STA $4AA8,X
+        STA $4950,X
+        STA $4BD0,X
+        INY
 .step:
-        DEX                             ; $08BF
-        CPX ZP_BLIT_X_END               ; $08C0
-        BEQ .done                       ; $08C2
-        JMP .check                      ; $08C4
+        DEX
+        CPX ZP_BLIT_X_END
+        BEQ .done
+        JMP .check
 .done:
-        RTS                             ; $08C7
+        RTS
 @ %def INTERLACE_BLIT_P2
 
 <<floor lines p1>>=
@@ -5995,18 +5990,18 @@ FLOOR_LINES_P1:
         ;   Hi-res page 1 at rows 67, 107, 147, 187 (columns 0..39).
         ; Clobbers: A, X, Y
 
-        LDY #$00                        ; $08C8
-        LDX #$27                        ; $08CA
+        LDY #$00
+        LDX #$27
 .row:
-        LDA (ZP_BLIT_SRC),Y             ; $08CC
-        STA $2C28,X                     ; $08CE: row 67
-        STA $2EA8,X                     ; $08D1: row 107
-        STA $2D50,X                     ; $08D4: row 147
-        STA $2FD0,X                     ; $08D7: row 187
-        INY                             ; $08DA
-        DEX                             ; $08DB
-        BPL .row                        ; $08DC
-        RTS                             ; $08DE
+        LDA (ZP_BLIT_SRC),Y
+        STA $2C28,X                     ; row 67
+        STA $2EA8,X                     ; row 107
+        STA $2D50,X                     ; row 147
+        STA $2FD0,X                     ; row 187
+        INY
+        DEX
+        BPL .row
+        RTS
 @ %def FLOOR_LINES_P1
 
 <<floor lines p2>>=
@@ -6025,18 +6020,18 @@ FLOOR_LINES_P2:
         ;   Hi-res page 2 at rows 67, 107, 147, 187 (columns 0..39).
         ; Clobbers: A, X, Y
 
-        LDY #$00                        ; $08DF
-        LDX #$27                        ; $08E1
+        LDY #$00
+        LDX #$27
 .row:
-        LDA (ZP_BLIT_SRC),Y             ; $08E3
-        STA $4C28,X                     ; $08E5: row 67
-        STA $4EA8,X                     ; $08E8: row 107
-        STA $4D50,X                     ; $08EB: row 147
-        STA $4FD0,X                     ; $08EE: row 187
-        INY                             ; $08F1
-        DEX                             ; $08F2
-        BPL .row                        ; $08F3
-        RTS                             ; $08F5
+        LDA (ZP_BLIT_SRC),Y
+        STA $4C28,X                     ; row 67
+        STA $4EA8,X                     ; row 107
+        STA $4D50,X                     ; row 147
+        STA $4FD0,X                     ; row 187
+        INY
+        DEX
+        BPL .row
+        RTS
 @ %def FLOOR_LINES_P2
 
 <<game code 03A8>>=
@@ -6134,16 +6129,16 @@ INTERLACE_RESTORE_P1:
         ;   two restore helpers.
         ;
         ; Clobbers: A, X
-        LDX ZP_SCORE_0                  ; $09FE: outer-loop column start
+        LDX ZP_SCORE_0                  ; outer-loop column start
 .loop:
-        CPX ZP_SCORE_1                  ; $0A00: terminator
+        CPX ZP_SCORE_1                  ; terminator
         BNE .paint
-        RTS                             ; $0A04
+        RTS
 .paint:
-        LDA $0300,X                     ; $0A05: text-buffer byte for column X
-        JSR INTERLACE_FILL_P1           ; $0A08: paint 105 rows
-        DEX                             ; $0A0B
-        JMP .loop                       ; $0A0C
+        LDA $0300,X                     ; text-buffer byte for column X
+        JSR INTERLACE_FILL_P1           ; paint 105 rows
+        DEX
+        JMP .loop
 @ %def INTERLACE_RESTORE_P1
 
 <<interlace fill p1>>=
@@ -6181,112 +6176,112 @@ INTERLACE_FILL_P1:
         ;   INTERLACE_RESTORE_P1 ($0A08), per-column restore iteration.
         ;
         ; Clobbers: (none --- A/X preserved)
-        STA $20A8,X                     ; $0A0F: row 72 (band 0)
-        STA $2328,X                     ; $0A12: row 112 (band 1)
-        STA $21D0,X                     ; $0A15: row 152 (band 2)
-        STA $24A8,X                     ; $0A18: row 73
-        STA $2728,X                     ; $0A1B: row 113
-        STA $25D0,X                     ; $0A1E: row 153
-        STA $28A8,X                     ; $0A21: row 74
-        STA $2B28,X                     ; $0A24: row 114
-        STA $29D0,X                     ; $0A27: row 154
-        STA $2CA8,X                     ; $0A2A: row 75
-        STA $2F28,X                     ; $0A2D: row 115
-        STA $2DD0,X                     ; $0A30: row 155
-        STA $30A8,X                     ; $0A33: row 76
-        STA $3328,X                     ; $0A36: row 116
-        STA $31D0,X                     ; $0A39: row 156
-        STA $34A8,X                     ; $0A3C: row 77
-        STA $3728,X                     ; $0A3F: row 117
-        STA $35D0,X                     ; $0A42: row 157
-        STA $38A8,X                     ; $0A45: row 78
-        STA $3B28,X                     ; $0A48: row 118
-        STA $39D0,X                     ; $0A4B: row 158
-        STA $3CA8,X                     ; $0A4E: row 79
-        STA $3F28,X                     ; $0A51: row 119
-        STA $3DD0,X                     ; $0A54: row 159
-        STA $2128,X                     ; $0A57: row 80
-        STA $23A8,X                     ; $0A5A: row 120
-        STA $2250,X                     ; $0A5D: row 160
-        STA $2528,X                     ; $0A60: row 81
-        STA $27A8,X                     ; $0A63: row 121
-        STA $2650,X                     ; $0A66: row 161
-        STA $2928,X                     ; $0A69: row 82
-        STA $2BA8,X                     ; $0A6C: row 122
-        STA $2A50,X                     ; $0A6F: row 162
-        STA $2D28,X                     ; $0A72: row 83
-        STA $2FA8,X                     ; $0A75: row 123
-        STA $2E50,X                     ; $0A78: row 163
-        STA $3128,X                     ; $0A7B: row 84
-        STA $33A8,X                     ; $0A7E: row 124
-        STA $3250,X                     ; $0A81: row 164
-        STA $3528,X                     ; $0A84: row 85
-        STA $37A8,X                     ; $0A87: row 125
-        STA $3650,X                     ; $0A8A: row 165
-        STA $3928,X                     ; $0A8D: row 86
-        STA $3BA8,X                     ; $0A90: row 126
-        STA $3A50,X                     ; $0A93: row 166
-        STA $3D28,X                     ; $0A96: row 87
-        STA $3FA8,X                     ; $0A99: row 127
-        STA $3E50,X                     ; $0A9C: row 167
-        STA $21A8,X                     ; $0A9F: row 88
-        STA $2050,X                     ; $0AA2: row 128
-        STA $22D0,X                     ; $0AA5: row 168
-        STA $25A8,X                     ; $0AA8: row 89
-        STA $2450,X                     ; $0AAB: row 129
-        STA $26D0,X                     ; $0AAE: row 169
-        STA $29A8,X                     ; $0AB1: row 90
-        STA $2850,X                     ; $0AB4: row 130
-        STA $2AD0,X                     ; $0AB7: row 170
-        STA $2DA8,X                     ; $0ABA: row 91
-        STA $2C50,X                     ; $0ABD: row 131
-        STA $2ED0,X                     ; $0AC0: row 171
-        STA $31A8,X                     ; $0AC3: row 92
-        STA $3050,X                     ; $0AC6: row 132
-        STA $32D0,X                     ; $0AC9: row 172
-        STA $35A8,X                     ; $0ACC: row 93
-        STA $3450,X                     ; $0ACF: row 133
-        STA $36D0,X                     ; $0AD2: row 173
-        STA $39A8,X                     ; $0AD5: row 94
-        STA $3850,X                     ; $0AD8: row 134
-        STA $3AD0,X                     ; $0ADB: row 174
-        STA $3DA8,X                     ; $0ADE: row 95
-        STA $3C50,X                     ; $0AE1: row 135
-        STA $3ED0,X                     ; $0AE4: row 175
-        STA $2228,X                     ; $0AE7: row 96
-        STA $20D0,X                     ; $0AEA: row 136
-        STA $2350,X                     ; $0AED: row 176
-        STA $2628,X                     ; $0AF0: row 97
-        STA $24D0,X                     ; $0AF3: row 137
-        STA $2750,X                     ; $0AF6: row 177
-        STA $2A28,X                     ; $0AF9: row 98
-        STA $28D0,X                     ; $0AFC: row 138
-        STA $2B50,X                     ; $0AFF: row 178
-        STA $2E28,X                     ; $0B02: row 99
-        STA $2CD0,X                     ; $0B05: row 139
-        STA $2F50,X                     ; $0B08: row 179
-        STA $3228,X                     ; $0B0B: row 100
-        STA $30D0,X                     ; $0B0E: row 140
-        STA $3350,X                     ; $0B11: row 180
-        STA $3628,X                     ; $0B14: row 101
-        STA $34D0,X                     ; $0B17: row 141
-        STA $3750,X                     ; $0B1A: row 181
-        STA $3A28,X                     ; $0B1D: row 102
-        STA $38D0,X                     ; $0B20: row 142
-        STA $3B50,X                     ; $0B23: row 182
-        STA $3E28,X                     ; $0B26: row 103
-        STA $3CD0,X                     ; $0B29: row 143
-        STA $3F50,X                     ; $0B2C: row 183
-        STA $22A8,X                     ; $0B2F: row 104
-        STA $2150,X                     ; $0B32: row 144
-        STA $23D0,X                     ; $0B35: row 184
-        STA $26A8,X                     ; $0B38: row 105
-        STA $2550,X                     ; $0B3B: row 145
-        STA $27D0,X                     ; $0B3E: row 185
-        STA $2AA8,X                     ; $0B41: row 106
-        STA $2950,X                     ; $0B44: row 146
-        STA $2BD0,X                     ; $0B47: row 186
-        RTS                             ; $0B4A
+        STA $20A8,X                     ; row 72 (band 0)
+        STA $2328,X                     ; row 112 (band 1)
+        STA $21D0,X                     ; row 152 (band 2)
+        STA $24A8,X                     ; row 73
+        STA $2728,X                     ; row 113
+        STA $25D0,X                     ; row 153
+        STA $28A8,X                     ; row 74
+        STA $2B28,X                     ; row 114
+        STA $29D0,X                     ; row 154
+        STA $2CA8,X                     ; row 75
+        STA $2F28,X                     ; row 115
+        STA $2DD0,X                     ; row 155
+        STA $30A8,X                     ; row 76
+        STA $3328,X                     ; row 116
+        STA $31D0,X                     ; row 156
+        STA $34A8,X                     ; row 77
+        STA $3728,X                     ; row 117
+        STA $35D0,X                     ; row 157
+        STA $38A8,X                     ; row 78
+        STA $3B28,X                     ; row 118
+        STA $39D0,X                     ; row 158
+        STA $3CA8,X                     ; row 79
+        STA $3F28,X                     ; row 119
+        STA $3DD0,X                     ; row 159
+        STA $2128,X                     ; row 80
+        STA $23A8,X                     ; row 120
+        STA $2250,X                     ; row 160
+        STA $2528,X                     ; row 81
+        STA $27A8,X                     ; row 121
+        STA $2650,X                     ; row 161
+        STA $2928,X                     ; row 82
+        STA $2BA8,X                     ; row 122
+        STA $2A50,X                     ; row 162
+        STA $2D28,X                     ; row 83
+        STA $2FA8,X                     ; row 123
+        STA $2E50,X                     ; row 163
+        STA $3128,X                     ; row 84
+        STA $33A8,X                     ; row 124
+        STA $3250,X                     ; row 164
+        STA $3528,X                     ; row 85
+        STA $37A8,X                     ; row 125
+        STA $3650,X                     ; row 165
+        STA $3928,X                     ; row 86
+        STA $3BA8,X                     ; row 126
+        STA $3A50,X                     ; row 166
+        STA $3D28,X                     ; row 87
+        STA $3FA8,X                     ; row 127
+        STA $3E50,X                     ; row 167
+        STA $21A8,X                     ; row 88
+        STA $2050,X                     ; row 128
+        STA $22D0,X                     ; row 168
+        STA $25A8,X                     ; row 89
+        STA $2450,X                     ; row 129
+        STA $26D0,X                     ; row 169
+        STA $29A8,X                     ; row 90
+        STA $2850,X                     ; row 130
+        STA $2AD0,X                     ; row 170
+        STA $2DA8,X                     ; row 91
+        STA $2C50,X                     ; row 131
+        STA $2ED0,X                     ; row 171
+        STA $31A8,X                     ; row 92
+        STA $3050,X                     ; row 132
+        STA $32D0,X                     ; row 172
+        STA $35A8,X                     ; row 93
+        STA $3450,X                     ; row 133
+        STA $36D0,X                     ; row 173
+        STA $39A8,X                     ; row 94
+        STA $3850,X                     ; row 134
+        STA $3AD0,X                     ; row 174
+        STA $3DA8,X                     ; row 95
+        STA $3C50,X                     ; row 135
+        STA $3ED0,X                     ; row 175
+        STA $2228,X                     ; row 96
+        STA $20D0,X                     ; row 136
+        STA $2350,X                     ; row 176
+        STA $2628,X                     ; row 97
+        STA $24D0,X                     ; row 137
+        STA $2750,X                     ; row 177
+        STA $2A28,X                     ; row 98
+        STA $28D0,X                     ; row 138
+        STA $2B50,X                     ; row 178
+        STA $2E28,X                     ; row 99
+        STA $2CD0,X                     ; row 139
+        STA $2F50,X                     ; row 179
+        STA $3228,X                     ; row 100
+        STA $30D0,X                     ; row 140
+        STA $3350,X                     ; row 180
+        STA $3628,X                     ; row 101
+        STA $34D0,X                     ; row 141
+        STA $3750,X                     ; row 181
+        STA $3A28,X                     ; row 102
+        STA $38D0,X                     ; row 142
+        STA $3B50,X                     ; row 182
+        STA $3E28,X                     ; row 103
+        STA $3CD0,X                     ; row 143
+        STA $3F50,X                     ; row 183
+        STA $22A8,X                     ; row 104
+        STA $2150,X                     ; row 144
+        STA $23D0,X                     ; row 184
+        STA $26A8,X                     ; row 105
+        STA $2550,X                     ; row 145
+        STA $27D0,X                     ; row 185
+        STA $2AA8,X                     ; row 106
+        STA $2950,X                     ; row 146
+        STA $2BD0,X                     ; row 186
+        RTS
 @ %def INTERLACE_FILL_P1
 
 <<interlace restore p2>>=
@@ -6306,16 +6301,16 @@ INTERLACE_RESTORE_P2:
         ; (page 2) when ZP_PAGE_FLAG is negative.
         ;
         ; Clobbers: A, X
-        LDX ZP_SCORE_0                  ; $0B4B: outer-loop column start
+        LDX ZP_SCORE_0                  ; outer-loop column start
 .loop:
-        CPX ZP_SCORE_1                  ; $0B4D: terminator
+        CPX ZP_SCORE_1                  ; terminator
         BNE .paint
-        RTS                             ; $0B51
+        RTS
 .paint:
-        LDA $0300,X                     ; $0B52: text-buffer byte for column X
-        JSR INTERLACE_FILL_P2           ; $0B55: paint 105 rows
-        DEX                             ; $0B58
-        JMP .loop                       ; $0B59
+        LDA $0300,X                     ; text-buffer byte for column X
+        JSR INTERLACE_FILL_P2           ; paint 105 rows
+        DEX
+        JMP .loop
 @ %def INTERLACE_RESTORE_P2
 
 <<interlace fill p2>>=
@@ -6346,118 +6341,118 @@ INTERLACE_FILL_P2:
         ;   dead sector-residue bytes (see SECTOR_RESIDUE_47XX prose).
         ;
         ; Clobbers: (none --- A/X preserved)
-        STA $40A8,X                     ; $0B5C: row 72 (band 0)
-        STA $4328,X                     ; $0B5F: row 112 (band 1)
-        STA $41D0,X                     ; $0B62: row 152 (band 2)
-        STA $44A8,X                     ; $0B65: row 73
-        STA $4728,X                     ; $0B68: row 113
-        STA $45D0,X                     ; $0B6B: row 153
-        STA $48A8,X                     ; $0B6E: row 74
-        STA $4B28,X                     ; $0B71: row 114
-        STA $49D0,X                     ; $0B74: row 154
-        STA $4CA8,X                     ; $0B77: row 75
-        STA $4F28,X                     ; $0B7A: row 115
-        STA $4DD0,X                     ; $0B7D: row 155
-        STA $50A8,X                     ; $0B80: row 76
-        STA $5328,X                     ; $0B83: row 116
-        STA $51D0,X                     ; $0B86: row 156
-        STA $54A8,X                     ; $0B89: row 77
-        STA $5728,X                     ; $0B8C: row 117
-        STA $55D0,X                     ; $0B8F: row 157
-        STA $58A8,X                     ; $0B92: row 78
-        STA $5B28,X                     ; $0B95: row 118
-        STA $59D0,X                     ; $0B98: row 158
-        STA $5CA8,X                     ; $0B9B: row 79
-        STA $5F28,X                     ; $0B9E: row 119
-        STA $5DD0,X                     ; $0BA1: row 159
-        STA $4128,X                     ; $0BA4: row 80
-        STA $43A8,X                     ; $0BA7: row 120
-        STA $4250,X                     ; $0BAA: row 160
-        STA $4528,X                     ; $0BAD: row 81
-        STA $47A8,X                     ; $0BB0: row 121
-        STA $4650,X                     ; $0BB3: row 161
-        STA $4928,X                     ; $0BB6: row 82
-        STA $4BA8,X                     ; $0BB9: row 122
-        STA $4A50,X                     ; $0BBC: row 162
-        STA $4D28,X                     ; $0BBF: row 83
-        STA $4FA8,X                     ; $0BC2: row 123
-        STA $4E50,X                     ; $0BC5: row 163
-        STA $5128,X                     ; $0BC8: row 84
-        STA $53A8,X                     ; $0BCB: row 124
-        STA $5250,X                     ; $0BCE: row 164
-        STA $5528,X                     ; $0BD1: row 85
-        STA $57A8,X                     ; $0BD4: row 125
-        STA $5650,X                     ; $0BD7: row 165
-        STA $5928,X                     ; $0BDA: row 86
-        STA $5BA8,X                     ; $0BDD: row 126
-        STA $5A50,X                     ; $0BE0: row 166
-        STA $5D28,X                     ; $0BE3: row 87
-        STA $5FA8,X                     ; $0BE6: row 127
-        STA $5E50,X                     ; $0BE9: row 167
-        STA $41A8,X                     ; $0BEC: row 88
-        STA $4050,X                     ; $0BEF: row 128
-        STA $42D0,X                     ; $0BF2: row 168
-        STA $45A8,X                     ; $0BF5: row 89
-        STA $4450,X                     ; $0BF8: row 129
-        STA $46D0,X                     ; $0BFB: row 169
-        STA $49A8,X                     ; $0BFE: row 90
-        STA $4850,X                     ; $0C01: row 130
-        STA $4AD0,X                     ; $0C04: row 170
-        STA $4DA8,X                     ; $0C07: row 91
-        STA $4C50,X                     ; $0C0A: row 131
-        STA $4ED0,X                     ; $0C0D: row 171
-        STA $51A8,X                     ; $0C10: row 92
-        STA $5050,X                     ; $0C13: row 132
-        STA $52D0,X                     ; $0C16: row 172
-        STA $55A8,X                     ; $0C19: row 93
-        STA $5450,X                     ; $0C1C: row 133
-        STA $56D0,X                     ; $0C1F: row 173
-        STA $59A8,X                     ; $0C22: row 94
-        STA $5850,X                     ; $0C25: row 134
-        STA $5AD0,X                     ; $0C28: row 174
-        STA $5DA8,X                     ; $0C2B: row 95
-        STA $5C50,X                     ; $0C2E: row 135
-        STA $5ED0,X                     ; $0C31: row 175
-        STA $4228,X                     ; $0C34: row 96
-        STA $40D0,X                     ; $0C37: row 136
-        STA $4350,X                     ; $0C3A: row 176
-        STA $4628,X                     ; $0C3D: row 97
-        STA $44D0,X                     ; $0C40: row 137
-        STA $4750,X                     ; $0C43: row 177
-        STA $4A28,X                     ; $0C46: row 98
-        STA $48D0,X                     ; $0C49: row 138
-        STA $4B50,X                     ; $0C4C: row 178
-        STA $4E28,X                     ; $0C4F: row 99
-        STA $4CD0,X                     ; $0C52: row 139
-        STA $4F50,X                     ; $0C55: row 179
-        STA $5228,X                     ; $0C58: row 100
-        STA $50D0,X                     ; $0C5B: row 140
-        STA $5350,X                     ; $0C5E: row 180
-        STA $5628,X                     ; $0C61: row 101
-        STA $54D0,X                     ; $0C64: row 141
-        STA $5750,X                     ; $0C67: row 181
-        STA $5A28,X                     ; $0C6A: row 102
-        STA $58D0,X                     ; $0C6D: row 142
-        STA $5B50,X                     ; $0C70: row 182
-        STA $5E28,X                     ; $0C73: row 103
-        STA $5CD0,X                     ; $0C76: row 143
-        STA $5F50,X                     ; $0C79: row 183
-        STA $42A8,X                     ; $0C7C: row 104
-        STA $4150,X                     ; $0C7F: row 144
-        STA $43D0,X                     ; $0C82: row 184
-        STA $46A8,X                     ; $0C85: row 105
-        STA $4550,X                     ; $0C88: row 145
-        STA $47D0,X                     ; $0C8B: row 185
-        STA $4AA8,X                     ; $0C8E: row 106
-        STA $4950,X                     ; $0C91: row 146
-        STA $4BD0,X                     ; $0C94: row 186
-        RTS                             ; $0C97
+        STA $40A8,X                     ; row 72 (band 0)
+        STA $4328,X                     ; row 112 (band 1)
+        STA $41D0,X                     ; row 152 (band 2)
+        STA $44A8,X                     ; row 73
+        STA $4728,X                     ; row 113
+        STA $45D0,X                     ; row 153
+        STA $48A8,X                     ; row 74
+        STA $4B28,X                     ; row 114
+        STA $49D0,X                     ; row 154
+        STA $4CA8,X                     ; row 75
+        STA $4F28,X                     ; row 115
+        STA $4DD0,X                     ; row 155
+        STA $50A8,X                     ; row 76
+        STA $5328,X                     ; row 116
+        STA $51D0,X                     ; row 156
+        STA $54A8,X                     ; row 77
+        STA $5728,X                     ; row 117
+        STA $55D0,X                     ; row 157
+        STA $58A8,X                     ; row 78
+        STA $5B28,X                     ; row 118
+        STA $59D0,X                     ; row 158
+        STA $5CA8,X                     ; row 79
+        STA $5F28,X                     ; row 119
+        STA $5DD0,X                     ; row 159
+        STA $4128,X                     ; row 80
+        STA $43A8,X                     ; row 120
+        STA $4250,X                     ; row 160
+        STA $4528,X                     ; row 81
+        STA $47A8,X                     ; row 121
+        STA $4650,X                     ; row 161
+        STA $4928,X                     ; row 82
+        STA $4BA8,X                     ; row 122
+        STA $4A50,X                     ; row 162
+        STA $4D28,X                     ; row 83
+        STA $4FA8,X                     ; row 123
+        STA $4E50,X                     ; row 163
+        STA $5128,X                     ; row 84
+        STA $53A8,X                     ; row 124
+        STA $5250,X                     ; row 164
+        STA $5528,X                     ; row 85
+        STA $57A8,X                     ; row 125
+        STA $5650,X                     ; row 165
+        STA $5928,X                     ; row 86
+        STA $5BA8,X                     ; row 126
+        STA $5A50,X                     ; row 166
+        STA $5D28,X                     ; row 87
+        STA $5FA8,X                     ; row 127
+        STA $5E50,X                     ; row 167
+        STA $41A8,X                     ; row 88
+        STA $4050,X                     ; row 128
+        STA $42D0,X                     ; row 168
+        STA $45A8,X                     ; row 89
+        STA $4450,X                     ; row 129
+        STA $46D0,X                     ; row 169
+        STA $49A8,X                     ; row 90
+        STA $4850,X                     ; row 130
+        STA $4AD0,X                     ; row 170
+        STA $4DA8,X                     ; row 91
+        STA $4C50,X                     ; row 131
+        STA $4ED0,X                     ; row 171
+        STA $51A8,X                     ; row 92
+        STA $5050,X                     ; row 132
+        STA $52D0,X                     ; row 172
+        STA $55A8,X                     ; row 93
+        STA $5450,X                     ; row 133
+        STA $56D0,X                     ; row 173
+        STA $59A8,X                     ; row 94
+        STA $5850,X                     ; row 134
+        STA $5AD0,X                     ; row 174
+        STA $5DA8,X                     ; row 95
+        STA $5C50,X                     ; row 135
+        STA $5ED0,X                     ; row 175
+        STA $4228,X                     ; row 96
+        STA $40D0,X                     ; row 136
+        STA $4350,X                     ; row 176
+        STA $4628,X                     ; row 97
+        STA $44D0,X                     ; row 137
+        STA $4750,X                     ; row 177
+        STA $4A28,X                     ; row 98
+        STA $48D0,X                     ; row 138
+        STA $4B50,X                     ; row 178
+        STA $4E28,X                     ; row 99
+        STA $4CD0,X                     ; row 139
+        STA $4F50,X                     ; row 179
+        STA $5228,X                     ; row 100
+        STA $50D0,X                     ; row 140
+        STA $5350,X                     ; row 180
+        STA $5628,X                     ; row 101
+        STA $54D0,X                     ; row 141
+        STA $5750,X                     ; row 181
+        STA $5A28,X                     ; row 102
+        STA $58D0,X                     ; row 142
+        STA $5B50,X                     ; row 182
+        STA $5E28,X                     ; row 103
+        STA $5CD0,X                     ; row 143
+        STA $5F50,X                     ; row 183
+        STA $42A8,X                     ; row 104
+        STA $4150,X                     ; row 144
+        STA $43D0,X                     ; row 184
+        STA $46A8,X                     ; row 105
+        STA $4550,X                     ; row 145
+        STA $47D0,X                     ; row 185
+        STA $4AA8,X                     ; row 106
+        STA $4950,X                     ; row 146
+        STA $4BD0,X                     ; row 186
+        RTS
 @ %def INTERLACE_FILL_P2
 
 \section{Rescue-child draw, collision, and projectile-spawn}
 
 [[RESCUE_DRAW]] at [[$0C98]] is the per-frame draw + collision sibling of
-[[RESCUE_UPDATE]] ([[$6F9C]]).  It iterates the same 20-slot rescue-child
+[[RESCUE_UPDATE]].  It iterates the same 20-slot rescue-child
 entity table (Y $\in [0, [[$13]]]$), draws each active slot's body sprite
 on the playfield, and runs three independent collision/spawn checks:
 
@@ -6471,13 +6466,13 @@ on the playfield, and runs three independent collision/spawn checks:
 \item \emph{Player pickup} ([[$0DF0]]--[[$0E11]]): if the entity is in the  % TODO-SYM: $0DF0 $0E11
   centre screen-X band [[[$40]], [[$50]]) and the player row [[ZP_PLAYER_COL]]
   is within $[$entity\_row$-$[[$12]], entity\_row$+$[[$19]]$]$, set  % TODO-SYM: $12
-  [[ZP_HIT_FLAG]] ([[$1E]]) to [[$FF]] and merge into the same drift +  % TODO-SYM: $FF
+  [[ZP_HIT_FLAG]] to [[$FF]] and merge into the same drift +  % TODO-SYM: $FF
   reward path as the floor-enemy hit.  No [[ZP_LIVES_BCD]] decrement
   --- this is the rescue, not a life-loss.
 \item \emph{Hostile projectile spawn} ([[$0E13]]--[[$0E50]]): if neither  % TODO-SYM: $0E13 $0E50
   collision fired \emph{and} the entity row is odd \emph{and} the
   rescue's assigned floor [[RESCUE_FLOOR]] equals the player's current
-  floor [[ZP_PLAYER_FLOOR_CUR]] ([[$0C]]) \emph{and} a free projectile
+  floor [[ZP_PLAYER_FLOOR_CUR]] \emph{and} a free projectile
   slot exists (some [[ZP_PROJ_DIR]] ([[$C5]],X) byte is zero, X $\in [0,
   [[$31]]]$), seed that slot with the rescue's direction, row, and
   screen-X --- the rescue child throws a hostile projectile picked up
@@ -6486,8 +6481,7 @@ on the playfield, and runs three independent collision/spawn checks:
 \end{enumerate}
 
 \paragraph{Per-slot dispatch.}  After [[RESCUE_DRAW_PERSPECTIVE_CACHE]]
-pre-computes the player's perspective offset into [[ZP_PERSP_OFFSET_LO]]
-([[$0F]]) / [[ZP_PERSP_OFFSET_HI]] ([[$10]]), the body iterates Y from [[$13]]
+pre-computes the player's perspective offset into [[ZP_PERSP_OFFSET_LO]] / [[ZP_PERSP_OFFSET_HI]], the body iterates Y from [[$13]]
 down through the 20 slots and dispatches on [[ENTITY_ACTIVE]],Y:
 
 \begin{itemize}
@@ -6498,7 +6492,7 @@ down through the 20 slots and dispatches on [[ENTITY_ACTIVE]],Y:
   walk-off-screen animation and is invisible during the fade.
 \item other -ve (drift): play descending click via the per-slot
   [[RESCUE_DRIFT_PITCH]] table ([[$0213]]) indexed by [[RESCUE_COUNTDOWN]],
-  patch the [[SMC_SPRITE_MASK_OP]] ([[$65B7]]) flicker slot to [[AND
+  patch the [[SMC_SPRITE_MASK_OP]] flicker slot to [[AND
   \#imm]] for one frame so the body sprite flashes, then proceed to
   draw without running collision (the slot is invulnerable while
   drifting).
@@ -6530,7 +6524,7 @@ is sourced from [[PROJ_SCREEN_COL]] ([[$1C34]],X) and the row from
 [[RESCUE_DRIFT_PITCH]] at [[$0213]] indexed by the current
 [[RESCUE_COUNTDOWN]] (1..4) --- four descending-tone frames make the
 ``pop'' sound when the child is collected.  The flicker mask byte
-loaded into [[SMC_SPRITE_MASK_ARG]] ([[$65B8]]) is sourced from
+loaded into [[SMC_SPRITE_MASK_ARG]] is sourced from
 [[$D7,X]] (top of the entity-record block; the value is
 quasi-random per frame and per slot) so each drift frame draws a
 slightly different alternating pattern.
@@ -6547,11 +6541,11 @@ half-widths from [[$42]] / [[$43]] (level-fixed parameters loaded from  % TODO-S
 [[$029A]]/[[$029B]] by [[INIT_LEVEL_STATE]]); the X-extent is a fixed 10-pixel  % TODO-SYM: $029A $029B
 window (CMP enemy\_col, then SBC \#[[$0A]] and re-CMP).  The player
 pickup uses the centre-band CMP \#[[$40]] / CMP \#[[$50]] X-test and a
-fixed 25/18 row band around [[ZP_PLAYER_COL]] ([[$06]]).
+fixed 25/18 row band around [[ZP_PLAYER_COL]].
 
-\paragraph{Pre-compute helper [[RESCUE_DRAW_PERSPECTIVE_CACHE]] ([[$0D8C]]).}
+\paragraph{Pre-compute helper [[RESCUE_DRAW_PERSPECTIVE_CACHE]].}
 Sub-entry called once at the top of the routine; reads
-[[PERSPECTIVE_XOFF_LO]]([[ZP_PLAYER_Y]]) - [[ZP_SPRITE_XREF]] ([[$4C]]) and
+[[PERSPECTIVE_XOFF_LO]]([[ZP_PLAYER_Y]]) - [[ZP_SPRITE_XREF]] and
 [[PERSPECTIVE_XOFF_HI]]([[ZP_PLAYER_Y]]) - 0, storing the 16-bit
 result into [[ZP_PERSP_OFFSET_LO]] / [[ZP_PERSP_OFFSET_HI]] ([[$0F]] /
 [[$10]]).  Each per-slot inner loop then computes the rescue's
@@ -6564,7 +6558,7 @@ match required, so off-screen entities are clipped to the off-camera
 28~rescue-child body frames.  The four rows correspond to the four
 animation variants from the selection table above (+dir end,
 +dir mid, -dir end, -dir mid); each row has seven frames indexed by
-[[PROJ_FRAME_IDX]] ([[$1B8F]]).  All 28~sprites are [[$04]]~bytes per row
+[[PROJ_FRAME_IDX]].  All 28~sprites are [[$04]]~bytes per row
 (that is, [[ZP_SPRITE_W]]~=~[[$03]]) with the end-step variants at
 height~[[$1A]] and the mid-step variants at height~[[$1C]].  The pointer  % TODO-SYM: $1C
 tables are inside [[drol.bin]] but the sprite bytes themselves
@@ -6682,7 +6676,7 @@ RESCUE_DRAW:
 ; --- Skip-this-slot exit (also restores BIT opcode at $65B7) ---
 .skip_off_screen:
         LDA #$24                           ; BIT opcode (disable flicker)
-        STA SMC_SPRITE_MASK_OP             ; $65B7
+        STA SMC_SPRITE_MASK_OP
         JMP .slot_next
 
 ; --- Negative state: $FE -> skip; else drift sound + flicker setup ---
@@ -6694,11 +6688,11 @@ RESCUE_DRAW:
         STA SMC_SPRITE_MASK_OP             ; $65B7 (flicker the next draw)
         LDX RESCUE_COUNTDOWN,Y             ; $03E4,Y in 1..4
         LDA $D7,X                          ; quasi-random AND-mask byte
-        STA SMC_SPRITE_MASK_ARG            ; $65B8
+        STA SMC_SPRITE_MASK_ARG
         STY ZP_DRAW_LOOP_IDX               ; $5C
         LDA RESCUE_DRIFT_PITCH,X           ; $0213,X = pitch for this frame
         LDX #$12                           ; X = duration
-        JSR SND_DELAY_DOWN                 ; $1091: descending click
+        JSR SND_DELAY_DOWN                 ; descending click
         LDY ZP_DRAW_LOOP_IDX
 
 ; --- Common: compute screen-X residue and stage sprite XYHW ---
@@ -6737,11 +6731,11 @@ RESCUE_DRAW:
         LDA #$1C
         STA ZP_SPRITE_H                    ; $57 = $1C
         LDA RESCUE_SPR_POS_MID_LO,X        ; $75F0,X
-        STA SMC_DS_SRC_LO                  ; $65B3
+        STA SMC_DS_SRC_LO
         LDA RESCUE_SPR_POS_MID_HI,X        ; $76F0,X
-        STA SMC_DS_SRC_HI                  ; $65B4
+        STA SMC_DS_SRC_HI
         STY ZP_DRAW_LOOP_IDX
-        JSR DRAW_SPRITE                    ; $656F
+        JSR DRAW_SPRITE
         LDY ZP_DRAW_LOOP_IDX
         JMP .post_draw
 
@@ -6756,7 +6750,7 @@ RESCUE_DRAW:
         JSR DRAW_SPRITE
         LDX #$0A                           ; ascending-click args
         LDA #$0C
-        JSR SND_DELAY_UP                   ; $109E: footstep sound
+        JSR SND_DELAY_UP                   ; footstep sound
         LDY ZP_DRAW_LOOP_IDX
         JMP .post_draw
 
@@ -6813,7 +6807,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         BPL .collide_floor_enemy           ; +ve: run collision
 ; Drift mode: restore BIT opcode and exit.
         LDA #$24
-        STA SMC_SPRITE_MASK_OP             ; $65B7
+        STA SMC_SPRITE_MASK_OP
         JMP .slot_next
 
 ; --- Floor-enemy collision: walk 4 enemy slots looking for overlap ---
@@ -6858,7 +6852,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         STA ZP_SCORE_ADD_LO                ; +$0035 BCD
         LDA #$00
         STA ZP_SCORE_ADD_HI
-        JSR SCORE_ADD                      ; $121A
+        JSR SCORE_ADD
         JMP .slot_next
 
 ; --- Player pickup: centre-band X + row band ---
@@ -6880,7 +6874,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
 ; Player pickup: signal hit, then merge into reward path (no enemy clear).
         LDA #$FF
         STA ZP_HIT_FLAG                    ; $1E
-        JMP .award_reward                  ; $0DD8: rescue=drift, +$0035
+        JMP .award_reward                  ; rescue=drift, +$0035
 
 ; --- Hostile projectile spawn (no collision occurred) ---
 ; Gate 1: entity row must be odd (1-in-2 rate-limit by row parity).
@@ -6912,7 +6906,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         LDX #$0A                           ; descending-click args
         LDA #$0D
         STY ZP_DRAW_LOOP_IDX
-        JSR SND_DELAY_DOWN                 ; $1091: emit-sound
+        JSR SND_DELAY_DOWN                 ; emit-sound
         LDY ZP_DRAW_LOOP_IDX
 .proj_skip:
         JMP .slot_next
@@ -7012,16 +7006,15 @@ The beam is tracked by a pair of bytes on page~2:
 [[BEAM_TARGET_TICK]] advances that state machine one step:
 
 \begin{enumerate}
-\item If the sound counter [[ZP_BEAM_SND_CTR]] ([[$F9]]) is non-negative,
-  play the next note of the post-hit jingle from [[BEAM_JINGLE]]
-  ([[$0241]]) and decrement the counter (falls through regardless).
+\item If the sound counter [[ZP_BEAM_SND_CTR]] is non-negative,
+  play the next note of the post-hit jingle from [[BEAM_JINGLE]] and decrement the counter (falls through regardless).
 \item If [[BEAM_STATE]] is $<$[[$80]] but nonzero (``chase'' phase),  % TODO-SYM: $80
   decrement [[BEAM_Y]] by~2 each frame, play a pitch-[[$10]] click; on
   reaching [[$7E]],X$+1$, flip to ``attack'' phase (set bit 7).  % TODO-SYM: $7E
 \item If [[BEAM_STATE]]$ \geq$[[$80]] (``attack'' phase), advance  % TODO-SYM: $80
   [[BEAM_Y]] by~2 toward [[FLOOR_Y_TABLE]]$[{\rm X}]$; on arrival,
   clear [[BEAM_STATE]].
-\item Otherwise (idle), when [[ZP_BEAM_TICK]] ([[$F8]]) is~0, seed a new
+\item Otherwise (idle), when [[ZP_BEAM_TICK]] is~0, seed a new
   target: [[BEAM_Y]]~$\leftarrow$~[[FLOOR_Y_TABLE]]$[[[$09]]]$ and  % TODO-SYM: $09
   [[BEAM_STATE]]~$\leftarrow$~[[$09]] (chase phase targeting floor~[[$09]]).  % TODO-SYM: $09
 \end{enumerate}
@@ -7070,7 +7063,7 @@ four tracked enemies for collision with that trail.
   [[SMC_DS_SRC_HI]]~=~[[$65B3]]/[[$65B4]] are patched to~[[$B529]].)  % TODO-SYM: $B529
 \item For each of four enemy slots X~=~3..0: if [[ZP_ENEMY_FLAG]],X
   ([[$9B]]) is zero, skip.  Otherwise fetch [[ZP_ENEMY_COL]],X ([[$9F]])
-  as an index into [[PROJ_SCREEN_COL]] ([[$1C34]]) and require the
+  as an index into [[PROJ_SCREEN_COL]] and require the
   screen column to be in $[[[$23]], [[$25]])$.  If so, compare  % TODO-SYM: $23 $25
   [[BEAM_Y]] against [[ZP_ENEMY_Y]],X ([[$A3]]) $\pm$~3:
   a~\emph{hit} zeros the enemy flag, clears [[BEAM_STATE]],
@@ -7166,7 +7159,7 @@ for [[TRACER_ROW]],Y using the [[SCREEN_ROW_ADDR_LO]] /
 [[ZP_PAGE_FLAG]] is negative, targeting hi-res page~2) and stores the
 constant byte [[$7F]] at screen[row][col~=~new state].  The HUD/playfield  % TODO-SYM: $7F
 bounds are enforced by comparing the column against
-[[HUD_LIVES_COL]] ([[$65A7]]) and [[HUD_SCORE_COL]] ([[$65AB]]): the
+[[HUD_LIVES_COL]] and [[HUD_SCORE_COL]]: the
 draw is suppressed whenever the column would overlap the HUD.
 (These column bounds are seeded by [[GAME_START_INIT]] and updated
 by the HUD layout code at [[$6200]] as the lives count changes.)  % TODO-SYM: $6200
@@ -7178,8 +7171,7 @@ current [[BEAM_Y]] is strictly less than the per-level threshold
 [[FLOOR_THRESH]]$[{\rm state\_lo}]$ ([[$83]]), the found slot is
 activated: its [[TRACER_ROW]] $\leftarrow$ [[BEAM_Y]] and its
 [[TRACER_STATE]] $\leftarrow$ [[$22]] (initial lifetime~=~34).  A
-[[$0A]]-pitch/[[$0A]]-duration click is played through [[SND_DELAY_UP]]
-([[$109E]]) to emit the spawn tick.
+[[$0A]]-pitch/[[$0A]]-duration click is played through [[SND_DELAY_UP]] to emit the spawn tick.
 
 \paragraph{Self-modifying code.}  Two operand bytes inside the inner
 animation loop are patched each iteration to hold the computed screen
@@ -7299,10 +7291,10 @@ BEAM_UPDATE:
 ; hold the effective screen-row address (low, high).
 .draw_pixel:
         LDX TRACER_ROW,Y                ; Floor-row index
-        LDA SCREEN_ROW_ADDR_LO,X        ; $7380: row-address low byte
+        LDA SCREEN_ROW_ADDR_LO,X        ; row-address low byte
         DC.B $8D                        ; STA abs opcode (force 3 bytes)
         DC.W SMC_TRACER_ADDR_LO         ; Patch operand at $1359
-        LDA SCREEN_ROW_ADDR_HI,X        ; $72C0: row-address high byte
+        LDA SCREEN_ROW_ADDR_HI,X        ; row-address high byte
         BIT ZP_PAGE_FLAG                ; $00: +$20 high when page 2
         BPL .page1
         CLC
@@ -7317,9 +7309,9 @@ BEAM_UPDATE:
         BCC .skip_draw
         LDA #$7F                        ; Single horizontal-line pixel byte
         DC.B $9D                        ; STA abs,X opcode (force 3 bytes)
-SMC_TRACER_ADDR_LO:                     ; $1359: operand low (patched)
+SMC_TRACER_ADDR_LO:                     ; operand low (patched)
         DC.B $00
-SMC_TRACER_ADDR_HI:                     ; $135A: operand high (patched)
+SMC_TRACER_ADDR_HI:                     ; operand high (patched)
         DC.B $90
 .skip_draw:
         JMP .advance_y
@@ -7398,19 +7390,18 @@ slot's four-byte record is:
 
 \begin{center}
 \begin{tabular}{ll}
-[[ZP_ENEMY_A_STATE]] ([[$DC]]) & Control byte: [[$00]] inactive; positive =
+[[ZP_ENEMY_A_STATE]] & Control byte: [[$00]] inactive; positive =
                               steady tick; negative = PRNG-gated drift. \\
-[[ZP_ENEMY_A_POS]] ([[$DD]]/[[$DE]]) & 16-bit phase counter, decremented each  % TODO-SYM: $DE
+[[ZP_ENEMY_A_POS]] & 16-bit phase counter, decremented each  % TODO-SYM: $DE
                                  tick by [[ZP_ADVANCE_RATE]]. \\
-[[ZP_ENEMY_A_ROW]] ([[$DF]]) & Sprite starting row for the draw pass at
+[[ZP_ENEMY_A_ROW]] & Sprite starting row for the draw pass at
                             [[ENEMY_A_DRAW]]. \\
 \end{tabular}
 \end{center}
 
 The routine runs in three phases.
 
-\paragraph{Sound.}  A separate 8-step click timer [[ZP_ENEMY_A_SND_CTR]]
-([[$B8]]) selects a pitch byte from [[SND_PITCH_TBL_A]] ([[$0229]]) and emits
+\paragraph{Sound.}  A separate 8-step click timer [[ZP_ENEMY_A_SND_CTR]] selects a pitch byte from [[SND_PITCH_TBL_A]] and emits
 an [[$0A]]-duration click through [[SFX_TONE]].  The timer is skipped when
 negative (idle) and decremented otherwise.  The pitch table is packed
 into the [[SCREEN_ROW_HELPER]] data blob and is addressed directly via
@@ -7419,7 +7410,7 @@ the [[SND_PITCH_TBL_A]] alias.
 \paragraph{Gate.}  With [[ZP_ENEMY_A_STATE]] read: the routine returns
 immediately when the slot is inactive.  A positive state value (bit~7
 clear) ticks unconditionally.  A negative state value (bit~7 set) is
-gated behind a low-probability PRNG draw~--- [[ZP_PRNG_A]] ([[$5F]]) must
+gated behind a low-probability PRNG draw~--- [[ZP_PRNG_A]] must
 be strictly less than [[$09]], so the counter advances about one frame in  % TODO-SYM: $09
 twenty-nine.  Negative-state therefore corresponds to a slow,
 randomised drift while positive-state is a steady traversal.
@@ -7439,7 +7430,7 @@ Rearm then:
 \item If the slot was in drift mode (state bit~7 set), promotes it
   back to [[$01]] (steady tick).  An already-steady slot keeps its
   current state value unchanged.
-\item Unconditionally writes [[$01]] into [[ZP_ENEMY_C_STATE]] ([[$D4]])~---
+\item Unconditionally writes [[$01]] into [[ZP_ENEMY_C_STATE]]~---
   reactivating the ground-level companion slot owned by
   [[ENEMY_C_ADVANCE]] / [[ENEMY_C_DRAW]].  This is the cross-slot
   handshake: every enemy-A reload wakes up enemy-C.
@@ -7447,7 +7438,7 @@ Rearm then:
   ([[$40]]~=~[[$03]]) the next reload is~$\lceil 0x0361/3\rceil\approx 289$
   frames away on the steady path, or~$\sim 29\times$ that on the
   PRNG-gated drift path.
-\item Sets [[ZP_ENEMY_A_ROW]] to [[ZP_ENEMY_C_ROW]] ([[$D7]]) $+$ [[$07]], so
+\item Sets [[ZP_ENEMY_A_ROW]] to [[ZP_ENEMY_C_ROW]] $+$ [[$07]], so
   the enemy-A sprite is always drawn seven rows below the ground
   companion.
 \end{enumerate}
@@ -7603,19 +7594,17 @@ animation} on the steady path.  The overall layout is:
   draw.  Enemy-A has no puff; drift just collapses the animation.
 \item Un-animated stance ([[$1463]], reached when drift \emph{or} when  % TODO-SYM: $1463
   steady+animation-phase-0/2): draw main body at row~[[ZP_ENEMY_A_ROW]]
-  from [[SPRITE_TABLE_A_BODY_LO]]/[[SPRITE_TABLE_A_BODY_HI]]
-  ([[$B009]]/[[$B089]]), then draw a $[[$03]]\times[[$03]]$ ``feet'' sprite at
-  row~+~[[$13]] from [[SPRITE_TABLE_A_FEET_LO]]/[[SPRITE_TABLE_A_FEET_HI]]
-  ([[$B017]]/[[$B097]]), then \texttt{JMP} to the hit test.
+  from [[SPRITE_TABLE_A_BODY_LO]]/[[SPRITE_TABLE_A_BODY_HI]], then draw a $[[$03]]\times[[$03]]$ ``feet'' sprite at
+  row~+~[[$13]] from [[SPRITE_TABLE_A_FEET_LO]]/[[SPRITE_TABLE_A_FEET_HI]], then \texttt{JMP} to the hit test.
 \item Animated walking ([[$14A0]], reached only on steady state):  % TODO-SYM: $14A0
   extract a 2-bit phase from [[ZP_FRAME_COUNTER]] (mask [[$06]], LSR);
   if the phase is [[$00]] or [[$02]], rejoin the stance path at [[$1463]];  % TODO-SYM: $1463
   otherwise (phase [[$01]] or [[$03]], two out of every four frames)
-  stash the phase in [[ZP_ENEMY_A_LEG_PHASE]] ([[$0F]]) and draw the
+  stash the phase in [[ZP_ENEMY_A_LEG_PHASE]] and draw the
   body at row~$-$1 plus one of two \emph{walking-feet} sprite
   variants at row~+~[[$12]] (height~[[$04]] instead of [[$03]]):  % TODO-SYM: $12
-  phase [[$01]] selects [[SPRITE_TABLE_A_STEP2_LO]] ([[$B01E]]/[[$B09E]]),
-  phase [[$03]] selects [[SPRITE_TABLE_A_STEP1_LO]] ([[$B010]]/[[$B090]]).
+  phase [[$01]] selects [[SPRITE_TABLE_A_STEP2_LO]],
+  phase [[$03]] selects [[SPRITE_TABLE_A_STEP1_LO]].
   Both variants then rejoin the hit test via fall-through or
   \texttt{JMP}.
 \item Player-hit test ([[$1506]]): check if [[ZP_CLIP_X_LO]] is in the  % TODO-SYM: $1506
@@ -7625,7 +7614,7 @@ animation} on the steady path.  The overall layout is:
 \item On hit: \emph{immediately} deactivate enemy-A ([[$00]] to
   [[ZP_ENEMY_A_STATE]], \emph{not} [[$FF]]-drift like enemy-B), reload  % TODO-SYM: $FF
   [[ZP_ENEMY_A_SND_CTR]] to [[$07]] (one final death click), decrement
-  [[ZP_GAME_OVER]] ([[$39]]) to consume a player-life credit, award
+  [[ZP_GAME_OVER]] to consume a player-life credit, award
   +[[$0300]] BCD via [[SCORE_ADD]] (same 300~points as enemy-B), and
   exit.
 \end{enumerate}
@@ -7956,13 +7945,13 @@ ENEMY_A_DRAW:
 
 [[ENEMY_B_ADVANCE]] at [[$1536]] is the per-frame tick for the second of
 three ``moving hazard'' slots.  It completes the triplet with
-[[ENEMY_A_ADVANCE]] ([[$13D6]]) and [[ENEMY_C_ADVANCE]] ([[$1646]]), but has
+[[ENEMY_A_ADVANCE]] and [[ENEMY_C_ADVANCE]], but has
 fundamentally different cadence semantics: it is a slow
 \emph{up}-counting slot, gated on the player's animation counter
-[[ZP_ANIM_COUNTER]] ([[$1F]]), not a downward-counting phase variable.
-The slot uses the B-record [[ZP_ENEMY_B_STATE]] ([[$E0]]),
-[[ZP_ENEMY_B_POS]] ([[$E1]]/[[$E2]]), [[ZP_ENEMY_B_ROW]] ([[$E3]]), and the  % TODO-SYM: $E2
-independent sound counter [[ZP_ENEMY_B_SND_CTR]] ([[$E4]]).  See \S
+[[ZP_ANIM_COUNTER]], not a downward-counting phase variable.
+The slot uses the B-record [[ZP_ENEMY_B_STATE]],
+[[ZP_ENEMY_B_POS]], [[ZP_ENEMY_B_ROW]], and the  % TODO-SYM: $E2
+independent sound counter [[ZP_ENEMY_B_SND_CTR]].  See \S
 Enemy-A advance timer for the shared click+gate+rearm template; this
 section documents only the differences.
 
@@ -7985,7 +7974,7 @@ operand is [[$01]], and the only values ever written back are [[$01]] or
 increment each frame.
 
 \paragraph{Animation-counter gate with SMC patch.}  After the 16-bit
-add, enemy-B inspects [[ZP_ANIM_COUNTER]] ([[$1F]]):
+add, enemy-B inspects [[ZP_ANIM_COUNTER]]:
 
 \begin{enumerate}
 \item If [[$1F]]~$\geq$~[[$04]]: exit without patching --- the counter is out
@@ -8228,8 +8217,8 @@ difference in [[$B0]] is non-zero after the subtract, the enemy is
 off-screen horizontally and the routine returns without drawing.
 Otherwise the low byte is the screen-relative X ($0$--$[[$9B]]$) used as
 the index into three parallel tables:
-[[PROJ_SCREEN_COL]] ([[$1C34]]) for the screen column,
-[[PROJ_FRAME_IDX]] ([[$1B8F]]) for the sprite-frame index within the
+[[PROJ_SCREEN_COL]] for the screen column,
+[[PROJ_FRAME_IDX]] for the sprite-frame index within the
 sprite family.  These are the same tables used by [[HAZARD_CHECK]]
 for projectile rendering, so the enemy sprites share the
 horizontal-position $\to$ sprite-frame mapping with projectiles.
@@ -9566,7 +9555,7 @@ page-2 twins) are called back-to-back, gated on [[ZP_PAGE_FLAG]].
 
 \paragraph{World-position gate.}  The routine is a no-op unless the
 player is near the \emph{right} edge of the world.  With
-[[ZP_PLAYER_Y]] ([[$4A]]) as the 8-bit player world-Y (valid range
+[[ZP_PLAYER_Y]] as the 8-bit player world-Y (valid range
 [[$00]]--[[$EF]]), the on-screen column of the right wall is
 $\Delta=\mathtt{\$EF}-[\mathtt{\$4A}]$.  If $\Delta<0$ (player-Y
 past [[$EF]]) or $\Delta\ge\mathtt{\$2C}$ (player-Y [[<=\$C3]]) the
@@ -9575,7 +9564,7 @@ column where the wall should appear.
 
 \paragraph{Four column-range cases.}  Having computed $\Delta$, the
 routine picks one of four cases based on exact value, and updates
-both [[HUD_LIVES_COL]] ([[$65A7]]) --- the shared right-bound
+both [[HUD_LIVES_COL]] --- the shared right-bound
 variable read by [[BEAM_UPDATE]] --- and the restore/blit column
 bounds:
 
@@ -9674,88 +9663,88 @@ REFRESH_RIGHT_WALL:
         ; Clobbers: A, X, Y
 
 ; --- World-position gate: compute \Delta = $EF - ZP_PLAYER_Y ---
-        LDA #$EF                        ; $61F0
-        SEC                             ; $61F2
-        SBC ZP_PLAYER_Y                 ; $61F3: A = $EF - player-Y
-        BCC .exit                       ; $61F5: underflow -> off-screen
-        CMP #$2C                        ; $61F7
-        BCS .exit                       ; $61F9: \Delta >= $2C -> off-screen
-        STA ZP_BLIT_X_START             ; $61FB: \Delta = rightmost paint col
-        LDY #$27                        ; $61FD: seed restore range at col 39
-        STY ZP_SCORE_0                  ; $61FF: (inclusive col start)
-        STY ZP_SCORE_1                  ; $6201: (== start -> restore no-op)
+        LDA #$EF
+        SEC
+        SBC ZP_PLAYER_Y                 ; A = $EF - player-Y
+        BCC .exit                       ; underflow -> off-screen
+        CMP #$2C
+        BCS .exit                       ; \Delta >= $2C -> off-screen
+        STA ZP_BLIT_X_START             ; \Delta = rightmost paint col
+        LDY #$27                        ; seed restore range at col 39
+        STY ZP_SCORE_0                  ; (inclusive col start)
+        STY ZP_SCORE_1                  ; (== start -> restore no-op)
 
 ; --- Dispatch: exact-match edge cases vs general case ---
-        CMP #$2B                        ; $6203: wall just entering?
-        BEQ .edge_2B                    ; $6205
-        CMP #$2A                        ; $6207: one column in from edge?
-        BNE .general                    ; $6209
+        CMP #$2B                        ; wall just entering?
+        BEQ .edge_2B
+        CMP #$2A                        ; one column in from edge?
+        BNE .general
 
 ; --- Case \Delta == $2A: narrow edge, offset by 2/1 ---
-        SEC                             ; $620B
-        SBC #$02                        ; $620C
-        STA HUD_LIVES_COL               ; $620E: right-bound = \Delta-2
-        SEC                             ; $6211
-        SBC #$01                        ; $6212: A = \Delta-3
+        SEC
+        SBC #$02
+        STA HUD_LIVES_COL               ; right-bound = \Delta-2
+        SEC
+        SBC #$01                        ; A = \Delta-3
         JMP .store_clear_col            ; $6214 -> $6220
 
 ; --- Case general: HUD_LIVES_COL = \Delta-1 ---
 .general:
-        SEC                             ; $6217
-        SBC #$01                        ; $6218
-        STA HUD_LIVES_COL               ; $621A: right-bound = \Delta-1
-        SEC                             ; $621D
-        SBC #$02                        ; $621E: A = \Delta-3
+        SEC
+        SBC #$01
+        STA HUD_LIVES_COL               ; right-bound = \Delta-1
+        SEC
+        SBC #$02                        ; A = \Delta-3
 
 ; --- Store ZP_CLEAR_COL, then branch on (\Delta-3) == $27 ---
 .store_clear_col:
-        STA ZP_CLEAR_COL                ; $6220
-        CMP #$27                        ; $6222: at col 39?
-        BEQ .one_col_strip              ; $6224
-        CLC                             ; $6226
-        ADC #$01                        ; $6227: A = \Delta-2
-        STA ZP_SCORE_1                  ; $6229: widen restore strip
-        SEC                             ; $622B
-        SBC #$02                        ; $622C
-        STA ZP_BLIT_X_END               ; $622E: left terminator = \Delta-4
-        JMP .shared_tail                ; $6230
+        STA ZP_CLEAR_COL
+        CMP #$27                        ; at col 39?
+        BEQ .one_col_strip
+        CLC
+        ADC #$01                        ; A = \Delta-2
+        STA ZP_SCORE_1                  ; widen restore strip
+        SEC
+        SBC #$02
+        STA ZP_BLIT_X_END               ; left terminator = \Delta-4
+        JMP .shared_tail
 
 .one_col_strip:
-        SEC                             ; $6233
-        SBC #$01                        ; $6234: A = \Delta-4
-        STA ZP_BLIT_X_END               ; $6236
-        JMP .shared_tail                ; $6238
+        SEC
+        SBC #$01                        ; A = \Delta-4
+        STA ZP_BLIT_X_END
+        JMP .shared_tail
 
 ; --- Case \Delta == $2B: narrowest strip at the far right ---
 .edge_2B:
-        SEC                             ; $623B
-        SBC #$04                        ; $623C: A = $27
-        STA ZP_BLIT_X_END               ; $623E
-        STA ZP_CLEAR_COL                ; $6240
-        CLC                             ; $6242
-        ADC #$01                        ; $6243: A = $28
-        STA HUD_LIVES_COL               ; $6245: right-bound = $28 (off-screen by 1)
-        JMP .shared_tail                ; $6248
+        SEC
+        SBC #$04                        ; A = $27
+        STA ZP_BLIT_X_END
+        STA ZP_CLEAR_COL
+        CLC
+        ADC #$01                        ; A = $28
+        STA HUD_LIVES_COL               ; right-bound = $28 (off-screen by 1)
+        JMP .shared_tail
 
 .exit:
-        RTS                             ; $624B
+        RTS
 
 ; --- Shared tail: load sprite pointer, page-gate, call RESTORE+BLIT ---
 .shared_tail:
-        LDY $4C                         ; $624C: sprite-animation index
-        LDA WALL_SPR_HI,Y               ; $624E: $7620,Y -> ZP_BLIT_SRC+1
+        LDY $4C                         ; sprite-animation index
+        LDA WALL_SPR_HI,Y               ; $7620,Y -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
-        LDA WALL_SPR_LO,Y               ; $6253: $7520,Y -> ZP_BLIT_SRC
+        LDA WALL_SPR_LO,Y               ; $7520,Y -> ZP_BLIT_SRC
         STA ZP_BLIT_SRC
-        BIT ZP_PAGE_FLAG                ; $6258
-        BMI .page2                      ; $625A: page 2 path
-        JSR INTERLACE_RESTORE_P1        ; $625C
-        JSR INTERLACE_BLIT_P1           ; $625F
-        RTS                             ; $6262
+        BIT ZP_PAGE_FLAG
+        BMI .page2                      ; page 2 path
+        JSR INTERLACE_RESTORE_P1
+        JSR INTERLACE_BLIT_P1
+        RTS
 .page2:
-        JSR INTERLACE_RESTORE_P2        ; $6263
-        JSR INTERLACE_BLIT_P2           ; $6266
-        RTS                             ; $6269
+        JSR INTERLACE_RESTORE_P2
+        JSR INTERLACE_BLIT_P2
+        RTS
 @ %def REFRESH_RIGHT_WALL
 
 \section{Left-edge wall refresh}
@@ -9764,7 +9753,7 @@ REFRESH_RIGHT_WALL:
 [[REFRESH_RIGHT_WALL]] for the \emph{left} edge of the world.  The
 world-position gate fires when $\Delta=\mathtt{\$11}-[\mathtt{\$4A}]$
 is non-negative (i.e.\ [[ZP_PLAYER_Y]] $\le\mathtt{\$11}$).  The
-routine updates [[HUD_SCORE_COL]] ([[$65AB]]) --- the playfield
+routine updates [[HUD_SCORE_COL]] --- the playfield
 \emph{left} bound --- and the matching [[INTERLACE_RESTORE]]/
 [[INTERLACE_BLIT]] column bounds.
 
@@ -9828,68 +9817,68 @@ REFRESH_LEFT_WALL:
         ; Clobbers: A, X, Y
 
 ; --- World-position gate: compute \Delta = $11 - ZP_PLAYER_Y ---
-        LDA #$11                        ; $626A
-        SEC                             ; $626C
-        SBC ZP_PLAYER_Y                 ; $626D: A = $11 - player-Y
-        BCC .exit                       ; $626F: underflow -> off-screen
-        STA ZP_BLIT_X_START             ; $6271: \Delta = rightmost paint col
-        LDY #$00                        ; $6273
-        STY ZP_SCORE_0                  ; $6275: (inclusive col start = 0)
-        LDY #$FF                        ; $6277
-        STY ZP_SCORE_1                  ; $6279: (high terminator = $FF)
+        LDA #$11
+        SEC
+        SBC ZP_PLAYER_Y                 ; A = $11 - player-Y
+        BCC .exit                       ; underflow -> off-screen
+        STA ZP_BLIT_X_START             ; \Delta = rightmost paint col
+        LDY #$00
+        STY ZP_SCORE_0                  ; (inclusive col start = 0)
+        LDY #$FF
+        STY ZP_SCORE_1                  ; (high terminator = $FF)
 
 ; --- Dispatch on \Delta exact match ---
-        CMP #$00                        ; $627B: at the extreme left?
-        BEQ .delta_zero                 ; $627D
+        CMP #$00                        ; at the extreme left?
+        BEQ .delta_zero
 
 ; --- Case \Delta != 0: general ---
-        SEC                             ; $627F
-        SBC #$01                        ; $6280
-        STA ZP_SCORE_2                  ; $6282
-        STA HUD_SCORE_COL               ; $6284: left-bound = \Delta-1
-        BEQ .delta_one                  ; $6287: was \Delta==1?
-        SEC                             ; $6289
-        SBC #$01                        ; $628A: A = \Delta-2
-        STA ZP_SCORE_0                  ; $628C: widen restore strip from $00
-        SEC                             ; $628E
-        SBC #$02                        ; $628F: A = \Delta-4
-        STA ZP_BLIT_X_END               ; $6291
-        JMP .shared_tail                ; $6293
+        SEC
+        SBC #$01
+        STA ZP_SCORE_2
+        STA HUD_SCORE_COL               ; left-bound = \Delta-1
+        BEQ .delta_one                  ; was \Delta==1?
+        SEC
+        SBC #$01                        ; A = \Delta-2
+        STA ZP_SCORE_0                  ; widen restore strip from $00
+        SEC
+        SBC #$02                        ; A = \Delta-4
+        STA ZP_BLIT_X_END
+        JMP .shared_tail
 
 .delta_one:
-        SEC                             ; $6296
-        SBC #$03                        ; $6297: A = \Delta-4 = -3 (wraps)
-        STA ZP_BLIT_X_END               ; $6299
-        JMP .shared_tail                ; $629B
+        SEC
+        SBC #$03                        ; A = \Delta-4 = -3 (wraps)
+        STA ZP_BLIT_X_END
+        JMP .shared_tail
 
 ; --- Case \Delta == 0: wall at col 0 ---
 .delta_zero:
         STA ZP_SCORE_2                  ; $629E (A was 0)
-        STA HUD_SCORE_COL               ; $62A0: left-bound = $00
-        SEC                             ; $62A3
-        SBC #$04                        ; $62A4: A = $FC (-4)
-        STA ZP_BLIT_X_END               ; $62A6
-        JMP .shared_tail                ; $62A8
+        STA HUD_SCORE_COL               ; left-bound = $00
+        SEC
+        SBC #$04                        ; A = $FC (-4)
+        STA ZP_BLIT_X_END
+        JMP .shared_tail
 
 .exit:
-        RTS                             ; $62AB
+        RTS
 
 ; --- Shared tail: load sprite pointer, page-gate, call RESTORE+BLIT ---
 .shared_tail:
-        LDY $4C                         ; $62AC: sprite-animation index
-        LDA WALL_L_SPR_HI,Y             ; $62AE: $7619,Y -> ZP_BLIT_SRC+1
+        LDY $4C                         ; sprite-animation index
+        LDA WALL_L_SPR_HI,Y             ; $7619,Y -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
-        LDA WALL_L_SPR_LO,Y             ; $62B3: $7519,Y -> ZP_BLIT_SRC
+        LDA WALL_L_SPR_LO,Y             ; $7519,Y -> ZP_BLIT_SRC
         STA ZP_BLIT_SRC
-        BIT ZP_PAGE_FLAG                ; $62B8
-        BMI .page2                      ; $62BA: page 2 path
-        JSR INTERLACE_RESTORE_P1        ; $62BC
-        JSR INTERLACE_BLIT_P1           ; $62BF
-        RTS                             ; $62C2
+        BIT ZP_PAGE_FLAG
+        BMI .page2                      ; page 2 path
+        JSR INTERLACE_RESTORE_P1
+        JSR INTERLACE_BLIT_P1
+        RTS
 .page2:
-        JSR INTERLACE_RESTORE_P2        ; $62C3
-        JSR INTERLACE_BLIT_P2           ; $62C6
-        RTS                             ; $62C9
+        JSR INTERLACE_RESTORE_P2
+        JSR INTERLACE_BLIT_P2
+        RTS
 @ %def REFRESH_LEFT_WALL
 
 \section{Floor-line refresh}
@@ -9902,7 +9891,7 @@ neighbours it does \emph{not} call [[INTERLACE_BLIT]] /
 fixed hi-res rows (rows [[67]], [[107]], [[147]], [[187]]) using
 [[FLOOR_LINES_P1]] / [[FLOOR_LINES_P2]] as the page-selected row
 painter.  The source is a 12-frame animation table at
-[[FLOOR_SPR_LO]]/[[FLOOR_SPR_HI]] ([[$750E]]/[[$760E]]) indexed by
+[[FLOOR_SPR_LO]]/[[FLOOR_SPR_HI]] indexed by
 [[ZP_WALK_FRAME]] --- the same walking-animation counter that
 cycles [[ZP_SPRITE_XREF]] for the wall/pillar sprites.
 
@@ -9965,18 +9954,18 @@ REFRESH_FLOOR_LINES:
         ;   rows 67, 107, 147, 187 (columns 0..39).
         ; Clobbers: A, X, Y
 
-        LDY ZP_WALK_FRAME               ; $62CA: walking-anim frame index
-        LDA FLOOR_SPR_HI,Y              ; $62CC: $760E,Y -> ZP_BLIT_SRC+1
-        STA ZP_BLIT_SRC+1               ; $62CF
-        LDA FLOOR_SPR_LO,Y              ; $62D1: $750E,Y -> ZP_BLIT_SRC
-        STA ZP_BLIT_SRC                 ; $62D4
-        BIT ZP_PAGE_FLAG                ; $62D6
-        BMI .page2                      ; $62D8
-        JSR FLOOR_LINES_P1              ; $62DA
-        RTS                             ; $62DD
+        LDY ZP_WALK_FRAME               ; walking-anim frame index
+        LDA FLOOR_SPR_HI,Y              ; $760E,Y -> ZP_BLIT_SRC+1
+        STA ZP_BLIT_SRC+1
+        LDA FLOOR_SPR_LO,Y              ; $750E,Y -> ZP_BLIT_SRC
+        STA ZP_BLIT_SRC
+        BIT ZP_PAGE_FLAG
+        BMI .page2
+        JSR FLOOR_LINES_P1
+        RTS
 .page2:
-        JSR FLOOR_LINES_P2              ; $62DE
-        RTS                             ; $62E1
+        JSR FLOOR_LINES_P2
+        RTS
 @ %def REFRESH_FLOOR_LINES
 
 \section{Landmark-pillar refresh}
@@ -9999,7 +9988,7 @@ the pillars are always well inside the playable column range, so
 background for them.
 
 \paragraph{Sprite-pointer table.}  The per-frame sprite is loaded
-from [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]] ([[$7500]]/[[$7600]])
+from [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]]
 indexed by [[$4C]] (the walking-animation / X-reference slot, same
 as the wall routines).  Each loaded sprite is then used for
 \emph{all six} slots in a single pass --- the loop reloads
@@ -10085,40 +10074,40 @@ REFRESH_PILLARS:
         ;   hi-res page 1/2 framebuffer (via INTERLACE_BLIT_P*).
         ; Clobbers: A, X, Y
 
-        LDX #$05                        ; $62E2: start at top slot
+        LDX #$05                        ; start at top slot
 .slot_loop:
-        LDA $60,X                       ; $62E4: world-Y of pillar slot X
-        SEC                             ; $62E6
-        SBC ZP_PLAYER_Y                 ; $62E7: A = world-Y - player-Y
-        BCC .next                       ; $62E9: slot behind player -> skip
-        CMP #$2B                        ; $62EB: slot off right edge?
-        BCS .next                       ; $62ED
-        STA ZP_BLIT_X_START             ; $62EF: rightmost paint col
-        SEC                             ; $62F1
-        SBC #$04                        ; $62F2: left terminator = \Delta-4
-        STA ZP_BLIT_X_END               ; $62F4
+        LDA $60,X                       ; world-Y of pillar slot X
+        SEC
+        SBC ZP_PLAYER_Y                 ; A = world-Y - player-Y
+        BCC .next                       ; slot behind player -> skip
+        CMP #$2B                        ; slot off right edge?
+        BCS .next
+        STA ZP_BLIT_X_START             ; rightmost paint col
+        SEC
+        SBC #$04                        ; left terminator = \Delta-4
+        STA ZP_BLIT_X_END
         JMP .paint                      ; $62F6 -> $62FD
 .next:
-        DEX                             ; $62F9
-        BPL .slot_loop                  ; $62FA
-        RTS                             ; $62FC
+        DEX
+        BPL .slot_loop
+        RTS
 
 ; --- Paint: save X, load sprite ptr, page-gate, JSR BLIT ---
 .paint:
-        STX $5C                         ; $62FD: save loop index
-        LDY $4C                         ; $62FF: sprite-animation index
-        LDA PILLAR_SPR_HI,Y             ; $6301: $7600,Y -> ZP_BLIT_SRC+1
+        STX $5C                         ; save loop index
+        LDY $4C                         ; sprite-animation index
+        LDA PILLAR_SPR_HI,Y             ; $7600,Y -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
-        LDA PILLAR_SPR_LO,Y             ; $6306: $7500,Y -> ZP_BLIT_SRC
+        LDA PILLAR_SPR_LO,Y             ; $7500,Y -> ZP_BLIT_SRC
         STA ZP_BLIT_SRC
-        BIT ZP_PAGE_FLAG                ; $630B
-        BMI .page2                      ; $630D
-        JSR INTERLACE_BLIT_P1           ; $630F
+        BIT ZP_PAGE_FLAG
+        BMI .page2
+        JSR INTERLACE_BLIT_P1
 .paint_resume:
-        LDX $5C                         ; $6312: restore loop index
+        LDX $5C                         ; restore loop index
         JMP .next                       ; $6314 -> $62F9
 .page2:
-        JSR INTERLACE_BLIT_P2           ; $6317
+        JSR INTERLACE_BLIT_P2
         JMP .paint_resume               ; $631A -> $6312 (shared tail)
 @ %def REFRESH_PILLARS
 
@@ -10197,23 +10186,22 @@ REFRESH_PILLARS:
 [[MAIN_LOOP]] each frame (formerly stubbed as \texttt{COLLISION\_DETECT}
 --- the name was a misnomer: the routine is a tri-state dispatcher, not a
 collision check).  It reads the player's horizontal movement state from
-[[ZP_MOVE_DIR]] ([[$04]]) and routes to one of three per-frame tick handlers
+[[ZP_MOVE_DIR]] and routes to one of three per-frame tick handlers
 that live inside the \texttt{<<game engine A>>} hex blob at
 [[$614B]]-[[$64CA]]:  % TODO-SYM: $64CA
 
 \begin{itemize}
-\item [[PLAYER_TICK_IDLE]] ([[$6184]]): seven per-frame subroutine calls
+\item [[PLAYER_TICK_IDLE]]: seven per-frame subroutine calls
   --- executed on every frame regardless of motion.
-\item [[PLAYER_TICK_MOVE_LEFT]] ([[$614B]]): when [[ZP_MOVE_DIR]] is
-  negative, the player is moving left.  If [[ZP_PLAYER_Y]] ([[$4A]]) is
+\item [[PLAYER_TICK_MOVE_LEFT]]: when [[ZP_MOVE_DIR]] is
+  negative, the player is moving left.  If [[ZP_PLAYER_Y]] is
   already at the low clamp ($<$[[$01]]), fall through into
   [[PLAYER_TICK_IDLE]]; otherwise decrement [[$4A]] by~1, cycle the
   walking-animation state at [[ZP_WALK_FRAME]] (mod~12, stepping by~2) and [[$4C]]
   (state-machine with constants [[$FE]]/[[$FF]]/[[$02]] at the transitions),  % TODO-SYM: $FE $FF
   then fall through into [[PLAYER_TICK_IDLE]].
-\item [[PLAYER_TICK_MOVE_RIGHT]] ([[$619A]]): when [[ZP_MOVE_DIR]] is
-  positive nonzero, the player is moving right.  If [[ZP_PLAYER_Y]]
-  ([[$4A]]) is already at the high clamp ($\geq$[[$D7]]), jump directly to
+\item [[PLAYER_TICK_MOVE_RIGHT]]: when [[ZP_MOVE_DIR]] is
+  positive nonzero, the player is moving right.  If [[ZP_PLAYER_Y]] is already at the high clamp ($\geq$[[$D7]]), jump directly to
   the per-frame update tail; otherwise increment [[$4A]] by~1, cycle [[ZP_WALK_FRAME]]
   (mod~12, stepping by~-2) and [[$4C]] ([[$07]]/[[$08]]/[[$FE]] transitions), then  % TODO-SYM: $FE
   \texttt{JMP} into the middle of the per-frame update chain so the
@@ -10288,8 +10276,8 @@ during attract mode and level transitions.  Despite being called from
 the \emph{main loop} rather than from [[DRAW_ENTITIES]], [[DRAW_PLAYER]]
 is the only routine in the game that actually draws the big centre-screen
 player sprite, using the sprite-pointer tables
-[[PLAYER_SPR_IDLE_LO]]/[[PLAYER_SPR_IDLE_HI]] ([[$7527]]/[[$7627]]) and
-[[PLAYER_SPR_ACTIVE_LO]]/[[PLAYER_SPR_ACTIVE_HI]] ([[$7531]]/[[$7631]]), which
+[[PLAYER_SPR_IDLE_LO]]/[[PLAYER_SPR_IDLE_HI]] and
+[[PLAYER_SPR_ACTIVE_LO]]/[[PLAYER_SPR_ACTIVE_HI]], which
 are distinct from the small-perspective sprite tables at
 [[$7542]]/[[$7642]]/[[$7552]]/[[$7652]] consumed by [[DRAW_ENTITIES]] phase~2.  % TODO-SYM: $7542 $7642 $7552 $7652
 
@@ -10304,7 +10292,7 @@ handlers):
   stationary.  Fetch a sprite pointer from
   [[PLAYER_SPR_IDLE_LO]]/[[PLAYER_SPR_IDLE_HI]] indexed by
   [[ZP_PLAYER_STANCE]], set [[$03]]$\times$[[$13]] (width$\times$height), Y from
-  [[ZP_PLAYER_COL]] ([[$06]]) via [[SMC_SR_YSRC]] operand, X column~[[$14]],  % TODO-SYM: $14
+  [[ZP_PLAYER_COL]] via [[SMC_SR_YSRC]] operand, X column~[[$14]],  % TODO-SYM: $14
   then [[JSR DRAW_SPRITE]].
 \item \textbf{Action path ([[$02]] != 0).}  The player is mid-ascent or
   mid-descent.  If [[$1E]] indicates gameplay-in-progress (positive),
@@ -10338,7 +10326,7 @@ the flicker during intro and the death-drop.
   [[DRAW_SPRITE]]): source-pointer operand bytes.  Patched by
   [[DRAW_PLAYER]] twice per action-path frame (once for flicker,
   once for main body), and on each idle-path frame.
-\item [[SMC_SPRITE_MASK_OP]]/[[SMC_SPRITE_MASK_ARG]] ([[$65B7]]/[[$65B8]]):
+\item [[SMC_SPRITE_MASK_OP]]/[[SMC_SPRITE_MASK_ARG]]:
   mask-opcode and mask-operand bytes inside [[DRAW_SPRITE]]'s inner
   loop (normally the ``[[BIT $00]]'' 2-byte NOP).  Patched to
   [[AND #$83]] or [[AND #$B0]] for the flicker, then restored to
@@ -10347,11 +10335,11 @@ the flicker during intro and the death-drop.
 
 \paragraph{Self-modifying operands patched from elsewhere.}
 \begin{itemize}
-\item [[SMC_SR_HEIGHT]] ([[$64F6]]): the immediate operand of the
+\item [[SMC_SR_HEIGHT]]: the immediate operand of the
   ``[[LDA #$13]]'' that seeds [[ZP_SPRITE_H]] on the idle path.
   [[LEVEL_INTRO_TICK]] decrements this every frame of the countdown to
   shrink the sprite, and [[LEVEL_COMPLETE]] resets it to [[$13]].
-\item [[SMC_SR_YSRC]] ([[$64FA]]): the ZP operand of the ``[[LDA $06]]''
+\item [[SMC_SR_YSRC]]: the ZP operand of the ``[[LDA $06]]''
   that reads [[ZP_PLAYER_COL]] as the sprite Y row.
   [[LEVEL_INTRO_TICK]] patches it to [[$17]] ([[ZP_INTRO_Y]]) during the
   intro animation and restores it to [[$06]] on activation;
@@ -10583,10 +10571,10 @@ page~2 (addresses [[$4000]]-[[$5FFF]], row-high table at  % TODO-SYM: $5FFF
 
 Inputs are the usual sprite-parameter quartet:
 \begin{itemize}
-\item [[ZP_SPRITE_W]] ([[$56]]) --- width in bytes.
-\item [[ZP_SPRITE_H]] ([[$57]]) --- height in rows.
-\item [[ZP_SPRITE_Y]] ([[$5B]]) --- starting screen row.
-\item [[ZP_SPRITE_X]] ([[$5D]]) --- starting column (right edge).
+\item [[ZP_SPRITE_W]] --- width in bytes.
+\item [[ZP_SPRITE_H]] --- height in rows.
+\item [[ZP_SPRITE_Y]] --- starting screen row.
+\item [[ZP_SPRITE_X]] --- starting column (right edge).
 \item [[SPRITE_PTR_LO]]/[[SPRITE_PTR_HI]] ([[$65B3]]/[[$65B4]],
   self-modifying operand bytes of the sprite-data fetch) --- source
   pointer into sprite data.
@@ -10615,7 +10603,7 @@ position.
 the inner-loop [[ORA]] instruction there are two bytes --- [[$24 $00]]
 --- that on the disk image encode [[BIT $00]] and act as a 2-byte NOP
 in the normal draw path.  This is \emph{not} dead padding: at runtime
-[[LEVEL_INTRO_TICK]] ([[$699C]]) patches these two bytes to [[AND
+[[LEVEL_INTRO_TICK]] patches these two bytes to [[AND
 \#<flicker>]] ([[$29 <imm>]]) for every frame of the intro countdown so
 that the sprite byte is AND-masked against the low bit of the frame
 counter before being OR'd into the screen.  This makes the intro
@@ -10772,8 +10760,7 @@ SMC_STA_HI = *+2                  ; High of STA abs,X operand --- patched
 
 \section{Sprite draw (playfield, HUD-clipped)}
 
-[[DRAW_SPRITE_PLAYFIELD]] at [[$65D5]] is a sibling of [[DRAW_SPRITE]]
-([[$656F]]) that performs an identical transparent OR-blit onto the
+[[DRAW_SPRITE_PLAYFIELD]] at [[$65D5]] is a sibling of [[DRAW_SPRITE]] that performs an identical transparent OR-blit onto the
 hidden hi-res page, but with a \emph{narrower} column-acceptance
 window.  It is called only from [[DRAW_ENTITIES]] --- its four sites
 draw the player, the ``special'' sprite, the two companion slots and
@@ -10825,8 +10812,7 @@ This routine has no such tail --- it is 87~bytes of live code
 
 \paragraph{Source-pointer SMC.}  The [[LDA $9000,Y]] at [[$6614]] is  % TODO-SYM: $6614
 patched by [[DRAW_ENTITIES]] with the per-sprite source-data address
-before each call.  The operand bytes are named [[SMC_PFB_SRC_LO]]
-([[$6615]]) and [[SMC_PFB_SRC_HI]] ([[$6616]]), exported for the callers.
+before each call.  The operand bytes are named [[SMC_PFB_SRC_LO]] and [[SMC_PFB_SRC_HI]], exported for the callers.
 Disk-image initial value is [[$9000]] --- a harmless pattern outside the
 game's memory map, overwritten before the first execution.
 
@@ -10933,8 +10919,8 @@ SMC_PFB_STA_HI = *+2              ; High of STA abs,X operand --- patched
 \section{Sprite draw (opaque)}
 
 [[DRAW_SPRITE_OPAQUE]] at [[$662C]] is the third member of Drol's
-sprite-blitter triplet --- sibling of [[DRAW_SPRITE]] ([[$656F]]) and
-[[DRAW_SPRITE_PLAYFIELD]] ([[$65D5]]).  Where the other two use an
+sprite-blitter triplet --- sibling of [[DRAW_SPRITE]] and
+[[DRAW_SPRITE_PLAYFIELD]].  Where the other two use an
 [[ORA]]/[[STA]] pair to \emph{overlay} the sprite on top of whatever
 is already on the hi-res page (transparent blit), this routine uses a
 plain [[STA]] that \emph{overwrites} the screen byte unconditionally
@@ -10967,14 +10953,14 @@ Live size                     & 102 bytes        & 87 bytes                  & 7
 \paragraph{Callers.}  Only two routines call [[DRAW_SPRITE_OPAQUE]]:
 
 \begin{itemize}
-\item [[DISPLAY_UPDATE]] ([[$10AB]]) --- draws the timer animation tile
+\item [[DISPLAY_UPDATE]] --- draws the timer animation tile
   at column~[[$09]], row~[[$16]] (a 1$\times$6 sprite in the SCORE HUD  % TODO-SYM: $09 $16
   strip).  Source comes from [[TIMER_FRAME_LO]]/[[HI]] at
   [[$6800]]/[[$6900]].
-\item [[DRAW_DIGIT]] ([[$115C]]) --- draws a single BCD digit tile
+\item [[DRAW_DIGIT]] --- draws a single BCD digit tile
   (1$\times$6) at a caller-chosen column.  Source comes from
   [[DIGIT_TILE_LO]]/[[HI]] at [[$AFF6]]/[[$B076]].
-  [[POST_FRAME]] ([[$10CF]]) calls this seven times per frame --- five
+  [[POST_FRAME]] calls this seven times per frame --- five
   score nibbles plus two level-state digits.
 \end{itemize}
 
@@ -10990,8 +10976,8 @@ tile cleanly).
 
 \paragraph{Source-pointer SMC.}  The [[LDA $9000,Y]] at [[$6661]] is  % TODO-SYM: $6661
 patched by the callers with the per-tile source-data address.  The
-operand bytes are named [[SMC_TILE_SRC_LO]] ([[$6662]]) and
-[[SMC_TILE_SRC_HI]] ([[$6663]]), exported for the callers.  Disk-image
+operand bytes are named [[SMC_TILE_SRC_LO]] and
+[[SMC_TILE_SRC_HI]], exported for the callers.  Disk-image
 initial value is [[$9000]] --- a harmless pattern outside the game's
 memory map, overwritten before the first execution.
 
@@ -11230,22 +11216,21 @@ each with its own state table:
   currently hidden hi-res page.  Control falls through into phase~2.
 \item The \emph{player} sprite draw (phase~2, [[$6865]]--[[$68B1]]), gated on  % TODO-SYM: $6865 $68B1
   [[$0E]] being non-negative.  The player column ([[ZP_PLAYER_Y]]+[[$10]])
-  is looked up in parallel tables [[FLOOR_SPRITE_IDX]] ([[$1E00]]) and
-  [[FLOOR_SCREEN_COL]] ([[$1F00]]) to produce a sprite-frame index and
+  is looked up in parallel tables [[FLOOR_SPRITE_IDX]] and
+  [[FLOOR_SCREEN_COL]] to produce a sprite-frame index and
   screen column.  Frame-counter bit~2 ([[$FD]]) selects between two
   sprite-data address tables (offsets [[$7542]]/[[$7642]] and [[$7552]]/[[$7652]])  % TODO-SYM: $7542 $7642 $7552 $7652
   whose entries are copied into the SMC operand slot inside the
   playfield sprite blitter at [[DRAW_SPRITE_PLAYFIELD]] ([[$65D5]],
   operand bytes at [[SMC_PFB_SRC_LO]] / [[SMC_PFB_SRC_HI]] = [[$6615]] /
-  [[$6616]]).  The sprite row is [[FLOOR_TO_ROW]] ([[$1D40]]) indexed either
-  by [[ZP_INTRO_Y]] ([[$17]]) during the intro/wait phase or by
-  [[ZP_PLAYER_COL]] ([[$06]]) during gameplay --- selected by
+  [[$6616]]).  The sprite row is [[FLOOR_TO_ROW]] indexed either
+  by [[ZP_INTRO_Y]] during the intro/wait phase or by
+  [[ZP_PLAYER_COL]] during gameplay --- selected by
   [[$1E]]~(zero means intro is still running).
 \item A single ``special'' sprite (phase~3, [[$68B2]]--[[$6904]]) --- most  % TODO-SYM: $68B2 $6904
   likely the moon-bouncing ball or an attract-mode actor --- gated on
   [[$AB]] being strictly positive.  Its floor-column index ([[$AC]]) is
-  converted to an absolute screen position using [[FLOOR_BASE_ROW]]
-  ([[$188F]]) plus an offset [[$B9]],X (X from [[$AD]]), minus~[[$08]].  The
+  converted to an absolute screen position using [[FLOOR_BASE_ROW]] plus an offset [[$B9]],X (X from [[$AD]]), minus~[[$08]].  The
   result indexes [[FLOOR_SPRITE_IDX]]/[[FLOOR_SCREEN_COL]] the same way
   as phase~2; sprite-data table pair is [[$7594]]/[[$7694]] or [[$759B]]/[[$769B]]  % TODO-SYM: $7594 $7694 $759B $769B
   (bit~2 of frame counter), row comes from [[FLOOR_TO_ROW]] indexed by
@@ -11298,13 +11283,12 @@ any toggle of the display soft-switch.
 
 \paragraph{Cross-reference to [[LEVEL_INTRO_TICK]].}  Earlier prose
 speculated that this chunk patches the same [[SMC_SR_HEIGHT]] /
-[[SMC_SR_YSRC]] operands inside [[DRAW_PLAYER]] ([[$64F6]] / [[$64FA]])
+[[SMC_SR_YSRC]] operands inside [[DRAW_PLAYER]]
 that [[LEVEL_INTRO_TICK]] patches.  That was incorrect --- this
 routine does \emph{not} touch those operands.  The two SMC slots
-[[DRAW_ENTITIES]] patches are [[SMC_PFB_SRC_LO]] ([[$6615]]) and
-[[SMC_PFB_SRC_HI]] ([[$6616]]), which are the source-address operand
-bytes of the sprite-data fetch inside [[DRAW_SPRITE_PLAYFIELD]]
-([[$65D5]]) at [[$6614]].  % TODO-SYM: $6614
+[[DRAW_ENTITIES]] patches are [[SMC_PFB_SRC_LO]] and
+[[SMC_PFB_SRC_HI]], which are the source-address operand
+bytes of the sprite-data fetch inside [[DRAW_SPRITE_PLAYFIELD]] at [[$6614]].  % TODO-SYM: $6614
 
 <<draw entities defines>>=
 
@@ -11617,8 +11601,7 @@ between level transitions:
   the sprite flickers with the frame counter.
 \item When the countdown reaches zero, the routine switches into a
   wait-for-start phase.  A software timer advances in [[$06]] and
-  when it rolls over, the BCD lives counter [[ZP_LIVES_BCD]]
-  ([[$5E]]) is decremented.  If it goes negative the routine
+  when it rolls over, the BCD lives counter [[ZP_LIVES_BCD]] is decremented.  If it goes negative the routine
   returns and the main-loop exit check at [[$7208]] takes over
   (game-over path).
 \item While waiting, the routine reads the keyboard, the two input
@@ -11927,16 +11910,16 @@ drifting puff, the score is awarded [[$0500]] BCD via [[SCORE_ADD]] ---  % TODO-
 five hundred points, the classic arcade ``catch a bonus'' payoff ---
 and the slot returns to its inactive countdown.
 
-\paragraph{Slot state machine.}  [[ZP_SPECIAL_STATE]] ([[$AB]]) is the
+\paragraph{Slot state machine.}  [[ZP_SPECIAL_STATE]] is the
 one-byte state:
 
 \begin{itemize}
-\item [[$00]] --- inactive: an 8-bit timer in [[ZP_SPECIAL_POS]] ([[$AC]]) is
+\item [[$00]] --- inactive: an 8-bit timer in [[ZP_SPECIAL_POS]] is
   incremented each frame, and its wrap ($0\to1$ roll-over of the low
   byte) reseeds the slot by falling into the \emph{rearm} block at
   [[$6B14]].
 \item [[$01]] (any positive value) --- active: advance the 16-bit
-  position [[ZP_SPECIAL_POS]] ([[$AC]]/[[$AD]]) by [[$0002]] per frame, and
+  position [[ZP_SPECIAL_POS]] by [[$0002]] per frame, and
   once it reaches [[$035A]] rearm the slot.  Set by the rearm block.  % TODO-SYM: $035A
 \item [[$FF]] (any negative value) --- drift: the sprite is  % TODO-SYM: $FF
   falling/climbing after a 4-kill defeat; row [[$AE]] is moved down by 2
@@ -11949,7 +11932,7 @@ one-byte state:
   the puff is collected.
 \end{itemize}
 
-\paragraph{Sound slot.}  [[ZP_SPECIAL_SND_CTR]] ([[$B5]]) is a
+\paragraph{Sound slot.}  [[ZP_SPECIAL_SND_CTR]] is a
 twelve-step ascending-tone counter that plays one click per frame
 through [[SND_DELAY_UP]] ([[$109E]], duration~[[$0A]]) as it decrements
 from~[[$0B]] down to~[[$00]], then idles at [[$FF]] (negative $\Rightarrow$  % TODO-SYM: $FF
@@ -11969,7 +11952,7 @@ traversal), picks a floor-row anchor from
 [[ENEMY_C_ROW_TBL]]$[\hbox{PRNG}\bmod 4]$ (one of the three defined
 entries at [[$85]]/[[$86]]/[[$87]]; index 0 reads the [[$84]] base byte which is  % TODO-SYM: $85 $86 $87
 the same shared table as the enemy-C row reload), subtracts [[$0B]] to
-place the sprite above the floor, arms [[ZP_SPECIAL_HP]] ([[$08]]) to~4
+place the sprite above the floor, arms [[ZP_SPECIAL_HP]] to~4
 ``hit points'' (the number of floor-enemies the sprite will kill
 before exploding), and writes [[$01]] to [[ZP_SPECIAL_STATE]].
 
@@ -12141,7 +12124,7 @@ tests (four-kill body-collision with the floor-enemy table, and the
 drift-puff player-catch).
 
 \paragraph{Three visual phases.}  The routine gates on
-[[ZP_SPECIAL_STATE]] ([[$AB]]) just like the tick:
+[[ZP_SPECIAL_STATE]] just like the tick:
 
 \begin{itemize}
 \item [[$00]] (\textbf{inactive}) --- fall through to [[SPECIAL_INACTIVE_DRAW]]
@@ -12155,7 +12138,7 @@ drift-puff player-catch).
   four-slot floor-enemy table at [[$9B]]/[[$9F]]/[[$A3]] (the same slots
   targeted by [[ENEMY_C_DRAW]] and the beam subsystem).  On a floor-enemy
   overlap: clear that slot ($[[$00]] \to [[$9B]][X]$), decrement
-  [[ZP_SPECIAL_HP]] ([[$08]]), and on the fourth kill (HP $=0$) set
+  [[ZP_SPECIAL_HP]], and on the fourth kill (HP $=0$) set
   drift mode and arm the defeat-jingle sound counter.
 \item negative (\textbf{drift}) --- draw a [[$04]]$\times$[[$0F]] puff
   sprite from the per-perspective-frame pointer table
@@ -12163,7 +12146,7 @@ drift-puff player-catch).
   the same perspective-frame-index Y the body path uses), then test
   whether the player's sprite overlaps the puff.  On a catch: award
   [[$0500]] BCD via [[SCORE_ADD]], clear [[ZP_SPECIAL_STATE]], arm  % TODO-SYM: $0500
-  [[ZP_SPECIAL_SND_CTR_B]] ([[$B6]]) to~4 for a short catch tone, and
+  [[ZP_SPECIAL_SND_CTR_B]] to~4 for a short catch tone, and
   bump the position so the slot immediately falls into its inactive
   countdown.
 \end{itemize}
@@ -12172,7 +12155,7 @@ drift-puff player-catch).
 slots --- which index a per-frame sprite table directly from
 [[ZP_FRAME_COUNTER]] bits --- [[SPECIAL_DRAW]]'s body path uses a
 \emph{self-modifying dispatch}: a [[JMP]] at [[$6BE8]] whose operand bytes  % TODO-SYM: $6BE8
-[[SMC_SPECIAL_BODY_LO]]/[[SMC_SPECIAL_BODY_HI]] ([[$6BE9]]/[[$6BEA]]) point
+[[SMC_SPECIAL_BODY_LO]]/[[SMC_SPECIAL_BODY_HI]] point
 to one of six small handlers at [[$6C3F]]--[[$6CC0]].  Each handler rewrites  % TODO-SYM: $6CC0
 the operand bytes to the \emph{next} handler in a ring, then patches
 [[SMC_DS_SRC_LO]]/[[SMC_DS_SRC_HI]] with its own sprite source pointer
@@ -12189,11 +12172,11 @@ the defeat transition) call [[DRAW_SPRITE]] at [[$656F]] --- not
 [[DRAW_SPRITE_PLAYFIELD]] at [[$65D5]].  This is the same transparent-OR
 blit used by the three enemy slots (and distinct from the playfield
 blit used by [[DRAW_ENTITIES]]).  SMC source pointers go to
-[[SMC_DS_SRC_LO]]/[[SMC_DS_SRC_HI]] ([[$65B3]]/[[$65B4]]), the
+[[SMC_DS_SRC_LO]]/[[SMC_DS_SRC_HI]], the
 [[DRAW_SPRITE]] operand bytes, not the playfield variant.
 
 \paragraph{Sound slot.}  [[SPECIAL_DRAW]] drives a \emph{second} sound
-counter [[ZP_SPECIAL_SND_CTR_B]] ([[$B6]]) with a companion pitch table
+counter [[ZP_SPECIAL_SND_CTR_B]] with a companion pitch table
 [[SND_PITCH_TBL_SPECIAL_B]] at [[$021F]].  Unlike the ascending-tone
 counter the tick uses, this one clicks through [[SFX_TONE]] at
 duration [[$08]] --- a shorter, higher click.  It is armed to~[[$04]] on
@@ -12214,9 +12197,9 @@ the player-catches-puff edge, producing a four-click ``pickup'' tone.
 \end{itemize}
 
 \paragraph{Perspective transform} (same shape as the enemy draws).
-[[ZP_PLAYER_Y]] ([[$4A]]) indexes
-[[PERSPECTIVE_XOFF_LO]]/[[PERSPECTIVE_XOFF_HI]] ([[$1A8F]]/[[$198F]]) minus
-[[ZP_SPRITE_XREF]] ([[$4C]]) to produce the player's world-X; subtracting
+[[ZP_PLAYER_Y]] indexes
+[[PERSPECTIVE_XOFF_LO]]/[[PERSPECTIVE_XOFF_HI]] minus
+[[ZP_SPRITE_XREF]] to produce the player's world-X; subtracting
 that from the creature's 16-bit [[ZP_SPECIAL_POS]] yields the
 transformed screen-X in [[$AF]].  An off-screen test (high byte $\ne 0$
 or low byte $\ge [[$A0]]$) short-circuits the draw with an RTS.  [[$AF]]
@@ -12389,9 +12372,9 @@ SPECIAL_DRAW:
 ; --- Common sprite-parameter setup ---
         LDA ZP_SPECIAL_ROW              ; $AE
         STA ZP_SPRITE_Y                 ; Sprite row
-        LDA PROJ_SCREEN_COL,X           ; $1C34
+        LDA PROJ_SCREEN_COL,X
         STA ZP_SPRITE_X                 ; Sprite column
-        LDA PROJ_FRAME_IDX,X            ; $1B8F
+        LDA PROJ_FRAME_IDX,X
         TAY                             ; Y = sprite-frame index
 
 ; --- Branch to drift if $AB < 0 ---
@@ -12650,7 +12633,7 @@ SPECIAL_INACTIVE_DRAW:
         LDA ZP_SPECIAL_ROW              ; $AE
         STA ZP_SPRITE_Y                 ; Sprite row = row anchor
         LDX ZP_SPECIAL_POS+1            ; $AD (stays 0 during inactive)
-        LDA PROJ_SCREEN_COL,X           ; $1C34
+        LDA PROJ_SCREEN_COL,X
         STA ZP_SPRITE_X                 ; Sprite col via PROJ table
         LDA SPECIAL_PEEK_LO             ; Un-indexed
         STA SMC_DS_SRC_LO
@@ -12669,12 +12652,12 @@ occasionally climb to another floor, and damage the player on contact.
 Despite the name inherited from [[DRAW_ENTITIES]] phase~4 (which draws
 a small [[$01]]x[[$02]] marker for each slot), these slots do \emph{not}
 help the player; the draw inside this routine renders the full body
-sprite, runs a player-catch hit-box that sets [[ZP_HIT_FLAG]] ([[$1E]]),
+sprite, runs a player-catch hit-box that sets [[ZP_HIT_FLAG]],
 and contains an entity-proximity gate that triggers the floor-climb
 drift phase.
 
 \paragraph{Gate.}  The whole routine is gated on
-[[ZP_COMPANION_GATE]] ([[$33]]):
+[[ZP_COMPANION_GATE]]:
 [[BPL]]-guarded, so only the positive value [[$01]] (set by
 [[DIFFICULTY_UPDATE]] at any tier above minimum) allows the slots to
 run.  The minimum tier and [[DIFFICULTY_RESET]] both set [[$33]] to
@@ -12745,7 +12728,7 @@ a cold start the on-disk trampoline values are [[JMP $6E33]] and
 
 \paragraph{Player-catch.}  After drawing, the routine tests the
 companion's screen-X against the [[$40]]..[[$4F]] window and the player's  % TODO-SYM: $4F
-row [[ZP_PLAYER_COL]] ([[$06]]) against the companion's row
+row [[ZP_PLAYER_COL]] against the companion's row
 [[$15]],X in a [[$1A]]-tall band; overlap writes [[$FF]] to [[ZP_HIT_FLAG]]  % TODO-SYM: $FF
 ([[$1E]]), signalling a player hit.  Drift-mode draws skip the
 player-catch, so climbing companions are safe to pass.
@@ -12755,8 +12738,8 @@ ZP bytes [[$11]]/[[$13]]/[[$15]] that this routine treats as 16-bit world-X
 and row are re-interpreted by phase~4 of the entity-draw dispatcher
 as a perspective-projection index and a [[$B9]]-table offset, drawing a
 small [[$01]]x[[$02]] marker sprite from [[$75CC]] at the companion's  % TODO-SYM: $75CC
-projected screen position.  Phase~4's [[ZP_COMPANION_COL]] ([[$11]]),
-[[ZP_COMPANION_OFF]] ([[$13]]) and [[ZP_COMPANION_ROW]] ([[$15]]) are
+projected screen position.  Phase~4's [[ZP_COMPANION_COL]],
+[[ZP_COMPANION_OFF]] and [[ZP_COMPANION_ROW]] are
 therefore aliases of this routine's [[ZP_COMPANION_POS_LO]],
 [[_HI]] and [[_ROW]].
 
@@ -12907,7 +12890,7 @@ COMPANION_UPDATE:
 
 ; --- Active, left-walker: pos -= 3, PRNG direction flip, re-arm on wrap ---
 .active_neg:
-        JSR PRNG                        ; $6674
+        JSR PRNG
         CMP #$05
         BCS .neg_move                   ; skip 95% of the time
         LDA #$01
@@ -12941,7 +12924,7 @@ COMPANION_UPDATE:
 
 ; --- Active, right-walker: pos += 3, PRNG direction flip, re-arm on wrap ---
 .active_pos:
-        JSR PRNG                        ; $6674
+        JSR PRNG
         CMP #$05
         BCS .pos_move
         LDA #$FF
@@ -13328,8 +13311,7 @@ on [[$03A8]],Y:
   [[$6674]]) to return [[$01]] (1/256) \emph{and} the [[$4D]] counter to be a
   multiple-of-4 residue [[$03]].  In addition to the PRNG path there is a
   \emph{player-floor trigger}: if the slot's assigned floor
-  [[RESCUE_FLOOR]] equals the current player floor [[ZP_PLAYER_FLOOR]]
-  ([[$0C]]), and the animation counter [[ZP_ANIM_COUNTER]] ([[$1F]]) is
+  [[RESCUE_FLOOR]] equals the current player floor [[ZP_PLAYER_FLOOR]], and the animation counter [[ZP_ANIM_COUNTER]] is
   $<$ [[$10]], a spawn is forced on that slot.  The player-floor trigger
   fires at most once per frame because of an inline BIT-to-JMP opcode
   patch at [[$705F]] (see below).  Spawn direction alternates with slot  % TODO-SYM: $705F
@@ -13347,7 +13329,7 @@ on [[$03A8]],Y:
 \item other negative ([[$80]]..[[$FD]] / [[$FF]], \emph{drift}): every other  % TODO-SYM: $80 $FF
   frame (gated on [[$FD]] bit~0), decrement [[RESCUE_COUNTDOWN]]; on zero,
   seed [[ENTITY_FLOOR_COL]] with the difficulty-tier value
-  [[ZP_DIFF_THRESH_A]] ([[$34]]) and transition state to [[$FE]].  % TODO-SYM: $FE
+  [[ZP_DIFF_THRESH_A]] and transition state to [[$FE]].  % TODO-SYM: $FE
 \end{itemize}
 
 The drift state ([[$FF]]) and its [[$04]] countdown are written by the  % TODO-SYM: $FF
@@ -13385,7 +13367,7 @@ giving the child's characteristic vertical bobble as it walks.
 \emph{Meet-player.}  If the anim counter is mid-step, finish the step.
 Otherwise compute the entity's screen-space position
 [[FLOOR_BASE_ROW]]([[ENTITY_FLOOR_COL]]) \(+\) [[$B9]]([[ENTITY_XOFF_IDX]])
-and compare it to the player's [[ZP_PLAYER_Y]] ([[$4A]]).  If entity $<$
+and compare it to the player's [[ZP_PLAYER_Y]].  If entity $<$
 player, set direction [[$01]] (walk right); if entity $=$ or $>$ player,
 set direction [[$FF]] (walk left).  If the direction is already correct,  % TODO-SYM: $FF
 take one step in that direction; if wrong, flip direction and reset
@@ -14895,7 +14877,7 @@ bytes at [[$B082]]/[[$B086]] feed the attract-mode sprite draws:
 
 \begin{itemize}
 \item [[ATTRACT_SPR2]] ([[$B002]]/[[$B082]], 4 entries) --- consumed by
-  [[ATTRACT_ANIM_2]] ([[$17E1]]).  Entries point at [[$B571]], [[$B59B]],  % TODO-SYM: $B571 $B59B
+  [[ATTRACT_ANIM_2]].  Entries point at [[$B571]], [[$B59B]],  % TODO-SYM: $B571 $B59B
   [[$B5C5]], [[$B5E1]].  Sprite byte counts are [[$2A]]/[[$2A]]/[[$1C]]/[[$1C]]  % TODO-SYM: $B5C5 $B5E1 $2A $1C
   respectively (W=2,H=14 and W=1,H=14) --- the tall drifting
   silhouettes that sweep across the attract playfield.

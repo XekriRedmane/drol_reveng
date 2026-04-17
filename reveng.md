@@ -312,8 +312,10 @@ addresses in LaTeX prose inside `main.nw`:
 1. **Wrap every address in `[[ ]]`.** Never bare `\$XXXX` in prose — always
    `[[$XXXX]]` or `[[SYMBOL]]`. The `[[ ]]` form renders as a navigable
    tt-styled hyperlink; raw hex does not.
-2. **Prefer symbol over hex.** If a label/EQU exists, use `[[SYMBOL]]`. If
-   the numeric address still adds information, use `[[SYMBOL]] ([[$XXXX]])`.
+2. **Prefer symbol over hex, and never annotate a symbol with its own
+   address.** `[[SYMBOL]]`, not `[[SYMBOL]] ([[$XXXX]])` — the parenthetical
+   hex adds no information. Only range appositions conveying extent
+   (`[[SYMBOL]] ([[$XXXX]]--[[$YYYY]])`) are permitted.
 3. **No backslash inside `[[ ]]`.** `[[$XXXX]]`, never `[[\$XXXX]]`.
 
 During active RE with no symbol yet, `[[$XXXX]]` is fine but flag it:

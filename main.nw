@@ -234,7 +234,7 @@ NMIVEC          = $FFFC         ; NMI vector (2 bytes, in language card)
 ; Monitor ROM routines.
 MON_HOME        = $FC58         ; Clear screen
 
-; Loader variables in $BF00 page.
+; Loader variables in RESET_R page.
 LDR_TRACK       = $BF48         ; Current track number
 LDR_SLOT        = $BF49         ; Slot number * 16
 LDR_PHASE       = $BF4A         ; Boot phase counter ($FF = first boot)
@@ -254,7 +254,7 @@ TEXT_SCREEN      = $0400         ; First line of text screen
         ; Boot sector entry -- multi-phase loader for Drol.
         ;
         ; Inputs:
-        ;   DEST_PAGE -- destination page set by boot0 PROM ($27)
+        ;   DEST_PAGE -- destination page set by boot0 PROM
         ;   X -- slot number * 16 (from PROM)
         ;
         ; Behavior:
@@ -263,7 +263,7 @@ TEXT_SCREEN      = $0400         ; First line of text screen
         ;   Phase 2 (DEST_PAGE<$5A): returns to PROM to read next sector.
         ;   Phase 3 (DEST_PAGE>=$5A): copies ROM to language card, relocates
         ;     RWTS to $BE00, backs up loader to $D000, decodes splash text,
-        ;     and jumps to loader entry at $51C0.
+        ;     and jumps to loader entry.
         ;
         ; Modifies:
         ;   SOFTEV, SOFTEV_CHK, NMIVEC, LDR_SLOT, LDR_PHASE, LDR_TRACK,
@@ -392,7 +392,7 @@ BOOT1_ENTRY:
 
         JSR MON_HOME
 
-; XOR-decode 40 bytes from $08D0 to the text screen at $0400.
+; XOR-decode 40 bytes from $08D0 to the text screen.
 ; In this disk image the source bytes are all zero, so $0400 gets
 ; filled with $AB (the XOR key), which displays as "+" characters.
 ; On the original disk this may have been a Broderbund copyright line.
@@ -554,7 +554,7 @@ LDR_TRACK       = $BF48         ; Current track number
 LDR_SLOT        = $BF49         ; Slot * 16
 LDR_PHASE       = $BF4A         ; Boot phase counter ($FF = first boot)
 
-; RWTS relocated addresses (code runs at $BE00/$BF00 after boot1 relocates).
+; RWTS relocated addresses (code runs after boot1 relocates).
 RWTS_RELOAD_SRC = $BE1E         ; Self-mod: source page for reload loop
 RWTS_RELOAD_DST = $BE21         ; Self-mod: dest page for reload loop
 RWTS_CONT       = $BEA3         ; Continue after RWTS reload
@@ -583,12 +583,12 @@ MON_NORMAL      = $FE84         ; Normal text output mode
 ROM_MACHID      = $FBB4         ; Machine identification byte
 
 ; Staging buffers (loaded from track 1, copied to $0100/$0300).
-STAGE_STACK     = $5C00         ; Staging buffer for stack page ($0100)
-STAGE_VECTORS   = $5D00         ; Staging buffer for vector page ($0300)
+STAGE_STACK     = $5C00         ; Staging buffer for stack page
+STAGE_VECTORS   = $5D00         ; Staging buffer for vector page
 STACK_PAGE      = $0100         ; Stack page destination
 VECTOR_PAGE     = $0300         ; Vector page destination
 
-; Floor Y-coordinate table at $03F8 (indexed by floor number 1-4).
+; Floor Y-coordinate table (indexed by floor number 1-4).
 ; Entry 0 is a $00 sentinel. Written by FIRST_BOOT.
 FLOOR_Y_TABLE   = $03F8         ; Floor Y positions: $00,$43,$6B,$93,$BB
 
@@ -666,7 +666,7 @@ READ_ADDR_FIELD:
         LDA DISK_DATA,X
         BPL .wait_even
         AND ZP_TEMP_A           ; Even byte: combine
-        STA ZP_ADDR_VOL,Y       ; Store at $2C+Y
+        STA ZP_ADDR_VOL,Y       ; Store+Y
         EOR ZP_TEMP_B           ; Running checksum
         DEY
         BPL .read_pair
@@ -699,7 +699,7 @@ READ_DATA_FIELD:
         ;
         ; Inputs:
         ;   ZP_SLOT_X16 -- slot * 16 for disk I/O
-        ;   ZP_DEST ($04/$05) -- destination pointer
+        ;   ZP_DEST -- destination pointer
         ;
         ; Behavior:
         ;   Scans for D5 AA AD prologue, reads 86 auxiliary nibbles
@@ -712,7 +712,7 @@ READ_DATA_FIELD:
         ;   256 bytes written to (ZP_DEST),Y
         ;
         ; Modifies:
-        ;   NIBBLE_BUF_PRI ($5200), NIBBLE_BUF_AUX ($5300)
+        ;   NIBBLE_BUF_PRI, NIBBLE_BUF_AUX
         ; Clobbers: A, X, Y
         LDX ZP_SLOT_X16
         LDY #$18                ; Timeout counter
@@ -737,7 +737,7 @@ READ_DATA_FIELD:
         EOR #$AD                ; Data prologue byte 3
         BNE .chk_d5
 
-; Read 86 auxiliary nibbles (2-bit portions) into $5300 buffer (backwards).
+; Read 86 auxiliary nibbles (2-bit portions) into NIBBLE_BUF_AUX buffer (backwards).
         PHP                     ; Save flags (Z set, A=0)
         JSR ERROR_RETURN        ; Set carry (harmless, PLP restores)
         PLP                     ; Restore Z and A=0 as XOR seed
@@ -750,10 +750,10 @@ READ_DATA_FIELD:
         EOR NIBBLE_XLAT,Y       ; Decode through translate table
         LDY ZP_TEMP_A
         DEY
-        STA NIBBLE_BUF_AUX,Y   ; Store to $5300 buffer (backwards)
+        STA NIBBLE_BUF_AUX,Y   ; Store to NIBBLE_BUF_AUX buffer (backwards)
         BNE .read_aux
 
-; Read 256 primary nibbles (6-bit portions) into $5200 buffer (forwards).
+; Read 256 primary nibbles (6-bit portions) into NIBBLE_BUF_PRI buffer (forwards).
 .read_pri:
         STY ZP_TEMP_A           ; Y=0 on first iter, then loop counter
 .wait_pri:
@@ -761,7 +761,7 @@ READ_DATA_FIELD:
         BPL .wait_pri
         EOR NIBBLE_XLAT,Y
         LDY ZP_TEMP_A
-        STA NIBBLE_BUF_PRI,Y   ; Store to $5200 buffer
+        STA NIBBLE_BUF_PRI,Y   ; Store to NIBBLE_BUF_PRI buffer
         INY
         BNE .read_pri
 
@@ -779,7 +779,7 @@ READ_DATA_FIELD:
         CMP #$DE
         BNE ERROR_RETURN
 
-; Recombine 6-and-2 encoded data into 256 bytes at ($04).
+; Recombine 6-and-2 encoded data into 256 bytes at.
 ; Auxiliary buffer has 2-bit portions, primary has 6-bit portions.
         LDY #$00
 .reset_x:
@@ -817,7 +817,7 @@ SEEK:
         ;
         ; Inputs:
         ;   A -- target half-track number
-        ;   ZP_CUR_HTRK ($0D) -- current half-track position
+        ;   ZP_CUR_HTRK -- current half-track position
         ;   ZP_SLOT_X16 -- slot * 16 for phase soft switches
         ;
         ; Behavior:
@@ -827,7 +827,7 @@ SEEK:
         ;   then turns the old phase off.
         ;
         ; Modifies:
-        ;   ZP_CUR_HTRK ($0D) -- updated to new position
+        ;   ZP_CUR_HTRK -- updated to new position
         ; Clobbers: A, X, Y
         STA ZP_TGT_HTRK        ; Target half-track
         LDY #$00
@@ -916,7 +916,7 @@ SEEK_TO_TRACK:
         ;
         ; Inputs:
         ;   A -- target track number (0-34)
-        ;   ZP_CUR_HTRK ($0D) -- current half-track position
+        ;   ZP_CUR_HTRK -- current half-track position
         ;   ZP_SLOT_X16 -- slot * 16
         ;
         ; Behavior:
@@ -924,7 +924,7 @@ SEEK_TO_TRACK:
         ;   SEEK, then turns motor off.
         ;
         ; Modifies:
-        ;   ZP_CUR_HTRK ($0D) -- updated to new position
+        ;   ZP_CUR_HTRK -- updated to new position
         ; Clobbers: A, X, Y
         LDX ZP_SLOT_X16
         CMP DISK_MOTOR_ON,X     ; Turn motor on (side effect of read)
@@ -947,8 +947,8 @@ READ_SECTORS:
         ; Read all sectors for a track group.
         ;
         ; Inputs:
-        ;   ZP_TGT_TRACK ($0F) -- starting track number
-        ;   ZP_TBL_INDEX ($10) -- index into PAGE_TABLE
+        ;   ZP_TGT_TRACK -- starting track number
+        ;   ZP_TBL_INDEX -- index into PAGE_TABLE
         ;   ZP_SLOT_X16 -- slot * 16
         ;
         ; Behavior:
@@ -1036,7 +1036,7 @@ SEEK_AND_RESTORE_ZP:
         BNE .restore
         RTS
 
-; Save zero page to ZP_SAVE ($5700), then fall through to LOADER_ENTRY.
+; Save zero page to ZP_SAVE, then fall through to LOADER_ENTRY.
 SAVE_ZP:
         LDX #$00
 .save:
@@ -1172,7 +1172,7 @@ NIBBLE_BUF_AUX:                 ; NIBBLE_BUF_AUX- auxiliary nibble buffer
 <<page table>>=
 
 ; =========================================================================
-;  Page destination table ($5400)
+;  Page destination table
 ; =========================================================================
 
         ORG $5400
@@ -1206,7 +1206,7 @@ PAGE_TABLE_RELOAD:
 <<dispatch>>=
 
 ; =========================================================================
-;  DISPATCH --- Main loader dispatch ($5500)
+;  DISPATCH --- Main loader dispatch
 ; =========================================================================
 
         ORG $5500
@@ -1255,7 +1255,7 @@ DISPATCH:
         RTS
 
 ; =========================================================================
-;  FIRST_BOOT --- First-time boot sequence ($5524)
+;  FIRST_BOOT --- First-time boot sequence
 ; =========================================================================
 
 FIRST_BOOT:
@@ -1272,7 +1272,7 @@ FIRST_BOOT:
         ;   Phase 3: probes paddle buttons to detect joystick; sets input
         ;     handler pointers accordingly.
         ;   Phase 4: applies Apple IIc patches if needed, restores zero
-        ;     page from ZP_SAVE, and jumps to game entry via ($004E).
+        ;     page from ZP_SAVE, and jumps to game entry via.
         ;
         ; Modifies:
         ;   LDR_PHASE, $0100-$01EF, $0300-$03EF, FLOOR_Y_TABLE,
@@ -1284,9 +1284,9 @@ FIRST_BOOT:
         LDY #$00               ; Page table offset = $00
         JSR SET_TRACK_AND_TABLE
 
-; Copy loaded data to stack page ($0100) and $0300.
-; The first two sectors loaded ($5C00 and $5D00 pages) contain
-; initial stack and $0300 data.
+; Copy loaded data to stack page and $0300.
+; The first two sectors loaded ($5C00 and STAGE_VECTORS pages) contain
+; initial stack and VECTOR_PAGE data.
         LDY #$00
 .copy_init:
         LDA STAGE_STACK,Y
@@ -1355,9 +1355,9 @@ FIRST_BOOT:
 ; Joystick detected: point input pointers to hardware button registers.
 .joy_found:
         LDA #<SW_PUSH_BTN0
-        STA ZP_INPUT_1          ; ($52) -> $C061 (push button 0)
+        STA ZP_INPUT_1          ; -> $C061 (push button 0)
         LDA #<SW_PUSH_BTN1
-        STA ZP_INPUT_2          ; ($54) -> $C062 (push button 1)
+        STA ZP_INPUT_2          ; -> $C062 (push button 1)
         LDA #>SW_PUSH_BTN0
         STA ZP_INPUT_1+1
         STA ZP_INPUT_2+1
@@ -1385,7 +1385,7 @@ FIRST_BOOT:
                                 ;   dasm would emit 2-byte zero-page STA $00,X
         INX
         BNE .restore
-        JMP (ZP_GAME_ENTRY)     ; -> START_ATTRACT ($72A3) via ZP_SAVE
+        JMP (ZP_GAME_ENTRY)     ; -> START_ATTRACT via ZP_SAVE
 
 ; Padding with residual data.
         DS $55F2-*,0
@@ -1397,7 +1397,7 @@ FIRST_BOOT:
 <<empty and zp save>>=
 
 ; =========================================================================
-;  Empty page ($5600) and ZP save area ($5700)
+;  Empty page and ZP save area
 ; =========================================================================
 
         ORG $5600
@@ -1448,7 +1448,7 @@ ZP_SAVE:                        ; Zero page save/restore buffer
 
         ORG $5800
 RWTS_HIGH:
-; These routines execute at $BE00 after relocation by boot1.
+; These routines execute after relocation by boot1.
 ; Absolute address references within this code use $BExx/$BFxx addresses
 ; because that is where the code runs. The bytes are the same regardless
 ; of the ORG used for assembly.
@@ -1665,11 +1665,11 @@ as both the high byte of the JMP target and the LDX abs,Y opcode.
 ; as the LDX abs,Y opcode: LDX $C08C,Y.
 NIBBLE_READER = $BE37               ; Overlaps with 3rd byte of JMP above
 
-; Bytes $BE38-$BE3B are part of the LDX $C08C,Y instruction at $BE37
+; Bytes $BE38-$BE3B are part of the LDX $C08C,Y instruction
 ; (overlap with JMP high byte) plus its BPL loop. We emit them as raw
 ; bytes since they're not independent instructions.
-        DC.B $8C,$C0           ; ...continuation of LDX $C08C,Y at $BE37
-        DC.B $10,$FB           ; BPL NIBBLE_READER ($BE37)
+        DC.B $8C,$C0           ; ...continuation of LDX $C08C,Y
+        DC.B $10,$FB           ; BPL NIBBLE_READER
         ROL                    ; Shift odd nibble into position
         STA $A0                ; Save partial
 .wait_even:
@@ -1776,7 +1776,7 @@ and clears the hi-res screen holes.
 <<screen restore>>=
 
         ORG $BEA0
-; Call game screen callback at $5C00, then fall through to SCREEN_RESTORE.
+; Call game screen callback, then fall through to SCREEN_RESTORE.
 SCREEN_PRE_RESTORE:
         JSR GAME_SCREEN_RTN     ; STAGE_STACK(game callback)
 
@@ -1785,11 +1785,11 @@ SCREEN_RESTORE:
         ; Restore hi-res screen after a disk load.
         ;
         ; Inputs:
-        ;   Buffer at $4000 -- saved screen lines from SCROLL_UP
+        ;   Buffer -- saved screen lines from SCROLL_UP
         ;
         ; Behavior:
         ;   Scrolls saved lines back to screen via SCROLL_DN, clears
-        ;   hi-res lines $21-$BB using address tables at $7380/$7440,
+        ;   hi-res lines $21-$BB using address tables,
         ;   then zeroes screen hole bytes ($x78-$x7F, $xF8-$xFF)
         ;   across hi-res page 2 ($4000-$5FFF).
         ;
@@ -1818,7 +1818,7 @@ SCREEN_RESTORE:
 ; group in hi-res memory: bytes $78-$7F and $F8-$FF of each page).
         LDA #$00
         LDY #$40
-        STA $A0                 ; Start at $4000
+        STA $A0                 ; Start
         STY $A1
         LDX #$20                ; 32 pages ($4000-$5FFF)
 .clear_page:
@@ -1940,7 +1940,7 @@ RESET_BANG:
         DEC .clear_page         ; Next page down
         BIT SW_SPEAKER          ; Beep
         LDA .clear_page
-        CMP #$08                ; Stop at $0800
+        CMP #$08                ; Stop
         BCS .clear_outer        ; Outer loop: next page
 
 ; Set reset vector to slot ROM and reboot.
@@ -1986,16 +1986,16 @@ with the operand bytes of a [[JMP $28A0]] instruction (the byte sequence
         ORG $BF4B
 SCROLL_UP_PRE:
         SUBROUTINE
-        ; Save 32 hi-res screen lines to a buffer at $4000.
+        ; Save 32 hi-res screen lines to a buffer.
         ;
         ; Inputs:
-        ;   A -- if $FF, perform scroll; otherwise jump to game handler at $28A0
+        ;   A -- if $FF, perform scroll; otherwise jump to game handler
         ;
         ; Behavior:
         ;   Checks A for $FF; if not, delegates to game scroll handler.
         ;   Otherwise copies 32 lines (40 bytes each) from hi-res page 2
-        ;   to the buffer at $4000, using SCREEN_ADDR_TBL for source
-        ;   addresses. SCROLL_UP ($BF50) is an alternate entry that
+        ;   to the buffer, using SCREEN_ADDR_TBL for source
+        ;   addresses. SCROLL_UP is an alternate entry that
         ;   overlaps with the JMP operand bytes (LDY #$28).
         ;
         ; Modifies:
@@ -2006,7 +2006,7 @@ SCROLL_UP_PRE:
         BEQ .skip               ; If A was $FF, skip to main scroll
         JMP GAME_SCROLL_HANDLER ; Otherwise jump to game scroll handler
 
-; The JMP $28A0 above is $4C $A0 $28. Entry at $BF50 sees $A0 $28 = LDY #$28.
+; The JMP $28A0 above is $4C $A0 $28. Entry sees $A0 $28 = LDY #$28.
 SCROLL_UP = SCROLL_UP_PRE + 5  ; overlapping entry (LDY #$28)
 
 .skip:
@@ -2047,12 +2047,12 @@ SCROLL_DN:
         ; Restore 32 hi-res screen lines from the buffer and fill bottom rows.
         ;
         ; Inputs:
-        ;   Buffer at $4000-$44FF -- saved screen data from SCROLL_UP
+        ;   Buffer-$44FF -- saved screen data from SCROLL_UP
         ;
         ; Behavior:
         ;   Copies 32 lines (40 bytes each) from the buffer back to
         ;   hi-res page 2 in reverse order using SCREEN_ADDR_TBL,
-        ;   then fills the bottom 4 screen rows (188-191) from $0300 data.
+        ;   then fills the bottom 4 screen rows (188-191) from VECTOR_PAGE data.
         ;
         ; Modifies:
         ;   Hi-res page 2, $A0-$A3
@@ -2084,7 +2084,7 @@ SCROLL_DN:
         DEX
         BPL .copy_line
 
-; Fill bottom 4 hi-res rows (188-191) from $0300 data.
+; Fill bottom 4 hi-res rows (188-191) from VECTOR_PAGE data.
         LDX #$27                ; 40 bytes
 .fill_bottom:
         LDA BOTTOM_ROW_DATA,X
@@ -2194,9 +2194,9 @@ ZP_HGR_SRC      = $29           ; Hi-res copy source pointer (2 bytes)
 ZP_HGR_DST      = $2F           ; Hi-res copy destination pointer (2 bytes)
 
 ; --- Main loop subroutines (in hex data blocks, not yet disassembled) ---
-; (LEVEL_INTRO_TICK has its own ORG chunk at $699C)
+; (LEVEL_INTRO_TICK has its own ORG chunk)
 PAUSE_HANDLER   = $0E51         ; Wait for keypress (pause handler ORG)
-; (PLAYER_MOVE_TICK has its own ORG chunk at $64CB; formerly stubbed as COLLISION_DETECT.)
+; (PLAYER_MOVE_TICK has its own ORG chunk; formerly stubbed as COLLISION_DETECT.)
 ; (DRAW_PLAYER is the label at ORG $64DF, formerly stubbed as SPRITE_RENDER.)
 SCORE_DISPLAY   = $673B         ; Score / status display (entity process hex)
 ; (SPECIAL_TICK is the label at ORG $6ABA, formerly stubbed as SOUND_UPDATE ---
@@ -2221,7 +2221,7 @@ SCORE_DISPLAY   = $673B         ; Score / status display (entity process hex)
 ; (ENEMY_A_DRAW is the label at ORG $1423, formerly SPRITE_DRAW_1.)
 ; (ENEMY_B_ADVANCE is the label at ORG $1536 in enemy-b-advance chunk)
 ; (ENEMY_B_DRAW is the label at ORG $1591 in enemy-b-draw chunk)
-; (BEAM_UPDATE at $130A has its own ORG chunk)
+; (BEAM_UPDATE has its own ORG chunk)
 GAME_OVER       = $BDA0         ; Game over handler (outside drol.bin range)
 
 ; --- Attract-mode subroutine stubs ---
@@ -2256,7 +2256,7 @@ GAME_INIT_NOP:
         ; HUD/frame unpacker -- draws the static playfield chrome.
         ;
         ; Inputs:
-        ;   Data stream at $4100: [dest_lo, dest_hi, 40 bytes]... $FF
+        ;   Data stream: [dest_lo, dest_hi, 40 bytes]... $FF
         ;
         ; Behavior:
         ;   Reads records from $4100. Each record has a 2-byte destination
@@ -2272,8 +2272,8 @@ GAME_INIT_NOP:
         DS 19,$EA
 
 GAME_INIT:
-        LDY #<HUD_FRAME_DATA ; Stream pointer low ($00)
-        LDA #>HUD_FRAME_DATA ; Stream pointer high ($41)
+        LDY #<HUD_FRAME_DATA ; Stream pointer low
+        LDA #>HUD_FRAME_DATA ; Stream pointer high
         STY ZP_STREAM
         STA ZP_STREAM+1
 .next_record:
@@ -2328,7 +2328,7 @@ GAME_INIT_PAD:
         ORG $4100
 HUD_FRAME_DATA:
 ; 37 records of [dest_lo, dest_hi, 40 data bytes] + $FF terminator.
-; Record 0: hi-res row at $2000.
+; Record 0: hi-res row.
         DC.W $2000
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 55 2A 55 2A 55
@@ -2932,11 +2932,11 @@ KEY_CTRL_K      = $8B           ; Ctrl-K (switch to keyboard)
 KEY_CTRL_V      = $96           ; Ctrl-V (speaker click)
 
 ; --- Sound ---
-; $36/$37 form an indirect pointer used by SFX_TONE ($67C1) as a
+; $36/$37 form an indirect pointer used by SFX_TONE as a
 ; speaker-click address.  $37 = $C0 (set during boot and never changed),
 ; so the effective target is $C0xx.  Bit 4 of $36 selects between:
-;   $36 = $30 -> ($36) points at $C030 (SW_SPEAKER) -- clicks the speaker
-;   $36 = $20 -> ($36) points at $C020 (cassette output, unused) -- silent
+;   $36 = $30 -> points (SW_SPEAKER) -- clicks the speaker
+;   $36 = $20 -> points at $C020 (cassette output, unused) -- silent
 ; Ctrl-S flips bit 4 to mute/unmute without touching the rest of the byte.
 ; $38 is a preserved copy used across game/attract transitions (ATTRACT_LOOP
 ; saves $36 into $38 on no-more-lives; restores $38 into $36 on game start).
@@ -2957,7 +2957,7 @@ INPUT_PROCESS:
         ;   to KEY_HANDLER_EXT.
         ;
         ; Modifies:
-        ;   ZP_SFX_CLICK ($36), ZP_SFX_CLICK_SAVED ($38)
+        ;   ZP_SFX_CLICK, ZP_SFX_CLICK_SAVED
         ;   (Ctrl-S flips bit 4 to mute/unmute the SFX_TONE click target).
         ; Clobbers: A
 
@@ -3552,7 +3552,7 @@ SMC_INPUT = *
         JSR INPUT_DISPATCH      ; Input handler (BIT during attract)
         JSR INPUT_PROCESS       ; Input processing
 
-; --- Movement direction slots ($67D7) ---
+; --- Movement direction slots ---
 ; Each slot is either JSR (active direction) or BIT (inactive / attract).
 ; The input handler patches the opcode byte to toggle directions.
 ; During attract mode, all four are BIT (harmless reads).
@@ -3628,7 +3628,7 @@ DISPLAY_PAGE_FLIP:
         ;   advances ZP $00 by $80.
         ;
         ; Modifies:
-        ;   Display page soft switch, ZP $00, self ($6139)
+        ;   Display page soft switch, ZP $00, self
         ; Clobbers: A
 SMC_PAGE_SWITCH = *+1
         LDA $C055               ; Toggle display page (operand patched)
@@ -3710,7 +3710,7 @@ DISPLAY_UPDATE:
         ; Timer display update -- draws animated timer element.
         ;
         ; Inputs:
-        ;   ZP_ANIM_COUNTER ($1F) -- animation frame index
+        ;   ZP_ANIM_COUNTER -- animation frame index
         ;
         ; Modifies:
         ;   SMC_TILE_SRC_LO/HI (tile data pointer), sprite params
@@ -3766,7 +3766,7 @@ POST_FRAME:
         ;
         ; Inputs:
         ;   ZP_SCORE_HI/MID/LO ($D1/$D2/$D3) -- BCD score
-        ;   ZP_LIVES_BCD ($5E) -- BCD lives counter drawn as two HUD digits
+        ;   ZP_LIVES_BCD -- BCD lives counter drawn as two HUD digits
         ;
         ; Modifies:
         ;   Sprite parameters, SMC_TILE_SRC_LO/HI
@@ -4098,7 +4098,7 @@ SCORE_ADD:
         ; Score add -- adds BCD value to 3-byte score.
         ;
         ; Inputs:
-        ;   ZP_SCORE_ADD_LO/HI ($1A/$1B) -- BCD addend
+        ;   ZP_SCORE_ADD_LO/HI -- BCD addend
         ;
         ; Modifies:
         ;   ZP_SCORE_HI/MID/LO ($D1/$D2/$D3)
@@ -4213,7 +4213,7 @@ ZP_SCORE_2      = $2D           ; Score HUD digit 2
 ZP_CLEAR_COL    = $2E           ; Playfield-clear column counter / right edge
 ZP_LIVES_BCD    = $5E           ; BCD lives counter (shown in HUD; <0 = game over)
 ZP_RESTART_FLAG = $44           ; Dispatch flag written to $FF on cold start;
-                                ; only read at $5EC5 (dead code)
+                                ; only read (dead code)
 
 ; --- Playfield-column HUD bounds (read by BEAM_UPDATE, written here) ---
 HUD_SCORE_COL   = $65AB         ; Score-HUD right edge / playfield left bound
@@ -4225,7 +4225,7 @@ ZP_SCORE_MID    = $D2           ; BCD score, middle byte (thousands / hundreds)
 ZP_SCORE_LO     = $D3           ; BCD score, low byte (tens / ones)
 
 ; --- Tail-call target (sub-entry inside LEVEL_INTRO_TICK's .activate) ---
-; RESUME_GAMEPLAY_SMC is a module-level label at $6AA7, inside the
+; RESUME_GAMEPLAY_SMC is a module-level label, inside the
 ; LEVEL_INTRO_TICK chunk; it's the 13-byte SMC-patch tail of the
 ; .activate block, also reached directly by GAME_START_INIT's JMP.
 @
@@ -4246,7 +4246,7 @@ GAME_START_INIT:
         ;   Sets lives counter to $04 (BCD).  Sets restart flag to $FF.
         ;   Calls DIFFICULTY_RESET (minimum tier preset) and
         ;     INIT_LEVEL_STATE (restore ZP from master buffers).
-        ;   Tail-calls RESUME_GAMEPLAY_SMC ($6AA7) to re-enable input
+        ;   Tail-calls RESUME_GAMEPLAY_SMC to re-enable input
         ;     and sprite-render main-loop slots.
         ;
         ; Modifies:
@@ -4355,7 +4355,7 @@ placeholder guess and has been retired.
 ; --- Zero-page (difficulty tiers) ---
 ZP_DIFF_TMP     = $5C           ; Scratch: holds D2 high nibble shifted right
 ZP_PROJ_GATE    = $32           ; Beam-subsystem gate (BPL=active; $FF=suppress)
-                                ; Read at entry of BEAM_UPDATE ($130A).
+                                ; Read at entry of BEAM_UPDATE.
 ZP_DIFF_THRESH_A = $34          ; Primary tier threshold (varies: $00/$40/$80/$F0)
 ZP_DIFF_THRESH_B = $35          ; Secondary tier threshold ($50 min, $30 max)
 ZP_ADVANCE_RATE = $40           ; Per-tick decrement for 16-bit event timers
@@ -4374,20 +4374,20 @@ DIFFICULTY_UPDATE:
         ; dictated by the current score.
         ;
         ; Inputs:
-        ;   ZP_FRAME_COUNTER ($FD)          --- run only when zero.
-        ;   ZP_SCORE_HI ($D1) low nibble    --- ten-thousands digit.
-        ;   ZP_SCORE_MID ($D2) high nibble  --- thousands digit.
+        ;   ZP_FRAME_COUNTER          --- run only when zero.
+        ;   ZP_SCORE_HI low nibble    --- ten-thousands digit.
+        ;   ZP_SCORE_MID high nibble  --- thousands digit.
         ;
         ; Behavior:
         ;   Builds tier index = (D1_lo << 4) | (D2_hi >> 4), dispatches
         ;   to one of four presets by comparing against $04/$10/$18.
         ;   Each preset writes slot-count maxima ($31, $32, $33), tier
-        ;   thresholds ($34, $35), and timer-advance rate ($40).
+        ;   thresholds ($34, $35), and timer-advance rate.
         ;
         ; Modifies:
-        ;   ZP_PROJ_MAX ($31), ZP_PROJ_GATE ($32), ZP_COMPANION_GATE ($33),
-        ;   ZP_DIFF_THRESH_A ($34), ZP_DIFF_THRESH_B ($35),
-        ;   ZP_ADVANCE_RATE ($40), ZP_DIFF_TMP ($5C).
+        ;   ZP_PROJ_MAX, ZP_PROJ_GATE, ZP_COMPANION_GATE,
+        ;   ZP_DIFF_THRESH_A, ZP_DIFF_THRESH_B,
+        ;   ZP_ADVANCE_RATE, ZP_DIFF_TMP.
         ; Clobbers: A, X
 
 ; --- Guard: only run on frame-counter wrap ---
@@ -4512,7 +4512,7 @@ During the animation, any detected key or joystick press diverts to
 ; (DRAW_SPRITE / SPRITE_PTR_LO / SPRITE_PTR_HI have their own ORG chunk)
 ; (ZP_SPRITE_W / _H / _Y / _X live in draw sprite defines)
 SMC_ATTRACT_RTS = $6827         ; Self-mod: attract-loop control slot
-; SMC_SR_YSRC ($64FA) / SMC_SR_HEIGHT ($64F6) are the operand bytes of
+; SMC_SR_YSRC / SMC_SR_HEIGHT are the operand bytes of
 ; DRAW_PLAYER's idle-path "LDA $06" and "LDA #$13" (sprite Y source and
 ; height).  Declared in the draw-player defines chunk.
 ; LIFE_LOST_HANDLER reasserts their default values ($06 / $13) on
@@ -4524,7 +4524,7 @@ ZP_EXTRA_LIVES  = $8C           ; Stash of extra lives (separate from
                                 ;   HUD counter ZP_LIVES_BCD); animated
                                 ;   down when the HUD counter bottoms out.
 ; ZP_SFX_CLICK / ZP_SFX_CLICK_SAVED are the low bytes of the speaker-click
-; pointer used by SFX_TONE ($67C1).  See the sound section of the input
+; pointer used by SFX_TONE.  See the sound section of the input
 ; processor for how $36/$38 encode sound on/off via bit 4.
 ZP_SFX_CLICK       = $36        ; Current SFX click pointer low ($20 silent, $30 speaker)
 ZP_SFX_CLICK_SAVED = $38        ; Preserved copy across attract/game transitions
@@ -4535,12 +4535,12 @@ ZP_SFX_CLICK_SAVED = $38        ; Preserved copy across attract/game transitions
         ORG $7208
 LIFE_LOST_HANDLER:
         SUBROUTINE
-        ; End-of-life handler --- fires when ZP_LIVES_BCD ($5E) goes
+        ; End-of-life handler --- fires when ZP_LIVES_BCD goes
         ; negative (BCD underflow below $00 yields $99, bit~7 set).
         ; MAIN_LOOP reaches this via [[JMP LIFE_LOST_HANDLER]] at $682F.
         ;
         ; Inputs:
-        ;   ZP_EXTRA_LIVES ($8C)  --- stash of extra lives to animate
+        ;   ZP_EXTRA_LIVES  --- stash of extra lives to animate
         ;
         ; Behavior:
         ;   Clears keyboard strobe, runs level-transition effect, pins
@@ -4549,7 +4549,7 @@ LIFE_LOST_HANDLER:
         ;   to ATTRACT_KEY_DETECT / ATTRACT_JOY_DETECT if found), and
         ;   runs one frame of MAIN_LOOP between draws.  When the
         ;   extras stash is empty, enters the RESTART_NEW_GAME tail
-        ;   ($7255) which resets game state and falls through to
+        ; which resets game state and falls through to
         ;   ATTRACT_LOOP.
         ;
         ; Modifies:
@@ -4603,7 +4603,7 @@ LIFE_LOST_RESUME:
 
 ; --- Run one frame and continue loop ---
         JSR MAIN_LOOP            ; Run one game frame
-        JMP .check_extra         ; (MAIN_LOOP normally re-enters at $7208
+        JMP .check_extra         ; (MAIN_LOOP normally re-enters
                                  ;  via JMP, so this JMP is fallback only)
 
 ; --- No more extras: reset game and fall through to attract ---
@@ -4787,8 +4787,8 @@ ATTRACT_ANIM_3:
         ; Attract elevator animation -- oscillate Y position.
         ;
         ; Inputs:
-        ;   ZP_ELEV_DIR ($F7) -- direction flag
-        ;   ZP_ELEV_Y ($F3) -- current Y position
+        ;   ZP_ELEV_DIR -- direction flag
+        ;   ZP_ELEV_Y -- current Y position
         ;
         ; Modifies:
         ;   ZP_ELEV_Y, ZP_ELEV_DIR
@@ -4959,8 +4959,8 @@ ATTRACT_LOOP:
         ;
         ; Behavior:
         ;   Calls main loop from attract entry (skipping input).
-        ;   Polls joystick buttons ($52/$54) and keyboard ($C000).
-        ;   On input: sets input mode flag ($48), patches main loop
+        ;   Polls joystick buttons and keyboard.
+        ;   On input: sets input mode flag, patches main loop
         ;   for game mode, calls $13A4 (game start init), enters
         ;   MAIN_LOOP.
         ;
@@ -5145,10 +5145,10 @@ SCREEN_ROW_HELPER:
 ENTITY_ACTIVE:
         SUBROUTINE
         ; Entity state tables ($03A8-$03F7, 80 bytes, 20 slots x 4 tables).
-        ; Rounds out the 8-table entity-record block that begins at $0358
+        ; Rounds out the 8-table entity-record block that begins
         ; (first 4 tables live in the game-data-02C6 chunk).  On disk these
         ; initial bytes are loaded with the level, but the game zeros the
-        ; entire block during normal play; the non-zero bytes at $03BC and
+        ; entire block during normal play; the non-zero bytes and
         ; RESCUE_COUNTDOWN-$03EF are stale disk-image residue and never observed at
         ; runtime.
 
@@ -5201,7 +5201,7 @@ ZP_CLEAR_COL_END = $2D          ; Low-column terminator (inclusive)
                                 ; (game-time alias: ZP_SCORE_2)
 
 ; Note: the helpers called by CLEAR_PAGE1/CLEAR_PAGE2 ---
-; INTERLACE_FILL_P1 ($0A0F) and INTERLACE_FILL_P2 ($0B5C) --- are
+; INTERLACE_FILL_P1 and INTERLACE_FILL_P2 --- are
 ; full ORG chunks later in the framebuffer library (their labels
 ; become visible through dasm's global symbol resolution, no EQU
 ; forward-declaration is needed here).
@@ -5219,15 +5219,15 @@ CLEAR_PAGE1:
         ; between level transitions and after full redraws.
         ;
         ; Inputs:
-        ;   ZP_CLEAR_COL      ($2E) --- high (starting) column.
-        ;   ZP_CLEAR_COL_END  ($2D) --- low terminator (inclusive: stop when X==this).
+        ;   ZP_CLEAR_COL --- high (starting) column.
+        ;   ZP_CLEAR_COL_END --- low terminator (inclusive: stop when X==this).
         ;   $0300,X  --- 40-byte ($28) bottom-text-row source strip.
         ;
         ; Behavior:
         ;   1. Outer X-loop (ZP_CLEAR_COL..ZP_CLEAR_COL_END): zero every
         ;      column of the stripe-decimated 32-row playfield region
         ;      (STA $2600,X + 34 partner rows) and call INTERLACE_FILL_P1
-        ;      ($0A0F) to fill another 63 rows with A=$00 per iteration.
+        ; to fill another 63 rows with A=$00 per iteration.
         ;   2. After X==ZP_CLEAR_COL_END, LDX #$27 and loop the $0300
         ;      text-buffer bytes into 12 interlaced rows (bottom four
         ;      text lines, $3028.. $3D50).
@@ -5316,8 +5316,8 @@ CLEAR_PAGE2:
         ;   with X/A already set up, skipping the register prologue.
         ;
         ; Inputs:
-        ;   ZP_CLEAR_COL      ($2E) --- outer-loop column start.
-        ;   ZP_CLEAR_COL_END  ($2D) --- inclusive terminator.
+        ;   ZP_CLEAR_COL --- outer-loop column start.
+        ;   ZP_CLEAR_COL_END --- inclusive terminator.
         ;   $0300,X --- 40-byte text-area source.
         ;
         ; Clobbers: A, X
@@ -5528,8 +5528,8 @@ INTERLACE_BLIT_P1:
         ;
         ; Inputs:
         ;   ZP_BLIT_SRC/+1  --- pointer to the column-major sprite.
-        ;   ZP_BLIT_X_START ($59) --- rightmost paint column (inclusive).
-        ;   ZP_BLIT_X_END   ($58) --- left terminator (exclusive).
+        ;   ZP_BLIT_X_START --- rightmost paint column (inclusive).
+        ;   ZP_BLIT_X_END --- left terminator (exclusive).
         ;
         ; Behavior:
         ;   Y := 0; X := ZP_BLIT_X_START.  While X != ZP_BLIT_X_END:
@@ -5755,7 +5755,7 @@ INTERLACE_BLIT_P1:
         ORG $070B
 INTERLACE_BLIT_P2:
         SUBROUTINE
-        ; Page-2 twin of INTERLACE_BLIT_P1 ($054E): blit a column-major
+        ; Page-2 twin of INTERLACE_BLIT_P1: blit a column-major
         ; sprite into hi-res page 2's 3-band perspective playfield
         ; ($4000-$5FFF).  Byte-for-byte identical to INTERLACE_BLIT_P1
         ; except each STA operand's high nibble is +$20 (so the painted
@@ -6009,7 +6009,7 @@ FLOOR_LINES_P1:
         ORG $08DF
 FLOOR_LINES_P2:
         SUBROUTINE
-        ; Page-2 twin of FLOOR_LINES_P1 ($08C8): paint 40 bytes into
+        ; Page-2 twin of FLOOR_LINES_P1: paint 40 bytes into
         ; the same four rows on hi-res page~2 ($4C28, $4EA8, $4D50,
         ; $4FD0).  Byte-for-byte identical to the page-1 variant with
         ; the destination row bases rebased from $2xxx to $4xxx.
@@ -6041,9 +6041,9 @@ FLOOR_LINES_P2:
         ; Hi-res framebuffer library tail ($08F6-$09FD, 264 bytes).
         ; Contains the TEXT_ROW_FROM_A30D_P1/P2 helpers at $08F6/$097A
         ; (both still awaiting full carve-out).  The INTERLACE_BLIT
-        ; helpers at $054E/$070B and the FLOOR_LINES painters at
+        ; helpers and the FLOOR_LINES painters at
         ; $08C8/$08DF have been carved out into their own chunks above;
-        ; the INTERLACE_RESTORE helpers at $09FE/$0B4B are carved as
+        ; the INTERLACE_RESTORE helpers are carved as
         ; their own chunks below.
 
         HEX A2 0F A0 00 B9 0D A3 9D
@@ -6093,8 +6093,8 @@ INTERLACE_RESTORE_P1:
         ; 105 interlaced rows.
         ;
         ; Inputs:
-        ;   ZP_SCORE_0  ($2B) --- high (starting) column (inclusive).
-        ;   ZP_SCORE_1  ($2C) --- low terminator (the loop stops WHEN
+        ;   ZP_SCORE_0 --- high (starting) column (inclusive).
+        ;   ZP_SCORE_1 --- low terminator (the loop stops WHEN
         ;                         X == ZP_SCORE_1; the terminator itself
         ;                         is NOT painted).
         ;   $0300,X  --- 40-byte text-area source buffer
@@ -6103,7 +6103,7 @@ INTERLACE_RESTORE_P1:
         ;
         ; Behavior:
         ;   X starts at ZP_SCORE_0 and decrements.  For each X, load
-        ;   the source byte at $0300,X and call INTERLACE_FILL_P1 to
+        ;   the source byte,X and call INTERLACE_FILL_P1 to
         ;   broadcast it across 105 hi-res rows at column X (rows
         ;   72-106 / 112-146 / 152-186 --- the same 3-band interlace
         ;   pattern as CLEAR_PAGE1).  Exit early when X == ZP_SCORE_1.
@@ -6117,7 +6117,7 @@ INTERLACE_RESTORE_P1:
         ;    relies on CLEAR_DRAW_PAGE's earlier pass instead.)
         ;   BIT ZP_PAGE_FLAG gate at each caller selects page 1 (this
         ;   routine) when ZP_PAGE_FLAG is positive; page 2
-        ;   (INTERLACE_RESTORE_P2 at $0B4B) otherwise.
+        ;   (INTERLACE_RESTORE_P2) otherwise.
         ;
         ; Note on ZP aliasing:
         ;   $2B and $2C are aliased as ZP_SCORE_0 / ZP_SCORE_1 (HUD
@@ -6291,7 +6291,7 @@ INTERLACE_RESTORE_P2:
         SUBROUTINE
         ; Page-2 twin of INTERLACE_RESTORE_P1 at [[$09FE]]: repaint
         ; column range [[[ZP_SCORE_0] .. [ZP_SCORE_1]+1]] of hi-res page
-        ; 2 from the $0300 buffer, using INTERLACE_FILL_P2 ($0B5C) for
+        ; 2 from the VECTOR_PAGE buffer, using INTERLACE_FILL_P2 for
         ; the per-column 105-row broadcast.  Byte-for-byte identical to
         ; INTERLACE_RESTORE_P1 except the inner JSR targets the page-2
         ; fill helper.
@@ -6318,7 +6318,7 @@ INTERLACE_RESTORE_P2:
         ORG $0B5C
 INTERLACE_FILL_P2:
         SUBROUTINE
-        ; Page-2 twin of INTERLACE_FILL_P1 ($0A0F): broadcast A across
+        ; Page-2 twin of INTERLACE_FILL_P1: broadcast A across
         ; 105 interlaced hi-res row positions at column X on page 2
         ; ($4000-$5FFF), then RTS.  Byte-for-byte identical to
         ; INTERLACE_FILL_P1 except each STA operand's high byte is
@@ -6584,14 +6584,14 @@ the sprite bytes flips across the perspective receding axis.}
 ZP_PERSP_OFFSET_LO = $0F        ; Pre-computed perspective X offset (low)
 ZP_PERSP_OFFSET_HI = $10        ; Pre-computed perspective X offset (high)
                                 ; (Set once per call by RESCUE_DRAW_PERSPECTIVE_CACHE
-                                ;  at $0D8C from PERSPECTIVE_XOFF_LO/HI[ZP_PLAYER_Y]
+                                ; from PERSPECTIVE_XOFF_LO/HI[ZP_PLAYER_Y]
                                 ;  minus ZP_SPRITE_XREF.  Read by each per-slot inner
                                 ;  loop to map ENTITY_FLOOR_COL/XOFF_IDX to a
                                 ;  screen-X residue in $AF.)
 
 ; --- Rescue-child sprite tables (per step phase x direction) ---
 ; Width = $03, height = $1A or $1C; indexed by PROJ_FRAME_IDX[$0358,Y].
-; The four pairs sit at $75DB/$75E2/$75E9/$75F0 (low) and $76DB/...$76F0 (high).
+; The four pairs sit/$75E9/$75F0 (low) and $76DB/...$76F0 (high).
 RESCUE_SPR_NEG_END_LO  = $75DB  ; -dir end-of-step body (h=$1A)
 RESCUE_SPR_NEG_END_HI  = $76DB
 RESCUE_SPR_NEG_MID_LO  = $75E2  ; -dir mid-step body (h=$1C)
@@ -6612,49 +6612,49 @@ RESCUE_DRIFT_PITCH = $0213
         ORG $0C98
 RESCUE_DRAW:
         SUBROUTINE
-        ; Per-frame draw + collision sibling of RESCUE_UPDATE ($6F9C)
+        ; Per-frame draw + collision sibling of RESCUE_UPDATE
         ; for the 20-slot rescue-child entity subsystem.  Iterates Y
         ; from $13 down through the slots, draws each active body
         ; sprite, and runs three collision/spawn checks: floor-enemy
         ; overlap (kill both, +35 BCD), player pickup (centre-band
         ; X + Y window, +35 BCD, $1E := $FF, no life-loss), and
         ; hostile projectile-spawn (entity on player floor + odd row
-        ; + free $C5/$C9/$CD slot; throw a projectile in walking
+        ; + free $C5/ZP_PROJ_X/ZP_PROJ_Y slot; throw a projectile in walking
         ; direction).  See section Rescue-child draw, collision, and
         ; projectile-spawn for the full description.
         ;
         ; Inputs:
-        ;   ENTITY_ACTIVE,Y ($03A8)      --- per-slot state byte.
-        ;   ENTITY_FLOOR_COL,Y ($0358)   --- per-slot world-X low.
-        ;   ENTITY_XOFF_IDX,Y ($036C)    --- per-slot world-X high.
-        ;   ENTITY_FLOOR_POS,Y ($0380)   --- per-slot row Y.
-        ;   RESCUE_DIR,Y ($0394)         --- walk direction.
-        ;   RESCUE_ANIM,Y ($03BC)        --- step anim counter.
-        ;   RESCUE_FLOOR,Y ($03D0)       --- assigned floor index.
-        ;   RESCUE_COUNTDOWN,Y ($03E4)   --- drift-mode countdown.
-        ;   ZP_PLAYER_Y ($4A)            --- player perspective Y.
-        ;   ZP_SPRITE_XREF ($4C)         --- level-fixed X reference.
-        ;   ZP_PLAYER_COL ($06)          --- player col (pickup band).
-        ;   ZP_PLAYER_FLOOR_CUR ($0C)    --- player floor (proj-spawn gate).
-        ;   ZP_PROJ_MAX ($31)            --- max projectile slot index.
-        ;   ZP_ENEMY_FLAG ($9B)          --- 4-slot floor-enemy active flag.
-        ;   ZP_ENEMY_COL ($9F)           --- 4-slot enemy column.
-        ;   ZP_ENEMY_Y ($A3)             --- 4-slot enemy Y coordinate.
-        ;   ZP_PROJ_DIR ($C5)            --- 4-slot projectile direction.
-        ;   ZP_PROJ_X ($C9)              --- 4-slot projectile column.
-        ;   ZP_PROJ_Y ($CD)              --- 4-slot projectile row.
+        ;   ENTITY_ACTIVE,Y      --- per-slot state byte.
+        ;   ENTITY_FLOOR_COL,Y   --- per-slot world-X low.
+        ;   ENTITY_XOFF_IDX,Y    --- per-slot world-X high.
+        ;   ENTITY_FLOOR_POS,Y   --- per-slot row Y.
+        ;   RESCUE_DIR,Y         --- walk direction.
+        ;   RESCUE_ANIM,Y        --- step anim counter.
+        ;   RESCUE_FLOOR,Y       --- assigned floor index.
+        ;   RESCUE_COUNTDOWN,Y   --- drift-mode countdown.
+        ;   ZP_PLAYER_Y            --- player perspective Y.
+        ;   ZP_SPRITE_XREF         --- level-fixed X reference.
+        ;   ZP_PLAYER_COL          --- player col (pickup band).
+        ;   ZP_PLAYER_FLOOR_CUR    --- player floor (proj-spawn gate).
+        ;   ZP_PROJ_MAX            --- max projectile slot index.
+        ;   ZP_ENEMY_FLAG          --- 4-slot floor-enemy active flag.
+        ;   ZP_ENEMY_COL           --- 4-slot enemy column.
+        ;   ZP_ENEMY_Y             --- 4-slot enemy Y coordinate.
+        ;   ZP_PROJ_DIR            --- 4-slot projectile direction.
+        ;   ZP_PROJ_X              --- 4-slot projectile column.
+        ;   ZP_PROJ_Y              --- 4-slot projectile row.
         ;   $42, $43                     --- floor-enemy hit-box Y extents
         ;                                    (level-fixed; loaded by
         ;                                    INIT_LEVEL_STATE from $029A/B).
-        ;   PERSPECTIVE_XOFF_LO/HI ($1A8F/$198F) --- perspective tables.
-        ;   PROJ_SCREEN_COL ($1C34)      --- screen-col lookup.
-        ;   PROJ_FRAME_IDX  ($1B8F)      --- frame-index lookup.
+        ;   PERSPECTIVE_XOFF_LO/HI --- perspective tables.
+        ;   PROJ_SCREEN_COL      --- screen-col lookup.
+        ;   PROJ_FRAME_IDX      --- frame-index lookup.
         ;
         ; Modifies:
-        ;   ZP_PERSP_OFFSET_LO/HI ($0F/$10) --- pre-compute scratch.
-        ;   ZP_HIT_FLAG ($1E) on player pickup.
+        ;   ZP_PERSP_OFFSET_LO/HI --- pre-compute scratch.
+        ;   ZP_HIT_FLAG on player pickup.
         ;   ZP_SPRITE_W/H/X/Y, SMC_DS_SRC_LO/HI, SMC_SPRITE_MASK_OP/ARG.
-        ;   ZP_DRAW_LOOP_IDX ($5C), ZP_SCORE_ADD_LO/HI ($1A/$1B).
+        ;   ZP_DRAW_LOOP_IDX, ZP_SCORE_ADD_LO/HI.
         ;   ENTITY_ACTIVE,Y (drift transition); RESCUE_COUNTDOWN,Y on hit.
         ;   ZP_ENEMY_FLAG,X (cleared on rescue/enemy mutual-kill).
         ;   ZP_PROJ_DIR/X/Y,X (projectile slot seeded on hostile-spawn).
@@ -7204,7 +7204,7 @@ ZP_ENEMY_Y      = $A3           ; 4-slot enemy Y coordinate
 ; --- Per-floor parameters (read by BEAM_TRACER_SPAWN) ---
 FLOOR_THRESH    = $83           ; Per-level floor threshold (Y-coord limit)
 
-; (ZP_SCORE_ADD_LO/HI at $1A/$1B are defined in score-add defines.)
+; (ZP_SCORE_ADD_LO/HI are defined in score-add defines.)
 
 ; --- Sprite-draw SMC operands (patched by BEAM_TARGET_DRAW) ---
 ; (SMC_DS_SRC_LO/HI for DRAW_SPRITE are $65B3/$65B4.)
@@ -7231,14 +7231,14 @@ BEAM_UPDATE:
         ; i.e.\ at the minimum and moderate difficulty tiers.
         ;
         ; Inputs:
-        ;   ZP_PROJ_GATE ($32)        --- $FF = subsystem off; else on.
-        ;   BEAM_STATE ($03FF)        --- beam target state machine.
-        ;   BEAM_Y ($03FE)            --- current beam Y scan position.
+        ;   ZP_PROJ_GATE        --- $FF = subsystem off; else on.
+        ;   BEAM_STATE        --- beam target state machine.
+        ;   BEAM_Y            --- current beam Y scan position.
         ;   TRACER_STATE ($0237..B)   --- 5-slot tracer lifetime/X.
         ;   TRACER_ROW ($023C..40)    --- 5-slot tracer floor-row.
-        ;   ZP_PAGE_FLAG ($00)        --- select hi-res page 1 vs 2.
-        ;   ZP_PLAYER_COL ($06)       --- player floor number for hit test.
-        ;   ZP_FRAME_COUNTER ($FD)    --- every-other-frame spawn gate.
+        ;   ZP_PAGE_FLAG        --- select hi-res page 1 vs 2.
+        ;   ZP_PLAYER_COL       --- player floor number for hit test.
+        ;   ZP_FRAME_COUNTER    --- every-other-frame spawn gate.
         ;
         ; Behavior:
         ;   Three sub-handlers advance the beam state
@@ -7293,7 +7293,7 @@ BEAM_UPDATE:
         LDX TRACER_ROW,Y                ; Floor-row index
         LDA SCREEN_ROW_ADDR_LO,X        ; row-address low byte
         DC.B $8D                        ; STA abs opcode (force 3 bytes)
-        DC.W SMC_TRACER_ADDR_LO         ; Patch operand at $1359
+        DC.W SMC_TRACER_ADDR_LO         ; Patch operand
         LDA SCREEN_ROW_ADDR_HI,X        ; row-address high byte
         BIT ZP_PAGE_FLAG                ; $00: +$20 high when page 2
         BPL .page1
@@ -7301,7 +7301,7 @@ BEAM_UPDATE:
         ADC #$20
 .page1:
         DC.B $8D                        ; STA abs opcode (force 3 bytes)
-        DC.W SMC_TRACER_ADDR_HI         ; Patch operand at $135A
+        DC.W SMC_TRACER_ADDR_HI         ; Patch operand
         LDX ZP_DRAW_LOOP_IDX            ; New state = screen column
         CPX HUD_LIVES_COL                ; Skip if col >= playfield right bound
         BCS .skip_draw
@@ -7338,8 +7338,8 @@ BEAM_TRACER_SPAWN:
         ;
         ; Inputs:
         ;   TRACER_STATE ($0237..B)   --- 5-slot state (BMI = inactive).
-        ;   ZP_FRAME_COUNTER ($FD)    --- AND #$01 gates spawn.
-        ;   BEAM_STATE ($03FF) / BEAM_Y ($03FE)
+        ;   ZP_FRAME_COUNTER    --- AND #$01 gates spawn.
+        ;   BEAM_STATE / BEAM_Y
         ;   FLOOR_THRESH ($83,X)      --- per-floor Y threshold.
         ;
         ; Behavior:
@@ -7706,7 +7706,7 @@ $[[$04]]\times[[$04]]$).}
 ; which walking-feet sprite base to use for the current frame.
 ZP_ENEMY_A_LEG_PHASE = $0F      ; Walking phase scratch (ENEMY_A_DRAW)
 
-; --- Enemy-A sprite families (within SPRITE_TABLE_LO/HI at $B000/$B080) ---
+; --- Enemy-A sprite families (within SPRITE_TABLE_LO/HI) ---
 ; All four families are indexed by PROJ_FRAME_IDX (X after the clip).
 SPRITE_TABLE_A_BODY_LO  = $B009 ; Main body pointers, low
 SPRITE_TABLE_A_BODY_HI  = $B089 ; Main body pointers, high
@@ -7737,10 +7737,10 @@ ENEMY_A_DRAW:
         ;   ZP_ENEMY_A_STATE    --- $00 off; +steady (animates); -drift (stance).
         ;   ZP_ENEMY_A_POS      --- 16-bit world X for enemy-A.
         ;   ZP_ENEMY_A_ROW      --- Body-sprite starting screen row.
-        ;   ZP_PLAYER_Y ($4A)   --- Player Y (index into perspective tables).
-        ;   ZP_PLAYER_COL ($06) --- Player column (collision X reference).
-        ;   ZP_SPRITE_XREF ($4C) --- Level-fixed X reference.
-        ;   ZP_FRAME_COUNTER ($FD) --- Frame-counter source for walk gate.
+        ;   ZP_PLAYER_Y   --- Player Y (index into perspective tables).
+        ;   ZP_PLAYER_COL --- Player column (collision X reference).
+        ;   ZP_SPRITE_XREF --- Level-fixed X reference.
+        ;   ZP_FRAME_COUNTER --- Frame-counter source for walk gate.
         ;   PERSPECTIVE_XOFF_LO/HI --- Y-to-X transform tables.
         ;   SPRITE_TABLE_A_BODY_LO/HI   --- Body-sprite pointer table.
         ;   SPRITE_TABLE_A_FEET_LO/HI   --- Stance-feet pointer table.
@@ -7888,8 +7888,8 @@ ENEMY_A_DRAW:
         STA ZP_SPRITE_Y                 ; Feet row = body row + $12
         LDY ZP_ENEMY_A_LEG_PHASE        ; Phase: 1 or 3
         CPY #$01
-        BEQ .walk_step2                 ; phase 1 -> STEP2 table ($B01E)
-        LDX ZP_SAVE_X                   ; phase 3 -> STEP1 table ($B010)
+        BEQ .walk_step2                 ; phase 1 -> STEP2 table
+        LDX ZP_SAVE_X                   ; phase 3 -> STEP1 table
         LDA SPRITE_TABLE_A_STEP1_LO,X
         STA SMC_DS_SRC_LO
         LDA SPRITE_TABLE_A_STEP1_HI,X
@@ -8049,7 +8049,7 @@ ZP_ENEMY_B_ROW     = $E3        ; Sprite starting row
 ZP_ENEMY_B_SND_CTR = $E4        ; Sound-click counter (BMI = idle)
 ; Sound pitch table for enemy-B, packed inside SCREEN_ROW_HELPER.
 SND_PITCH_TBL_B    = $0231      ; Pitch bytes indexed by ZP_ENEMY_B_SND_CTR
-; (ENEMY_C_ROW_TBL at $84 is reused here with X in {0,1,2,3}.)
+; (ENEMY_C_ROW_TBL is reused here with X in {0,1,2,3}.)
 
 <<enemy b advance>>=
 
@@ -8277,7 +8277,7 @@ ZP_CLIP_X_HI    = $B0           ; Screen-clip scratch high byte
 ; origin that enemy positions are measured against.
 ZP_SPRITE_XREF  = $4C           ; World-X reference (level-fixed = $02)
 
-; --- Perspective-X lookup tables, indexed by ZP_PLAYER_Y ($4A) ---
+; --- Perspective-X lookup tables, indexed by ZP_PLAYER_Y ---
 ; $1A8F holds the low byte and $198F holds the high byte of a Y-to-X
 ; transform.  The low-byte table is (roughly) $(Y>>1)* 7$, so
 ; deeper floor positions translate to a larger horizontal offset.
@@ -8287,7 +8287,7 @@ PERSPECTIVE_XOFF_HI = $198F     ; Y -> screen-X offset, high byte
 
 ; --- Sprite family offsets into SPRITE_TABLE_LO / SPRITE_TABLE_HI ---
 ; Enemy-B's steady-mode sprite set starts at base index $25 in the
-; two 128-entry parallel tables at $B000 (lo) / $B080 (hi).
+; two 128-entry parallel tables (lo) / $B080 (hi).
 SPRITE_TABLE_B_LO = $B025       ; Enemy-B body sprite pointers, low
 SPRITE_TABLE_B_HI = $B0A5       ; Enemy-B body sprite pointers, high
 
@@ -8298,7 +8298,7 @@ SPRITE_TABLE_B_HI = $B0A5       ; Enemy-B body sprite pointers, high
 ENEMY_B_PUFF_LO = $755A         ; Drift-mode puff sprite pointer, low byte
 ENEMY_B_PUFF_HI = $765A         ; Drift-mode puff sprite pointer, high byte
 
-; --- Game-over/hit-remaining flag ($39) ---
+; --- Game-over/hit-remaining flag ---
 ; Initialized to $01 by INIT_LEVEL_STATE and reset to $01 by the
 ; player-reincarnation code at $5EC3.  Each overlap-hit in
 ; ENEMY_A_DRAW / ENEMY_B_DRAW decrements this counter; once it
@@ -8316,15 +8316,15 @@ ENEMY_B_DRAW:
         ; Dispatches on ZP_ENEMY_B_STATE: $00 exits; positive does the
         ; full steady-mode draw and hit-test; negative takes the
         ; drift-mode tail that draws a smaller puff sprite using a
-        ; level-specific sprite-pointer pair at $755A/$765A.
+        ; level-specific sprite-pointer pair.
         ;
         ; Inputs:
         ;   ZP_ENEMY_B_STATE    --- $00 off; +steady; -drift.
         ;   ZP_ENEMY_B_POS      --- 16-bit world X for this enemy.
         ;   ZP_ENEMY_B_ROW      --- Sprite starting screen row.
-        ;   ZP_PLAYER_Y ($4A)   --- Player Y (index into perspective tables).
-        ;   ZP_PLAYER_COL ($06) --- Player column (collision X reference).
-        ;   ZP_SPRITE_XREF ($4C) --- Level-fixed X reference.
+        ;   ZP_PLAYER_Y   --- Player Y (index into perspective tables).
+        ;   ZP_PLAYER_COL --- Player column (collision X reference).
+        ;   ZP_SPRITE_XREF --- Level-fixed X reference.
         ;   PERSPECTIVE_XOFF_LO/HI --- Y-to-X transform tables.
         ;   SPRITE_TABLE_B_LO/HI  --- Body-sprite pointer table base.
         ;   ENEMY_B_PUFF_LO/HI    --- Level-specific drift-puff sprite.
@@ -8343,7 +8343,7 @@ ENEMY_B_DRAW:
         ;      by 2, reset sound counter, award +$0300 BCD via
         ;      SCORE_ADD, DEC ZP_GAME_OVER, exit.
         ;   6. Drift-mode draw tail: draw $02x$06 puff sprite using
-        ;      level-specific pointer pair at $755A/$765A.
+        ;      level-specific pointer pair.
         ;
         ; Modifies:
         ;   ZP_CLIP_X_LO/HI, sprite-param ZPs ($56/$57/$5B/$5D),
@@ -8565,7 +8565,7 @@ ENEMY_C_ADVANCE:
         ;   2. Drift mode bobs ZP_ENEMY_C_ROW vertically using the
         ;      frame-counter bit-4 phase, not a PRNG skip gate.
         ;   3. Rearm deactivates the slot (writes $00 to state) and
-        ;      reseats the row from the two-entry $83/$84 table ---
+        ;      reseats the row from the two-entry FLOOR_THRESH/ENEMY_C_ROW_TBL table ---
         ;      it does NOT wake another slot.
         ;
         ; Inputs:
@@ -8832,14 +8832,14 @@ ENEMY_C_DRAW:
         ; $00 exits; positive does the full steady-mode draw (main
         ; body + tail sprite) and 4-slot enemy hit-test; negative
         ; takes the drift-mode tail that draws a smaller puff sprite
-        ; using a level-specific pointer pair at $7559/$7659.
+        ; using a level-specific pointer pair.
         ;
         ; Inputs:
         ;   ZP_ENEMY_C_STATE    --- $00 off; +steady; -drift.
         ;   ZP_ENEMY_C_POS      --- 16-bit world X for enemy-C.
         ;   ZP_ENEMY_C_ROW      --- Sprite starting screen row.
-        ;   ZP_PLAYER_Y ($4A)   --- Player Y (index into perspective tables).
-        ;   ZP_SPRITE_XREF ($4C) --- Level-fixed X reference.
+        ;   ZP_PLAYER_Y   --- Player Y (index into perspective tables).
+        ;   ZP_SPRITE_XREF --- Level-fixed X reference.
         ;   ZP_ENEMY_A_STATE    --- Inspected by cross-slot broadcast.
         ;   ZP_ENEMY_FLAG/COL/Y --- 4-slot floor-enemy tables ($9B/$9F/$A3).
         ;   PERSPECTIVE_XOFF_LO/HI --- Y-to-X transform tables.
@@ -9418,7 +9418,7 @@ RESTART_DISPATCH:
         ; here appear to be a leftover from a development restart
         ; flow that was superseded by the live LIFE_LOST_HANDLER /
         ; START_GAME_FROM_ATTRACT / INPUT_PROCESS Ctrl-R paths.
-        ; ZP_RESTART_FLAG ($44) is written to $FF by GAME_START_INIT
+        ; ZP_RESTART_FLAG is written to $FF by GAME_START_INIT
         ; but never read at runtime --- this is the only read in the
         ; whole binary and it never executes.
         ;
@@ -9431,7 +9431,7 @@ RESTART_DISPATCH:
         ;   flag > 0               --> JSR GAME_RESTART (skip player/
         ;                             HUD reseed) then JMP MAIN_LOOP
         ;
-        ; The GAME_RESTART sub-entry ($13C2) is tailored for exactly
+        ; The GAME_RESTART sub-entry is tailored for exactly
         ; this caller --- it skips the player-Y and HUD-column reseed
         ; that GAME_START_INIT does from the main entry --- which is
         ; further evidence that this dispatcher was the originally
@@ -9511,12 +9511,12 @@ RESTART_DISPATCH:
         ; The per-frame tick chain that each movement handler invokes is:
         ;   JSR CLEAR_DRAW_PAGE  ($61E4)  --- zero the drawing page
         ;   JSR TEXT_ROW_DISPATCH ($636C) --- text-strip restore
-        ;   JSR REFRESH_LEFT_WALL ($626A) --- left-edge wall
-        ;   JSR REFRESH_RIGHT_WALL ($61F0) --- right-edge wall
-        ;   JSR GAME_ENGINE_A_STUB_62CA ($62CA) --- floor-edge background
-        ;   JSR REFRESH_PILLARS ($62E2)   --- six landmark pillars
+        ;   JSR REFRESH_LEFT_WALL --- left-edge wall
+        ;   JSR REFRESH_RIGHT_WALL --- right-edge wall
+        ;   JSR GAME_ENGINE_A_STUB_62CA --- floor-edge background
+        ;   JSR REFRESH_PILLARS   --- six landmark pillars
         ;   JSR GAME_ENGINE_A_STUB_6321 ($6321) --- entity-X redraw loop
-        ; The four playfield-refresh routines at $61F0, $626A, $62E2,
+        ; The four playfield-refresh routines, $626A, $62E2,
         ; and (pair-wise) $62CA/$6321 have been carved out of this
         ; blob; only $62CA and $6321 still await full RE.
 
@@ -9631,11 +9631,11 @@ REFRESH_RIGHT_WALL:
         ; column-bounds scratch in ZP.
         ;
         ; Inputs:
-        ;   ZP_PLAYER_Y     ($4A) --- player world-Y ($00..$EF).
-        ;   ZP_PAGE_FLAG    ($00) --- drawing-page selector (BMI = page 2).
+        ;   ZP_PLAYER_Y --- player world-Y ($00..$EF).
+        ;   ZP_PAGE_FLAG --- drawing-page selector (BMI = page 2).
         ;   $4C                   --- sprite-pointer index into the
         ;                             $7520/$7620 wall-animation tables.
-        ;   WALL_SPR_LO/HI at $7520/$7620 --- per-frame sprite pointers.
+        ;   WALL_SPR_LO/HI --- per-frame sprite pointers.
         ;
         ; Behavior:
         ;   Compute delta = $EF - ZP_PLAYER_Y.  If delta overflowed
@@ -9655,10 +9655,10 @@ REFRESH_RIGHT_WALL:
         ;   if negative, JSR INTERLACE_RESTORE_P2 + JSR INTERLACE_BLIT_P2.
         ;
         ; Modifies:
-        ;   ZP_BLIT_X_START ($59), ZP_BLIT_X_END ($58),
+        ;   ZP_BLIT_X_START, ZP_BLIT_X_END,
         ;   ZP_BLIT_SRC ($FE/$FF),
-        ;   ZP_SCORE_0 ($2B), ZP_SCORE_1 ($2C), ZP_CLEAR_COL ($2E),
-        ;   HUD_LIVES_COL ($65A7),
+        ;   ZP_SCORE_0, ZP_SCORE_1, ZP_CLEAR_COL,
+        ;   HUD_LIVES_COL,
         ;   hi-res page 1/2 framebuffer (via the paired RESTORE+BLIT).
         ; Clobbers: A, X, Y
 
@@ -9785,11 +9785,11 @@ REFRESH_LEFT_WALL:
         ; (the playfield left bound read by BEAM_UPDATE).
         ;
         ; Inputs:
-        ;   ZP_PLAYER_Y     ($4A) --- player world-Y ($00..$EF).
-        ;   ZP_PAGE_FLAG    ($00) --- drawing-page selector (BMI = page 2).
-        ;   $4C                   --- sprite-pointer index into the
-        ;                             $7519/$7619 wall-animation tables.
-        ;   WALL_L_SPR_LO/HI at $7519/$7619 --- per-frame sprite pointers.
+        ;   ZP_PLAYER_Y --- player world-Y ($00..$EF).
+        ;   ZP_PAGE_FLAG --- drawing-page selector (BMI = page 2).
+        ;   ZP_SPRITE_XREF        --- sprite-pointer index into the
+        ;                             WALL_L_SPR_LO/HI wall-animation tables.
+        ;   WALL_L_SPR_LO/HI      --- per-frame sprite pointers.
         ;
         ; Behavior:
         ;   Compute delta = $11 - ZP_PLAYER_Y.  If delta < 0, RTS.
@@ -9809,10 +9809,10 @@ REFRESH_LEFT_WALL:
         ;   ZP_PAGE_FLAG.
         ;
         ; Modifies:
-        ;   ZP_BLIT_X_START ($59), ZP_BLIT_X_END ($58),
+        ;   ZP_BLIT_X_START, ZP_BLIT_X_END,
         ;   ZP_BLIT_SRC ($FE/$FF),
-        ;   ZP_SCORE_0 ($2B), ZP_SCORE_1 ($2C), ZP_SCORE_2 ($2D),
-        ;   HUD_SCORE_COL ($65AB),
+        ;   ZP_SCORE_0, ZP_SCORE_1, ZP_SCORE_2,
+        ;   HUD_SCORE_COL,
         ;   hi-res page 1/2 framebuffer (via the paired RESTORE+BLIT).
         ; Clobbers: A, X, Y
 
@@ -9934,14 +9934,14 @@ REFRESH_FLOOR_LINES:
         ; page 2 depending on ZP_PAGE_FLAG.
         ;
         ; Inputs:
-        ;   ZP_WALK_FRAME ($4B)       --- walking-animation frame
+        ;   ZP_WALK_FRAME       --- walking-animation frame
         ;                                 (0..11, cycled by
         ;                                 PLAYER_TICK_MOVE_LEFT/RIGHT).
-        ;   FLOOR_SPR_LO/HI at $750E/$760E --- 12-entry 16-bit
+        ;   FLOOR_SPR_LO/HI --- 12-entry 16-bit
         ;                                 pointer table; indexed
         ;                                 entry points to a 40-byte
         ;                                 source row.
-        ;   ZP_PAGE_FLAG  ($00)       --- drawing-page selector
+        ;   ZP_PAGE_FLAG       --- drawing-page selector
         ;                                 (BMI = page 2).
         ;
         ; Behavior:
@@ -10051,11 +10051,11 @@ REFRESH_PILLARS:
         ; drawing page.
         ;
         ; Inputs:
-        ;   ZP_PLAYER_Y  ($4A) --- player world-Y.
-        ;   ZP_PAGE_FLAG ($00) --- drawing-page selector (BMI = page 2).
+        ;   ZP_PLAYER_Y --- player world-Y.
+        ;   ZP_PAGE_FLAG --- drawing-page selector (BMI = page 2).
         ;   $4C                --- sprite-pointer index.
         ;   $60..$65           --- 6 world-Y landmark positions.
-        ;   PILLAR_SPR_LO/HI at $7500/$7600 --- sprite-pointer tables.
+        ;   PILLAR_SPR_LO/HI --- sprite-pointer tables.
         ;
         ; Behavior:
         ;   X := 5; loop:
@@ -10069,7 +10069,7 @@ REFRESH_PILLARS:
         ;     X := X - 1; if X >= 0, loop.
         ;
         ; Modifies:
-        ;   ZP_BLIT_X_START ($59), ZP_BLIT_X_END ($58),
+        ;   ZP_BLIT_X_START, ZP_BLIT_X_END,
         ;   ZP_BLIT_SRC ($FE/$FF), $5C (loop-index save),
         ;   hi-res page 1/2 framebuffer (via INTERLACE_BLIT_P*).
         ; Clobbers: A, X, Y
@@ -10119,9 +10119,9 @@ REFRESH_PILLARS:
         ; byte loop-tail that services the routine at $6321 (an
         ; entity-column redraw loop that patches SMC operands at
         ; $6662/$6663), followed by the text-row dispatch at
-        ; $636C, and the movement handlers DO_ASCEND ($6378),
-        ; DO_DESCEND ($63B4), DO_MOVE_RIGHT ($6409),
-        ; DO_MOVE_LEFT ($646D), and the direction-state tails at
+        ; $636C, and the movement handlers DO_ASCEND,
+        ; DO_DESCEND, DO_MOVE_RIGHT,
+        ; DO_MOVE_LEFT, and the direction-state tails at
         ; $64AA/$64BE/$64C8.  All still awaiting full RE.
 
         HEX CA 10 03 60 A6 41
@@ -10242,12 +10242,12 @@ PLAYER_MOVE_TICK:
         ; routes to the idle, move-left, or move-right tick handler.
         ;
         ; Inputs:
-        ;   ZP_MOVE_DIR ($04) --- $00 idle, $01 moving right, $FF moving left.
+        ;   ZP_MOVE_DIR --- $00 idle, $01 moving right, $FF moving left.
         ;
         ; Behavior:
-        ;   $04 == $00  --> JSR PLAYER_TICK_IDLE        ($6184)
-        ;   $04 <  0    --> JSR PLAYER_TICK_MOVE_LEFT   ($614B)
-        ;   $04 >  0    --> JSR PLAYER_TICK_MOVE_RIGHT  ($619A)
+        ;   $04 == $00  --> JSR PLAYER_TICK_IDLE
+        ;   $04 <  0    --> JSR PLAYER_TICK_MOVE_LEFT
+        ;   $04 >  0    --> JSR PLAYER_TICK_MOVE_RIGHT
         ;
         ; Clobbers: A (plus whatever the chosen handler clobbers)
 
@@ -10424,24 +10424,24 @@ SMC_SR_YSRC     = $64FA         ; ZP operand of "LDA $06" --- sprite Y source
 DRAW_PLAYER:
         SUBROUTINE
         ; Main-loop player sprite renderer (called from MAIN_LOOP's
-        ; JSR SPRITE_RENDER slot, SMC-toggled $20/$2C at $67EF).  Draws
+        ; JSR SPRITE_RENDER slot, SMC-toggled $20/$2C).  Draws
         ; the big centre-screen player sprite at column $14.  Two code
         ; paths, selected by the action flag ZP_ACTION_DIR:
         ;
         ; Inputs:
-        ;   ZP_ACTION_DIR ($02)       --- $00 idle, $01 ascend, $FF descend.
-        ;   ZP_PLAYER_STANCE ($03)    --- stance/floor index ($03..$09);
+        ;   ZP_ACTION_DIR       --- $00 idle, $01 ascend, $FF descend.
+        ;   ZP_PLAYER_STANCE    --- stance/floor index ($03..$09);
         ;                                 $03 = top floor, $09 = bottom floor.
-        ;   ZP_PLAYER_COL ($06)       --- sprite Y row (via SMC_SR_YSRC).
-        ;   ZP_HIT_FLAG ($1E)         --- $00 intro / $80..$FF hit: skip
+        ;   ZP_PLAYER_COL       --- sprite Y row (via SMC_SR_YSRC).
+        ;   ZP_HIT_FLAG         --- $00 intro / $80..$FF hit: skip
         ;                                 the action-path flicker draw.
         ;   $FD                       --- frame counter, indexes the
         ;                                 flicker's pseudo-random static source.
-        ;   PLAYER_SPR_IDLE_LO/HI     --- idle sprite pointers ($7527/$7627).
-        ;   PLAYER_SPR_ACTIVE_LO/HI   --- active sprite pointers ($7531/$7631).
-        ;   SMC_SR_HEIGHT ($64F6)     --- live height immediate (may be
+        ;   PLAYER_SPR_IDLE_LO/HI     --- idle sprite pointers.
+        ;   PLAYER_SPR_ACTIVE_LO/HI   --- active sprite pointers.
+        ;   SMC_SR_HEIGHT     --- live height immediate (may be
         ;                                 shrunk by LEVEL_INTRO_TICK).
-        ;   SMC_SR_YSRC ($64FA)       --- live ZP source for sprite Y
+        ;   SMC_SR_YSRC       --- live ZP source for sprite Y
         ;                                 (normally $06 = ZP_PLAYER_COL,
         ;                                 $17 = ZP_INTRO_Y during intro).
         ;
@@ -10460,9 +10460,9 @@ DRAW_PLAYER:
         ;     column/Y-source/JSR.
         ;
         ; Modifies:
-        ;   SMC_DS_SRC_LO/HI ($65B3/$65B4),
-        ;   SMC_SPRITE_MASK_OP/ARG ($65B7/$65B8),
-        ;   ZP_SPRITE_W/H ($56/$57), ZP_SPRITE_Y/X ($5B/$5D),
+        ;   SMC_DS_SRC_LO/HI,
+        ;   SMC_SPRITE_MASK_OP/ARG,
+        ;   ZP_SPRITE_W/H, ZP_SPRITE_Y/X,
         ;   hi-res page framebuffer.
         ; Clobbers: A, X, Y
 
@@ -10644,13 +10644,13 @@ DRAW_SPRITE:
         ; Sprite draw --- transparent (OR) blit to the hidden hi-res page.
         ;
         ; Inputs:
-        ;   ZP_SPRITE_W ($56)      --- width in bytes per row
-        ;   ZP_SPRITE_H ($57)      --- height in rows
-        ;   ZP_SPRITE_Y ($5B)      --- starting screen row (0..191)
-        ;   ZP_SPRITE_X ($5D)      --- starting column (right edge)
+        ;   ZP_SPRITE_W      --- width in bytes per row
+        ;   ZP_SPRITE_H      --- height in rows
+        ;   ZP_SPRITE_Y      --- starting screen row (0..191)
+        ;   ZP_SPRITE_X      --- starting column (right edge)
         ;   SPRITE_PTR_LO/HI       --- source pointer (self-mod operand of
         ;                              the LDA abs,Y at $65B2)
-        ;   ZP_PAGE_FLAG ($00) b7  --- selects page 1 (clear) or page 2
+        ;   ZP_PAGE_FLAG b7  --- selects page 1 (clear) or page 2
         ;                              (set) as the draw target.
         ;
         ; Behavior:
@@ -10663,10 +10663,10 @@ DRAW_SPRITE:
         ;   otherwise the byte is OR'd into screen RAM.
         ;
         ; Modifies:
-        ;   Self (operands at $6593/$6594, $65BA/$65BB, $65BD/$65BE),
-        ;   ZP_SPRITE_ROW_REMAIN ($5A), ZP_SPRITE_Y (post-increment).
+        ;   Self (operands, $65BA/$65BB, $65BD/$65BE),
+        ;   ZP_SPRITE_ROW_REMAIN, ZP_SPRITE_Y (post-increment).
         ;
-        ; Note: the [[BIT $00]] at $65B7/$65B8 ([[SMC_SPRITE_MASK_OP]] /
+        ; Note: the [[BIT $00]] ([[SMC_SPRITE_MASK_OP]] /
         ; [[SMC_SPRITE_MASK_ARG]]) is a *live* self-modifying slot --- it
         ; acts as a 2-byte NOP during normal draws, but LEVEL_INTRO_TICK
         ; patches it to [[AND #<flicker>]] for each countdown frame to
@@ -10702,7 +10702,7 @@ SMC_ROW_HI_HI = *+2               ; High of LDA abs,X operand --- patched
         LDA SPRITE_SMC_INIT,X     ; Runtime: LDA $72C0,X or LDA $7440,X
         STA SMC_ORA_HI            ; Patch ORA operand (high byte)
         STA SMC_STA_HI            ; Patch STA operand (high byte)
-        LDA SCREEN_ROW_ADDR_LO,X  ; Row-low (fixed $7380 table)
+        LDA SCREEN_ROW_ADDR_LO,X  ; Row-low (fixed SCREEN_ROW_ADDR_LO table)
         STA SMC_ORA_LO            ; Patch ORA operand (low byte)
         STA SMC_STA_LO            ; Patch STA operand (low byte)
 
@@ -10822,21 +10822,21 @@ game's memory map, overwritten before the first execution.
 DRAW_SPRITE_PLAYFIELD:
         SUBROUTINE
         ; Transparent (OR) blit with HUD-column clipping.
-        ; Sibling of DRAW_SPRITE ($656F): identical structure, but the
+        ; Sibling of DRAW_SPRITE: identical structure, but the
         ; inner column check rejects col $0B (left playfield wall) and
         ; cols >=$1C (right HISCORE HUD panel + offscreen) instead of
         ; the simple >=$28 offscreen check.  There is no flicker SMC
         ; slot and no dead-code tail.
         ;
         ; Inputs:
-        ;   ZP_SPRITE_W ($56)      --- width in bytes per row
-        ;   ZP_SPRITE_H ($57)      --- height in rows
-        ;   ZP_SPRITE_Y ($5B)      --- starting screen row (0..191)
-        ;   ZP_SPRITE_X ($5D)      --- starting column (right edge)
+        ;   ZP_SPRITE_W      --- width in bytes per row
+        ;   ZP_SPRITE_H      --- height in rows
+        ;   ZP_SPRITE_Y      --- starting screen row (0..191)
+        ;   ZP_SPRITE_X      --- starting column (right edge)
         ;   SMC_PFB_SRC_LO/HI      --- source pointer (self-mod operand
         ;                              of the LDA abs,Y at $6614),
         ;                              patched by DRAW_ENTITIES.
-        ;   ZP_PAGE_FLAG ($00) b7  --- selects page 1 (clear) or page 2
+        ;   ZP_PAGE_FLAG b7  --- selects page 1 (clear) or page 2
         ;                              (set) as the draw target.
         ;
         ; Behavior:
@@ -10850,7 +10850,7 @@ DRAW_SPRITE_PLAYFIELD:
         ;
         ; Modifies:
         ;   Self (operands at SMC_PFB_ROW_HI_LO/HI, SMC_PFB_ORA_LO/HI,
-        ;   SMC_PFB_STA_LO/HI), ZP_SPRITE_ROW_REMAIN ($5A),
+        ;   SMC_PFB_STA_LO/HI), ZP_SPRITE_ROW_REMAIN,
         ;   ZP_SPRITE_Y (post-increment).
         ; Clobbers: A, X, Y
 
@@ -10882,7 +10882,7 @@ SMC_PFB_ROW_HI_HI = *+2           ; High of LDA abs,X operand --- patched
         LDA SPRITE_SMC_INIT,X     ; Runtime: LDA $72C0,X or LDA $7440,X
         STA SMC_PFB_ORA_HI        ; Patch ORA operand (high byte)
         STA SMC_PFB_STA_HI        ; Patch STA operand (high byte)
-        LDA SCREEN_ROW_ADDR_LO,X  ; Row-low (fixed $7380 table)
+        LDA SCREEN_ROW_ADDR_LO,X  ; Row-low (fixed SCREEN_ROW_ADDR_LO table)
         STA SMC_PFB_ORA_LO        ; Patch ORA operand (low byte)
         STA SMC_PFB_STA_LO        ; Patch STA operand (low byte)
 
@@ -10999,14 +10999,14 @@ DRAW_SPRITE_OPAQUE:
         ; frame's pixels must be replaced, not OR'd on top of.
         ;
         ; Inputs:
-        ;   ZP_SPRITE_W ($56)      --- width in bytes per row
-        ;   ZP_SPRITE_H ($57)      --- height in rows
-        ;   ZP_SPRITE_Y ($5B)      --- starting screen row (0..191)
-        ;   ZP_SPRITE_X ($5D)      --- starting column (right edge)
+        ;   ZP_SPRITE_W      --- width in bytes per row
+        ;   ZP_SPRITE_H      --- height in rows
+        ;   ZP_SPRITE_Y      --- starting screen row (0..191)
+        ;   ZP_SPRITE_X      --- starting column (right edge)
         ;   SMC_TILE_SRC_LO/HI     --- source pointer (self-mod operand
         ;                              of the LDA abs,Y at $6661),
         ;                              patched by each caller.
-        ;   ZP_PAGE_FLAG ($00) b7  --- selects page 1 (clear) or page 2
+        ;   ZP_PAGE_FLAG b7  --- selects page 1 (clear) or page 2
         ;                              (set) as the draw target.
         ;
         ; Behavior:
@@ -11021,7 +11021,7 @@ DRAW_SPRITE_OPAQUE:
         ; Modifies:
         ;   Self (operands at SMC_OPQ_ROW_HI_LO/HI,
         ;   SMC_TILE_SRC_LO/HI, SMC_OPQ_STA_LO/HI),
-        ;   ZP_SPRITE_ROW_REMAIN ($5A), ZP_SPRITE_Y (post-increment).
+        ;   ZP_SPRITE_ROW_REMAIN, ZP_SPRITE_Y (post-increment).
         ; Clobbers: A, X, Y
 
 ; --- Select row-high table based on ZP_PAGE_FLAG ---
@@ -11051,7 +11051,7 @@ SMC_OPQ_ROW_HI_LO = *+1           ; Low of LDA abs,X operand --- patched
 SMC_OPQ_ROW_HI_HI = *+2           ; High of LDA abs,X operand --- patched
         LDA SPRITE_SMC_INIT,X     ; Runtime: LDA $72C0,X or LDA $7440,X
         STA SMC_OPQ_STA_HI        ; Patch STA operand (high byte)
-        LDA SCREEN_ROW_ADDR_LO,X  ; Row-low (fixed $7380 table)
+        LDA SCREEN_ROW_ADDR_LO,X  ; Row-low (fixed SCREEN_ROW_ADDR_LO table)
         STA SMC_OPQ_STA_LO        ; Patch STA operand (low byte)
 
 ; --- Inner loop: one iteration per sprite byte on this row ---
@@ -11179,8 +11179,8 @@ SFX_TONE:
         ; Behavior:
         ;   Outer loop (X iterations): TAY loads Y from pitch, the
         ;   DEY/BNE inner loop counts Y down to 0 (about 5*A + 5 cycles
-        ;   of delay), then CMP ($36),Y reads through the ZP pointer.
-        ;   When ZP_SFX_CLICK points at $C030 this toggles the speaker;
+        ;   of delay), then CMP,Y reads through the ZP pointer.
+        ;   When ZP_SFX_CLICK points this toggles the speaker;
         ;   when it points at $C020 the read is silent.  X is then
         ;   decremented; when X reaches 0 the routine returns.
         ;
@@ -11314,7 +11314,7 @@ HIT_BG_BYTE1    = $0340         ; Saved BG byte at offset +1
 HIT_BG_BYTE0    = $034C         ; Saved BG byte at offset +0
 
 ; --- 20-slot entity draw tables (phase 5) ---
-; ENTITY_ACTIVE is defined as a label at $03A8 in the entity-tables chunk.
+; ENTITY_ACTIVE is defined as a label in the entity-tables chunk.
 ENTITY_FLOOR_COL = $0358        ; Entity floor-column index table
 ENTITY_XOFF_IDX = $036C          ; Entity X-offset index table
 ENTITY_FLOOR_POS = $0380         ; Entity floor-row index table
@@ -11344,30 +11344,30 @@ DRAW_ENTITIES:
         ; entities onto the hidden hi-res page.
         ;
         ; Inputs:
-        ;   ZP_HIT_MAX ($41)          --- max hit-entity slot to scan.
-        ;   ENTITY_HIT_STATE,X ($8D)  --- per-slot active flag.
+        ;   ZP_HIT_MAX          --- max hit-entity slot to scan.
+        ;   ENTITY_HIT_STATE,X  --- per-slot active flag.
         ;   HIT_BG_HI / HIT_BG_LO     --- BG-restore destination (page 1).
         ;   HIT_BG_BYTE0 / HIT_BG_BYTE1 --- saved BG byte pair.
-        ;   ZP_PAGE_FLAG ($00) b7     --- negative: restore to page 2
+        ;   ZP_PAGE_FLAG b7     --- negative: restore to page 2
         ;                                 (add $20 to HIT_BG_HI).
-        ;   ZP_HIT_GATE ($0E)         --- negative: skip player draw.
-        ;   ZP_PLAYER_Y ($4A)         --- player floor position (+$10).
-        ;   ZP_HIT_FLAG ($1E)         --- game-state word ($00 = intro).
-        ;   ZP_INTRO_Y ($17)          --- intro sprite Y source.
-        ;   ZP_PLAYER_COL ($06)       --- player sprite Y source.
+        ;   ZP_HIT_GATE         --- negative: skip player draw.
+        ;   ZP_PLAYER_Y         --- player floor position (+$10).
+        ;   ZP_HIT_FLAG         --- game-state word ($00 = intro).
+        ;   ZP_INTRO_Y          --- intro sprite Y source.
+        ;   ZP_PLAYER_COL       --- player sprite Y source.
         ;   $FD bit 2                 --- player/special animation phase.
         ;   ZP_SPECIAL_A..ROW ($AB-$AE) --- special-sprite slot state.
-        ;   ZP_COMPANION_GATE ($33)   --- companion-slot gate.
+        ;   ZP_COMPANION_GATE   --- companion-slot gate.
         ;   ZP_COMPANION_COL/OFF/ROW  --- 2 companion slots ($11-$16).
         ;   ENTITY_ACTIVE ($03A8..$03BB) + parallel tables
-        ;     ENTITY_FLOOR_COL ($0358), ENTITY_XOFF_IDX ($036C),
-        ;     ENTITY_FLOOR_POS ($0380).
+        ;     ENTITY_FLOOR_COL, ENTITY_XOFF_IDX,
+        ;     ENTITY_FLOOR_POS.
         ;   FLOOR_TO_ROW / FLOOR_SPRITE_IDX / FLOOR_SCREEN_COL /
         ;     FLOOR_BASE_ROW lookup tables.
         ;
         ; Behavior:
         ;   Phase 1 scans ENTITY_HIT_STATE top-down for the first active
-        ;   slot, then writes HIT_BG_BYTE0/BYTE1 back into ($FB),Y=0/1
+        ;   slot, then writes HIT_BG_BYTE0/BYTE1 back into,Y=0/1
         ;   where ($FC,$FB) is assembled from HIT_BG_HI (+$20 if the
         ;   page flag is negative) and HIT_BG_LO.  Falls through.
         ;   Phases 2--5 each set sprite dimensions / position, patch
@@ -11375,10 +11375,10 @@ DRAW_ENTITIES:
         ;   FLOOR_TO_ROW into ZP_SPRITE_Y and JSR DRAW_SPRITE_PLAYFIELD.
         ;
         ; Modifies:
-        ;   SMC_PFB_SRC_LO / SMC_PFB_SRC_HI ($6615/$6616),
-        ;   ZP_DRAW_DEST_LO ($FB), ZP_DRAW_DEST_HI ($FC),
-        ;   ZP_DRAW_LOOP_IDX ($5C), ZP_SPRITE_W/H ($56/$57),
-        ;   ZP_SPRITE_Y/X ($5B/$5D), hi-res page framebuffers.
+        ;   SMC_PFB_SRC_LO / SMC_PFB_SRC_HI,
+        ;   ZP_DRAW_DEST_LO, ZP_DRAW_DEST_HI ($FC),
+        ;   ZP_DRAW_LOOP_IDX, ZP_SPRITE_W/H,
+        ;   ZP_SPRITE_Y/X, hi-res page framebuffers.
         ; Clobbers: A, X, Y
 
 ; --- Phase 1: find topmost active hit-entity, restore its BG ---
@@ -11399,7 +11399,7 @@ DRAW_ENTITIES:
 .hit_bg_page1:
         STA ZP_DRAW_DEST_LO+1           ; ($FC) = high byte
         LDA HIT_BG_LO,X
-        STA ZP_DRAW_DEST_LO             ; ($FB) = low byte
+        STA ZP_DRAW_DEST_LO             ; = low byte
         LDA HIT_BG_BYTE1,X              ; Saved pixel byte @ +1
         LDY #$01
         STA (ZP_DRAW_DEST_LO),Y         ; Restore to hi-res
@@ -11636,14 +11636,14 @@ LEVEL_DATA_BASE = $0200         ; Level data (ticks indexed 0..$12 via ZP_INTRO_
 SPRITE_TABLE_LO = $B000         ; Low bytes of sprite pointers ($B000-$B07F)
 SPRITE_TABLE_HI = $B080         ; High bytes of sprite pointers ($B080-$B0FF)
 
-; SMC_SR_HEIGHT ($64F6) / SMC_SR_YSRC ($64FA) are the self-modifying
+; SMC_SR_HEIGHT / SMC_SR_YSRC are the self-modifying
 ; operand bytes inside DRAW_PLAYER; they are declared in the draw-player
 ; defines chunk.  LEVEL_INTRO_TICK patches them on init (to shrink the
 ; sprite and re-point it at ZP_INTRO_Y) and on activation (to restore
 ; the default $13 height and $06 Y source).
 
 ; --- Self-modifying operand slot inside DRAW_SPRITE ---
-; SMC_SPRITE_MASK_OP ($65B7) / SMC_SPRITE_MASK_ARG ($65B8) are declared
+; SMC_SPRITE_MASK_OP / SMC_SPRITE_MASK_ARG are declared
 ; inline in the DRAW_SPRITE chunk as "= *" / "= *+1" over a DC.B $24 $00
 ; pair (disk-image encoding of BIT $00, a 2-byte NOP in the normal draw
 ; path).  LEVEL_INTRO_TICK patches them to AND #<flicker> during the
@@ -11663,18 +11663,18 @@ LEVEL_INTRO_TICK:
         ;   $1E                       --- state word
         ;                               $FF = needs init, $00 = intro running,
         ;                               $01 = gameplay active (fast RTS).
-        ;   ZP_INTRO_COUNTDOWN ($18)  --- countdown frames remaining.
-        ;   ZP_INTRO_TIMEOUT ($19)    --- auto-start timeout.
-        ;   ZP_INTRO_Y ($17)          --- saved intro sprite Y row.
+        ;   ZP_INTRO_COUNTDOWN  --- countdown frames remaining.
+        ;   ZP_INTRO_TIMEOUT    --- auto-start timeout.
+        ;   ZP_INTRO_Y          --- saved intro sprite Y row.
         ;   $FD                       --- frame counter (flicker / parity).
-        ;   ZP_LIVES_BCD ($5E)        --- BCD lives counter (goes negative = game over).
-        ;   ZP_PLAYER_COL ($06)       --- saved on init; software timer
+        ;   ZP_LIVES_BCD        --- BCD lives counter (goes negative = game over).
+        ;   ZP_PLAYER_COL       --- saved on init; software timer
         ;                               during wait phase.
         ;   $02, $05, $0A..$0E, $1D, $8C --- game-state scratch cleared
         ;                               or seeded on init/activation.
         ;   $41                       --- entity-slot count (cleared on wait).
         ;   $83,X ($84 with X=1)      --- per-level initial Y column.
-        ;   ZP_INPUT_1 ($52) / ZP_INPUT_2 ($54) --- handler pointers
+        ;   ZP_INPUT_1 / ZP_INPUT_2 --- handler pointers
         ;                               whose MSB can trigger activation.
         ;   LEVEL_DATA_BASE,$18       --- tone amplitude for countdown step.
         ;   SPRITE_TABLE_LO+1 /
@@ -11707,12 +11707,12 @@ LEVEL_INTRO_TICK:
         ;   $1E, $17, $18, $19, $02, $04, $05, $06, $0A, $0B, $0C,
         ;   $0D, $0E, $1D, $8C, $8D..$8D+$41 (entity-active table),
         ;   ZP_LIVES_BCD ($5E, BCD decrement),
-        ;   SMC slots in MAIN_LOOP: SMC_INPUT ($67D1), SMC_ASCEND
-        ;   ($67D7), SMC_DESCEND ($67DA), SMC_MOVE_LEFT ($67DD),
-        ;   SMC_MOVE_RIGHT ($67E0), SMC_RENDER ($67EF),
-        ;   SMC_SR_HEIGHT ($64F6), SMC_SR_YSRC ($64FA),
-        ;   SMC_SPRITE_MASK_OP ($65B7), SMC_SPRITE_MASK_ARG ($65B8),
-        ;   SPRITE_PTR_LO ($65B3), SPRITE_PTR_HI ($65B4),
+        ;   SMC slots in MAIN_LOOP: SMC_INPUT, SMC_ASCEND
+        ;, SMC_DESCEND, SMC_MOVE_LEFT,
+        ;   SMC_MOVE_RIGHT, SMC_RENDER,
+        ;   SMC_SR_HEIGHT, SMC_SR_YSRC,
+        ;   SMC_SPRITE_MASK_OP, SMC_SPRITE_MASK_ARG,
+        ;   SPRITE_PTR_LO, SPRITE_PTR_HI,
         ;   sprite-draw params ZP_SPRITE_W/H/Y/X, $5B, $5D, $56, $57.
         ; Clobbers: A, X, Y
 
@@ -11974,7 +11974,7 @@ was hidden by the old name.
 ; draw-entities defines chunk.  Keep both names: the tick uses the
 ; state-machine reading, the draw uses the phase-3 activity gate.
 ZP_SPECIAL_STATE = $AB          ; $00 inactive / positive active / negative drift
-ZP_SPECIAL_POS   = $AC          ; 16-bit position ($AC/$AD); aliases ZP_SPECIAL_X/Y
+ZP_SPECIAL_POS   = $AC          ; 16-bit position; aliases ZP_SPECIAL_X/Y
 ; ZP_SPECIAL_ROW = $AE is declared in draw-entities defines (phase 3).
 ZP_SPECIAL_SND_CTR = $B5        ; 12-step ascending-tone counter ($FF = idle)
 ZP_SPECIAL_HP    = $08          ; Remaining floor-enemies to kill before defeat
@@ -11989,7 +11989,7 @@ SND_PITCH_TBL_SPECIAL = $0218   ; 12 pitch bytes indexed by ZP_SPECIAL_SND_CTR
 SPECIAL_TICK:
         SUBROUTINE
         ; Per-frame tick for the ``special'' bonus-creature slot drawn
-        ; by DRAW_ENTITIES phase 3 (cf. SPECIAL_DRAW at $6B39).  Emits
+        ; by DRAW_ENTITIES phase 3 (cf. SPECIAL_DRAW).  Emits
         ; one ascending-tone click, then dispatches on state:
         ; inactive, active (advance X), or drift (fall with ladder
         ; pauses).  On transit end, falls into the rearm sub-entry.
@@ -12017,7 +12017,7 @@ SPECIAL_TICK:
         ;      +  : active path --- advance only (no row change).
         ;   3. X-advance: add $0002 to $AC/$AD.  If $AC $>=$ $5A and
         ;      $AD $=$ $03, fall into the rearm block; else RTS.
-        ;   4. Rearm ($6B14): reset $AC/$AD to $003E, pick a row
+        ;   4. Rearm: reset $AC/$AD to $003E, pick a row
         ;      anchor from $84,[PRNG&3] minus $0B, arm HP to 4, set
         ;      state to $01, RTS.
         ;
@@ -12260,7 +12260,7 @@ ZP_SCREEN_X_HI  = $B0           ; High byte of transformed screen X
 SND_PITCH_TBL_SPECIAL_B = $021F ; 4+ pitch bytes indexed by ZP_SPECIAL_SND_CTR_B
 
 ; --- Sprite-pointer tables ---
-; SPRITE_TABLE_LO/HI at $B000/$B080 is the main sprite-pointer table;
+; SPRITE_TABLE_LO/HI is the main sprite-pointer table;
 ; the special slot uses a family at offset $DA / $5A (i.e.\
 ; $AFDA/$B05A) indexed by the perspective-frame index. This
 ; family covers the drift-phase ``puff'' pointers, one pair per
@@ -12269,7 +12269,7 @@ SPECIAL_PUFF_LO = $AFDA         ; Drift-puff pointer table, low bytes
 SPECIAL_PUFF_HI = $B05A         ; Drift-puff pointer table, high bytes
 
 ; --- Walk-cycle body sprite base pointers ---
-; Four poses in the per-level sprite table at $7578/$7678.. $758D/$768D
+; Four poses in the per-level sprite table.. $758D/$768D
 ; indexed by Y (perspective-frame index from PROJ_FRAME_IDX).  The six
 ; SMC handlers visit them in order {0, 1, 2, 3, 2, 1} then cycle.
 SPECIAL_BODY_POSE0_LO = $7578   ; Pose 0 pointer table, low
@@ -12282,8 +12282,8 @@ SPECIAL_BODY_POSE3_LO = $758D   ; Pose 3 (offset +21)
 SPECIAL_BODY_POSE3_HI = $768D
 
 ; --- Inactive-phase marker sprite (single pointer) ---
-; One byte after ENEMY_C_PUFF ($7559/$7659) and one before ENEMY_B_PUFF
-; ($755A/$765A); a per-level pointer to the small $02x$06 ``peek''
+; One byte after ENEMY_C_PUFF and one before ENEMY_B_PUFF
+;; a per-level pointer to the small $02x$06 ``peek''
 ; sprite drawn while the slot is counting down to spawn.
 SPECIAL_PEEK_LO = $755B         ; Inactive-phase peek sprite pointer, low
 SPECIAL_PEEK_HI = $765B         ; Inactive-phase peek sprite pointer, high
@@ -12296,7 +12296,7 @@ SPECIAL_DRAW:
         SUBROUTINE
         ; Per-frame draw + collision handler for the ``special''
         ; bonus-creature slot; direct draw partner of SPECIAL_TICK.
-        ; Three-way dispatch on ZP_SPECIAL_STATE ($AB):
+        ; Three-way dispatch on ZP_SPECIAL_STATE:
         ;   $00  inactive --> tail JMP to SPECIAL_INACTIVE_DRAW
         ;   $01+ active   --> perspective transform, 4-slot
         ;                     floor-enemy kill-box, JMP through
@@ -12308,7 +12308,7 @@ SPECIAL_DRAW:
         ; Inputs:
         ;   ZP_SPECIAL_STATE, ZP_SPECIAL_POS (16-bit), ZP_SPECIAL_ROW
         ;   ZP_SPECIAL_HP, ZP_SPECIAL_SND_CTR_B
-        ;   ZP_PLAYER_Y ($4A), ZP_PLAYER_COL ($06), ZP_SPRITE_XREF ($4C)
+        ;   ZP_PLAYER_Y, ZP_PLAYER_COL, ZP_SPRITE_XREF
         ;   Floor-enemy slots $9B / $9F / $A3 (4 slots each)
         ;
         ; Behavior:
@@ -12449,7 +12449,7 @@ SPECIAL_DRAW:
         STA $1E                         ; Hit flag = $FF
 .dispatch_body:
         JMP SPECIAL_BODY_STEP1          ; SMC: operand bytes rewritten
-SMC_SPECIAL_BODY_LO = *-2               ;   by handlers at $6C3F+ to walk
+SMC_SPECIAL_BODY_LO = *-2               ;   by handlers+ to walk
 SMC_SPECIAL_BODY_HI = *-1               ;   the 6-step palindromic cycle.
 
 ; --- Drift-phase puff draw + player-catch (award +$0500 BCD) ---
@@ -12514,7 +12514,7 @@ SMC_SPECIAL_BODY_HI = *-1               ;   the 6-step palindromic cycle.
 ;   1. Writes the lo/hi of the next step's address into
 ;      SMC_SPECIAL_BODY_LO/HI (the $6BE8 JMP operand).
 ;   2. Patches SMC_DS_SRC_LO/HI (the DRAW_SPRITE source pointer
-;      operand at $65B3/$65B4) with its pose's level-data sprite
+;      operand) with its pose's level-data sprite
 ;      pointer, indexed by Y (perspective-frame index).
 ;   3. JSR DRAW_SPRITE, then RTS back to SPECIAL_DRAW's caller.
 ;
@@ -12612,15 +12612,15 @@ SPECIAL_INACTIVE_DRAW:
         SUBROUTINE
         ; Small $02x$06 ``peek'' marker drawn while the special slot
         ; is in its inactive countdown phase ($AB == 0).  The tick is
-        ; cycling $AC as an 8-bit counter and $AD stays at $00 (seeded
+        ; cycling $AC as an 8-bit counter and $AD stays (seeded
         ; by SPECIAL_REARM), so the sprite's screen position is
         ; effectively fixed by the slot's row-anchor $AE plus the
         ; perspective-transformed index in $AD.  Tail-jumped to from
         ; SPECIAL_DRAW's $6B4B.
         ;
         ; Inputs:
-        ;   ZP_SPECIAL_ROW ($AE), ZP_SPECIAL_POS+1 ($AD)
-        ;   SPECIAL_PEEK_LO/HI ($755B/$765B) --- per-level sprite pointer
+        ;   ZP_SPECIAL_ROW, ZP_SPECIAL_POS+1
+        ;   SPECIAL_PEEK_LO/HI --- per-level sprite pointer
         ;
         ; Modifies:
         ;   ZP_SPRITE_W/H/X/Y, SMC_DS_SRC_LO/HI.
@@ -12825,13 +12825,13 @@ COMPANION_UPDATE:
         ; behaviour.
         ;
         ; Inputs:
-        ;   ZP_COMPANION_GATE ($33)  --- subsystem gate ($FF disables).
+        ;   ZP_COMPANION_GATE  --- subsystem gate ($FF disables).
         ;   ZP_COMPANION_STATE,X     --- per-slot state machine byte.
         ;   ZP_COMPANION_DIR,X       --- per-slot direction ($01/-1/0).
         ;   ZP_COMPANION_POS_LO/HI,X --- 16-bit per-slot world-X.
         ;   ZP_COMPANION_ROW,X       --- per-slot row Y.
-        ;   ZP_PLAYER_Y ($4A), ZP_SPRITE_XREF ($4C), ZP_PLAYER_COL ($06),
-        ;   ZP_PLAYER_FLOOR ($0A), ZP_HIT_MAX ($41),
+        ;   ZP_PLAYER_Y, ZP_SPRITE_XREF, ZP_PLAYER_COL,
+        ;   ZP_PLAYER_FLOOR, ZP_HIT_MAX,
         ;   ENTITY_HIT_STATE ($8D,X), ENTITY_HIT_ROW ($72,X),
         ;   FLOOR_THRESH ($83,X), PERSPECTIVE_XOFF_LO/HI, PROJ_SCREEN_COL,
         ;   PROJ_FRAME_IDX.
@@ -12852,7 +12852,7 @@ COMPANION_UPDATE:
         ; Modifies:
         ;   ZP_COMPANION_STATE/DIR/POS/ROW, ZP_HIT_FLAG (on player hit),
         ;   ZP_SCREEN_X/HI, ZP_SPRITE_W/H/X/Y, ZP_DRAW_LOOP_IDX,
-        ;   SMC trampoline operands at $6E31/$6E32 and $6EAA/$6EAB,
+        ;   SMC trampoline operands and $6EAA/$6EAB,
         ;   SMC_DS_SRC_LO/HI (via the pose handlers).
         ; Clobbers: A, X, Y
 
@@ -13053,7 +13053,7 @@ COMPANION_UPDATE:
         BEQ .pos_draw_nocycle           ; state == 0: draw without advancing SMC
 COMPANION_POS_TRAMP:
         ; SMC trampoline: operand bytes rewritten by each pose handler.
-        ; On-disk initial target: COMPANION_POS_POSE1 ($6E33).
+        ; On-disk initial target: COMPANION_POS_POSE1.
         JMP COMPANION_POS_POSE1
 SMC_COMPANION_POS_LO = *-2
 SMC_COMPANION_POS_HI = *-1
@@ -13119,7 +13119,7 @@ COMPANION_POS_POSE3:
         LDA ZP_COMPANION_STATE,X
         BEQ .neg_draw_nocycle
 COMPANION_NEG_TRAMP:
-        ; SMC trampoline for -direction; initial target POSE1 ($6EAC).
+        ; SMC trampoline for -direction; initial target POSE1.
         JMP COMPANION_NEG_POSE1
 SMC_COMPANION_NEG_LO = *-2
 SMC_COMPANION_NEG_HI = *-1
@@ -13419,14 +13419,14 @@ PERSPECTIVE_XOFF_BYTE = $B9     ; Byte-domain perspective X-offset table
 ;  ZP_FRAME_COUNTER $FD, ZP_HIT_FLAG $1E are defined elsewhere.)
 
 ; --- Parallel 20-slot arrays (private to this routine + sibling draw) ---
-; ENTITY_ACTIVE/FLOOR_COL/XOFF_IDX/FLOOR_POS at $03A8/$0358/$036C/$0380
+; ENTITY_ACTIVE/FLOOR_COL/XOFF_IDX/FLOOR_POS/$036C/$0380
 ; are defined in <<draw entities defines>>; the remaining four are:
 RESCUE_DIR       = $0394        ; Walk direction: $01 right, $FF left
 RESCUE_ANIM      = $03BC        ; Step anim counter (8..1; 0 triggers next step)
 RESCUE_FLOOR     = $03D0        ; Assigned floor index (static per slot)
 RESCUE_COUNTDOWN = $03E4        ; Drift-mode rearm countdown (4 every-other-frame ticks)
 
-; --- 7-byte bobble table at $BD (read as $BD,X with X = anim counter) ---
+; --- 7-byte bobble table (read as $BD,X with X = anim counter) ---
 ; Signed values: bit 7 = sign (0 ascend, 1 descend), bits 0..6 = |delta|.
 ; Stored as $BD..$C3 in the $88..$B4 staging-copy buffer; the on-disk
 ; initial values come from $02DF..$02E5 and get copied by INIT_LEVEL_STATE.
@@ -13442,35 +13442,35 @@ RESCUE_UPDATE:
         ; Per-frame tick for the 20-slot ``rescue child'' entity
         ; subsystem --- the small walking figures that appear on the
         ; perspective floors and are the player's scoring objective.
-        ; Sibling draw-plus-collision lives at $0C98 (still inside
+        ; Sibling draw-plus-collision lives (still inside
         ; the $03A8 HEX blob); marker sprite draw in DRAW_ENTITIES
         ; phase 5 at $694E.  See section Rescue-child entity tick (20
         ; slots) for the full state-machine description.
         ;
         ; Inputs:
-        ;   ENTITY_ACTIVE,Y ($03A8)      --- per-slot state byte.
-        ;   ENTITY_FLOOR_COL,Y ($0358)   --- per-slot world-X low.
-        ;   ENTITY_XOFF_IDX,Y ($036C)    --- per-slot world-X high.
-        ;   ENTITY_FLOOR_POS,Y ($0380)   --- per-slot row Y.
-        ;   RESCUE_DIR,Y ($0394)         --- per-slot direction.
-        ;   RESCUE_ANIM,Y ($03BC)        --- per-slot step anim counter.
-        ;   RESCUE_FLOOR,Y ($03D0)       --- per-slot assigned floor.
-        ;   RESCUE_COUNTDOWN,Y ($03E4)   --- per-slot drift countdown.
-        ;   ZP_PLAYER_FLOOR ($0C)        --- current player floor.
-        ;   ZP_ANIM_COUNTER ($1F)        --- player anim counter (gate).
-        ;   ZP_DIFF_THRESH_A ($34)       --- difficulty seed for exit-anim.
-        ;   ZP_PLAYER_Y ($4A)            --- player world-X (for chase).
-        ;   ZP_PRNG_A ($5F)              --- low byte of PRNG state.
-        ;   FLOOR_THRESH,X ($83)         --- per-floor row anchor (on spawn).
-        ;   RESCUE_BOBBLE,X ($BD)        --- 7-byte signed step-Y delta.
-        ;   ZP_FRAME_COUNTER ($FD) b0    --- drift every-other-frame gate.
-        ;   PRNG ($6674)                 --- 8-bit PRNG, spawn gate.
+        ;   ENTITY_ACTIVE,Y      --- per-slot state byte.
+        ;   ENTITY_FLOOR_COL,Y   --- per-slot world-X low.
+        ;   ENTITY_XOFF_IDX,Y    --- per-slot world-X high.
+        ;   ENTITY_FLOOR_POS,Y   --- per-slot row Y.
+        ;   RESCUE_DIR,Y         --- per-slot direction.
+        ;   RESCUE_ANIM,Y        --- per-slot step anim counter.
+        ;   RESCUE_FLOOR,Y       --- per-slot assigned floor.
+        ;   RESCUE_COUNTDOWN,Y   --- per-slot drift countdown.
+        ;   ZP_PLAYER_FLOOR        --- current player floor.
+        ;   ZP_ANIM_COUNTER        --- player anim counter (gate).
+        ;   ZP_DIFF_THRESH_A       --- difficulty seed for exit-anim.
+        ;   ZP_PLAYER_Y            --- player world-X (for chase).
+        ;   ZP_PRNG_A              --- low byte of PRNG state.
+        ;   FLOOR_THRESH,X         --- per-floor row anchor (on spawn).
+        ;   RESCUE_BOBBLE,X        --- 7-byte signed step-Y delta.
+        ;   ZP_FRAME_COUNTER b0    --- drift every-other-frame gate.
+        ;   PRNG                 --- 8-bit PRNG, spawn gate.
         ;
         ; Behavior:
         ;   Iterates Y=$13 down to 0.  Dispatches per-slot on $03A8,Y:
         ;     $00 -> spawn check (PRNG+phase or player-floor trigger)
         ;     $FE -> exit anim (INC floor-col, deactivate on wrap)
-        ;     other -ve -> drift countdown ($03E4), transition to $FE
+        ;     other -ve -> drift countdown, transition to $FE
         ;     +ve -> active walk; if player on same floor, meet-player
         ;            chase AI, else normal-walk (step + drift gate +
         ;            boundary-deactivate).
@@ -13481,7 +13481,7 @@ RESCUE_UPDATE:
         ;
         ; Modifies:
         ;   ENTITY_ACTIVE/FLOOR_COL/XOFF_IDX/FLOOR_POS, RESCUE_DIR,
-        ;   RESCUE_ANIM, RESCUE_COUNTDOWN, ZP_RESCUE_SPAWN_CTR ($4D),
+        ;   RESCUE_ANIM, RESCUE_COUNTDOWN, ZP_RESCUE_SPAWN_CTR,
         ;   ZP_DRAW_LOOP_IDX ($5C), self-modified opcode at $705F.
         ; Clobbers: A, X, Y
 
@@ -13735,7 +13735,7 @@ RESCUE_UPDATE:
 .meet_compute:
 ; Compute entity screen-space X:
 ;   A = FLOOR_BASE_ROW[floor_col] + $B9[xoff_idx]
-; Then compare against ZP_PLAYER_Y ($4A):
+; Then compare against ZP_PLAYER_Y:
 ;   A < $13            -> entity way to the left -> flip to +dir
 ;   (A - $13) < $4A    -> entity before player    -> +dir (or step if already)
 ;   (A - $13) >= $4A   -> entity at/past player   -> -dir (or step if already)

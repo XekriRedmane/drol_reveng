@@ -2192,7 +2192,7 @@ ZP_HGR_DST      = $2F           ; Hi-res copy destination pointer (2 bytes)
 ; (LEVEL_INTRO_TICK has its own ORG chunk at $699C)
 PAUSE_HANDLER   = $0E51         ; Wait for keypress (pause handler ORG)
 COLLISION_DETECT = $64CB        ; Collision detection (game engine A hex)
-SPRITE_RENDER   = $64DF         ; Sprite rendering (game engine A hex)
+; (DRAW_PLAYER is the label at ORG $64DF, formerly stubbed as SPRITE_RENDER.)
 SCORE_DISPLAY   = $673B         ; Score / status display (entity process hex)
 SOUND_UPDATE    = $6ABA         ; Sound effects (game engine B hex)
 ANIM_UPDATE     = $6B39         ; Animation update (game engine B hex)
@@ -3474,7 +3474,7 @@ SMC_MOVE_RIGHT = *
         JSR ENEMY_AI_1          ; Enemy AI (part 1)
         JSR ENEMY_AI_2          ; Enemy AI (part 2)
 SMC_RENDER = *
-        JSR SPRITE_RENDER       ; Sprite rendering (BIT during attract)
+        JSR DRAW_PLAYER         ; Draw player sprite (BIT during attract)
         JSR SCREEN_EFFECTS      ; Screen effects
         JSR SCORE_DISPLAY       ; Score / status display
         JSR SOUND_UPDATE        ; Sound effects
@@ -4304,8 +4304,11 @@ re-enabled, and execution falls through into [[ATTRACT_LOOP]].
 ; (DRAW_SPRITE / SPRITE_PTR_LO / SPRITE_PTR_HI have their own ORG chunk)
 ; (ZP_SPRITE_W / _H / _Y / _X live in draw sprite defines)
 SMC_ATTRACT_RTS = $6827         ; Self-mod: attract loop control
-SMC_COLLISION_A = $64FA         ; Self-mod: collision parameter A
-SMC_COLLISION_B = $64F6         ; Self-mod: collision parameter B
+; SMC_SR_YSRC ($64FA) / SMC_SR_HEIGHT ($64F6) are the operand bytes of
+; DRAW_PLAYER's idle-path "LDA $06" and "LDA #$13" (sprite Y source and
+; height).  Declared in the draw-player defines chunk.  LEVEL_COMPLETE
+; reasserts their default values ($06 / $13) on entry because
+; LEVEL_INTRO_TICK may have patched them for the countdown animation.
 
 ; --- Zero-page (level complete) ---
 ZP_EXTRA_LIVES  = $8C           ; Extra lives counter for animation
@@ -4341,9 +4344,9 @@ LEVEL_COMPLETE:
         LDA #$60                 ; RTS opcode
         STA SMC_ATTRACT_RTS      ; Patch: disable attract subroutine
         LDA #$06
-        STA SMC_COLLISION_A      ; Adjust collision parameter
+        STA SMC_SR_YSRC          ; Reset DRAW_PLAYER Y source to ZP_PLAYER_COL
         LDA #$13
-        STA SMC_COLLISION_B      ; Adjust collision parameter
+        STA SMC_SR_HEIGHT        ; Reset DRAW_PLAYER sprite height to default
 
 ; --- Extra-life animation loop ---
 .check_extra:
@@ -7682,8 +7685,10 @@ ENEMY_C_DRAW:
 
         ORG $614B
         SUBROUTINE
-        ; Game engine (\$614B-\$656E): movement, collision, sprite setup
-        ; Raw data --- 1060 bytes
+        ; Game engine (\$614B-\$64DE): movement, collision, action dispatch.
+        ; The sprite-setup tail that originally lived here through \$656E
+        ; has been extracted as [[DRAW_PLAYER]] at \$64DF.
+        ; Raw data --- 916 bytes
 
         HEX A5 4A C9 01 90 33 A5 4C
         HEX C9 03 F0 12 C9 02 F0 0E
@@ -7799,26 +7804,267 @@ ENEMY_C_DRAW:
         HEX 1D 10 04 A9 FF 85 04 60
         HEX A5 04 F0 0C A5 04 30 04
         HEX 20 9A 61 60 20 4B 61 60
-        HEX 20 84 61 60 A5 02 D0 22
-        HEX A6 03 BD 27 75 8D B3 65
-        HEX BD 27 76 8D B4 65 A9 03
-        HEX 85 56 A9 13 85 57 A5 06
-        HEX 85 5B A9 14 85 5D 20 6F
-        HEX 65 60 A5 1E 30 4D F0 4B
-        HEX A5 03 C9 03 D0 0C A9 14
-        HEX 85 5D A9 83 8D B8 65 4C
-        HEX 2A 65 C9 09 D0 35 A9 11
-        HEX 85 5D A9 B0 8D B8 65 A9
-        HEX 29 8D B7 65 A5 06 18 69
-        HEX 0D 85 5B A9 00 85 56 A9
-        HEX 06 85 57 A4 FD B9 00 65
-        HEX 8D B3 65 B9 00 66 29 7F
-        HEX 8D B4 65 20 6F 65 A9 24
-        HEX 8D B7 65 A6 03 BD 31 75
-        HEX 8D B3 65 BD 31 76 8D B4
-        HEX 65 A9 03 85 56 A9 14 85
-        HEX 57 4C F9 64
+        HEX 20 84 61 60
 @
+
+\section{Player sprite renderer}
+
+[[DRAW_PLAYER]] at \$64DF is the main-loop routine that draws the player
+character onto the hidden hi-res page every frame.  It is the
+[[JSR SPRITE_RENDER]] slot in [[MAIN_LOOP]] --- the
+[[SMC_RENDER]] self-modifying byte at \$67EF is toggled between
+\texttt{JSR} (\$20) and \texttt{BIT} (\$2C) to enable/disable the call
+during attract mode and level transitions.  Despite being called from
+the \emph{main loop} rather than from [[DRAW_ENTITIES]], [[DRAW_PLAYER]]
+is the only routine in the game that actually draws the big centre-screen
+player sprite, using the sprite-pointer tables
+[[PLAYER_SPR_IDLE_LO]]/[[PLAYER_SPR_IDLE_HI]] (\$7527/\$7627) and
+[[PLAYER_SPR_ACTIVE_LO]]/[[PLAYER_SPR_ACTIVE_HI]] (\$7531/\$7631), which
+are distinct from the small-perspective sprite tables at
+\$7542/\$7642/\$7552/\$7652 consumed by [[DRAW_ENTITIES]] phase~2.
+
+\paragraph{Two draw paths.}  The routine is gated on the action flag
+[[ZP_ACTION_DIR]] (\$02 --- set by [[INPUT_DO_ASCEND]] to \$01 and
+[[INPUT_DO_DESCEND]] to \$FF) and the stance/floor-state byte
+[[ZP_PLAYER_STANCE]] (\$03 --- clamped to \$03..\$09 by the same input
+handlers):
+
+\begin{itemize}
+\item \textbf{Idle path (\$02 == 0).}  The player is between floors or
+  stationary.  Fetch a sprite pointer from
+  [[PLAYER_SPR_IDLE_LO]]/[[PLAYER_SPR_IDLE_HI]] indexed by
+  [[ZP_PLAYER_STANCE]], set \$03$\times$\$13 (width$\times$height), Y from
+  [[ZP_PLAYER_COL]] (\$06) via [[SMC_SR_YSRC]] operand, X column~\$14,
+  then [[JSR DRAW_SPRITE]].
+\item \textbf{Action path (\$02 != 0).}  The player is mid-ascent or
+  mid-descent.  If [[$1E]] indicates gameplay-in-progress (positive),
+  then for the two extremal stance values (\$03 = top floor, \$09 =
+  bottom floor) an additional ``teleport flicker'' sprite is drawn
+  first: a \$00$\times$\$06 (zero-width-plus-one $\times$ six rows)
+  pattern is OR-blitted at column~\$14 / \$11 with its source pointer
+  fetched from the routine's own code image at \$6500,\$FD /
+  \$6600,\$FD AND~\$7F --- a cheap way to get pseudo-random static
+  bytes without a dedicated animation table.  The flicker draw uses the
+  live SMC slot at [[SMC_SPRITE_MASK_OP]]/[[SMC_SPRITE_MASK_ARG]] ---
+  temporarily patching the [[BIT $00]] NOP in [[DRAW_SPRITE]] to
+  [[AND #$83]] or [[AND #$B0]] so the random bytes are masked before
+  being OR'd into the screen.  After the flicker draw the
+  [[SMC_SPRITE_MASK_OP]] byte is restored to \$24 (BIT) for the main
+  body draw.  Then the main body is drawn from
+  [[PLAYER_SPR_ACTIVE_LO]]/[[PLAYER_SPR_ACTIVE_HI]] at
+  \$03$\times$\$14 (one row taller than idle), falling through the
+  idle-path's JSR so the same column~\$14 and [[SMC_SR_YSRC]] apply.
+\end{itemize}
+
+\paragraph{$1E$ skip of the flicker.}  In the action path the flicker
+layer is guarded by the intro/hit-state byte [[$1E]] (= [[ZP_HIT_FLAG]]):
+if [[$1E]] is zero (intro still running) or negative (player just
+hit), the routine jumps straight to the main body draw, suppressing
+the flicker during intro and the death-drop.
+
+\paragraph{Self-modifying operands patched here.}
+\begin{itemize}
+\item [[SMC_DS_SRC_LO]]/[[SMC_DS_SRC_HI]] (\$65B3/\$65B4, inside
+  [[DRAW_SPRITE]]): source-pointer operand bytes.  Patched by
+  [[DRAW_PLAYER]] twice per action-path frame (once for flicker,
+  once for main body), and on each idle-path frame.
+\item [[SMC_SPRITE_MASK_OP]]/[[SMC_SPRITE_MASK_ARG]] (\$65B7/\$65B8):
+  mask-opcode and mask-operand bytes inside [[DRAW_SPRITE]]'s inner
+  loop (normally the ``[[BIT $00]]'' 2-byte NOP).  Patched to
+  [[AND #$83]] or [[AND #$B0]] for the flicker, then restored to
+  [[BIT $00]] ($24 $00) before the main body draw.
+\end{itemize}
+
+\paragraph{Self-modifying operands patched from elsewhere.}
+\begin{itemize}
+\item [[SMC_SR_HEIGHT]] (\$64F6): the immediate operand of the
+  ``[[LDA #$13]]'' that seeds [[ZP_SPRITE_H]] on the idle path.
+  [[LEVEL_INTRO_TICK]] decrements this every frame of the countdown to
+  shrink the sprite, and [[LEVEL_COMPLETE]] resets it to \$13.
+\item [[SMC_SR_YSRC]] (\$64FA): the ZP operand of the ``[[LDA $06]]''
+  that reads [[ZP_PLAYER_COL]] as the sprite Y row.
+  [[LEVEL_INTRO_TICK]] patches it to \$17 ([[ZP_INTRO_Y]]) during the
+  intro animation and restores it to \$06 on activation;
+  [[LEVEL_COMPLETE]] also resets it to \$06 on level transitions.
+\end{itemize}
+
+\paragraph{Not to be confused with [[DRAW_ENTITIES]] phase~2.}
+Phase~2 of [[DRAW_ENTITIES]] (\$6865--\$68B1) also draws a sprite
+at the player's floor position, but via the \emph{perspective-grid}
+path: it reads [[FLOOR_SPRITE_IDX]]/[[FLOOR_SCREEN_COL]] indexed by
+[[ZP_PLAYER_Y]]+\$10 to produce a narrow $1\times4$ sprite at a
+column that shifts along the perspective-receding floor.  That is the
+player's representation in the \emph{depth} axis (which floor they are
+on).  [[DRAW_PLAYER]], by contrast, always draws at column~\$14 (screen
+centre) with a much larger $3\times\$13$ (idle) or $3\times\$14$
+(active) body sprite indexed by the stance byte [[ZP_PLAYER_STANCE]].
+
+<<draw player defines>>=
+
+; --- Zero-page (player sprite renderer) ---
+ZP_ACTION_DIR   = $02           ; Action flag: $00=idle, $01=ascend, $FF=descend
+ZP_PLAYER_STANCE = $03          ; Player stance / floor index (clamped $03..$09)
+; ZP_PLAYER_COL, ZP_HIT_FLAG, $FD (frame counter) are defined elsewhere.
+
+; --- Main-player sprite pointer tables (indexed by ZP_PLAYER_STANCE) ---
+PLAYER_SPR_IDLE_LO   = $7527    ; Idle-path sprite pointer low bytes
+PLAYER_SPR_IDLE_HI   = $7627    ; Idle-path sprite pointer high bytes
+PLAYER_SPR_ACTIVE_LO = $7531    ; Active/elevator-path sprite pointer low
+PLAYER_SPR_ACTIVE_HI = $7631    ; Active/elevator-path sprite pointer high
+
+; --- Pseudo-random static source inside DRAW_PLAYER's own code image ---
+; Used for the teleport/flicker effect at the top and bottom floors.
+; The two tables overlap the routine itself ($6500-$66FF), so no data
+; fixture is needed.
+PLAYER_STATIC_LO = $6500        ; Low byte of flicker sprite pointer (by $FD)
+PLAYER_STATIC_HI = $6600        ; High byte (ANDed with $7F) of flicker pointer
+
+; --- Self-modifying operand aliases inside DRAW_PLAYER ---
+; Both bytes are patched by LEVEL_INTRO_TICK (intro countdown, fading)
+; and LEVEL_COMPLETE (restore defaults after the transition animation).
+SMC_SR_HEIGHT   = $64F6         ; Immediate operand of "LDA #$13" --- sprite height
+SMC_SR_YSRC     = $64FA         ; ZP operand of "LDA $06" --- sprite Y source
+
+@
+
+<<draw player>>=
+
+        ORG $64DF
+DRAW_PLAYER:
+        SUBROUTINE
+        ; Main-loop player sprite renderer (called from MAIN_LOOP's
+        ; JSR SPRITE_RENDER slot, SMC-toggled $20/$2C at $67EF).  Draws
+        ; the big centre-screen player sprite at column $14.  Two code
+        ; paths, selected by the action flag ZP_ACTION_DIR:
+        ;
+        ; Inputs:
+        ;   ZP_ACTION_DIR ($02)       --- $00 idle, $01 ascend, $FF descend.
+        ;   ZP_PLAYER_STANCE ($03)    --- stance/floor index ($03..$09);
+        ;                                 $03 = top floor, $09 = bottom floor.
+        ;   ZP_PLAYER_COL ($06)       --- sprite Y row (via SMC_SR_YSRC).
+        ;   ZP_HIT_FLAG ($1E)         --- $00 intro / $80..$FF hit: skip
+        ;                                 the action-path flicker draw.
+        ;   $FD                       --- frame counter, indexes the
+        ;                                 flicker's pseudo-random static source.
+        ;   PLAYER_SPR_IDLE_LO/HI     --- idle sprite pointers ($7527/$7627).
+        ;   PLAYER_SPR_ACTIVE_LO/HI   --- active sprite pointers ($7531/$7631).
+        ;   SMC_SR_HEIGHT ($64F6)     --- live height immediate (may be
+        ;                                 shrunk by LEVEL_INTRO_TICK).
+        ;   SMC_SR_YSRC ($64FA)       --- live ZP source for sprite Y
+        ;                                 (normally $06 = ZP_PLAYER_COL,
+        ;                                 $17 = ZP_INTRO_Y during intro).
+        ;
+        ; Behavior:
+        ;   Idle ($02 == 0): pick sprite from PLAYER_SPR_IDLE tables,
+        ;     width $03, height (SMC_SR_HEIGHT, default $13), Y from
+        ;     (SMC_SR_YSRC, default ZP_PLAYER_COL), X column $14, then
+        ;     JSR DRAW_SPRITE; RTS.
+        ;   Active ($02 != 0): if $1E > 0 and the stance is $03 or $09,
+        ;     first draw a $00 x $06 teleport-flicker sprite using
+        ;     bytes of this routine's own code image as static, masked
+        ;     by AND #$83 or AND #$B0 via the live SMC slot
+        ;     SMC_SPRITE_MASK_OP/ARG inside DRAW_SPRITE.  Then draw the
+        ;     main body from PLAYER_SPR_ACTIVE tables at width $03,
+        ;     height $14, falling through into the idle path's
+        ;     column/Y-source/JSR.
+        ;
+        ; Modifies:
+        ;   SMC_DS_SRC_LO/HI ($65B3/$65B4),
+        ;   SMC_SPRITE_MASK_OP/ARG ($65B7/$65B8),
+        ;   ZP_SPRITE_W/H ($56/$57), ZP_SPRITE_Y/X ($5B/$5D),
+        ;   hi-res page framebuffer.
+        ; Clobbers: A, X, Y
+
+; --- Gate on action flag ---
+        LDA ZP_ACTION_DIR               ; $02
+        BNE .action_path                ;   non-zero = elevator in motion
+
+; --- Idle path: single body sprite from PLAYER_SPR_IDLE tables ---
+.idle_path:
+        LDX ZP_PLAYER_STANCE            ; $03
+        LDA PLAYER_SPR_IDLE_LO,X        ; Sprite pointer low byte
+        STA SMC_DS_SRC_LO
+        LDA PLAYER_SPR_IDLE_HI,X        ; Sprite pointer high byte
+        STA SMC_DS_SRC_HI
+        LDA #$03
+        STA ZP_SPRITE_W                 ; Width = 3 bytes
+        LDA #$13                        ; Default height = $13
+                                        ; (#$13 byte at SMC_SR_HEIGHT=$64F6,
+                                        ;  patched by LEVEL_INTRO_TICK)
+        STA ZP_SPRITE_H
+.share_tail:
+        LDA ZP_PLAYER_COL               ; Y source = $06 (at SMC_SR_YSRC=$64FA,
+                                        ; patched to $17=ZP_INTRO_Y by
+                                        ; LEVEL_INTRO_TICK during intro)
+        STA ZP_SPRITE_Y
+        LDA #$14
+        STA ZP_SPRITE_X                 ; X column = $14 (screen centre)
+        JSR DRAW_SPRITE
+        RTS
+
+; --- Action path: optional flicker + main body ---
+.action_path:
+        LDA ZP_HIT_FLAG                 ; $1E
+        BMI .body_from_active           ;   hit: body only, no flicker
+        BEQ .body_from_active           ;   intro: body only, no flicker
+
+; --- Check stance against floor-extreme values $03 / $09 ---
+        LDA ZP_PLAYER_STANCE            ; $03
+        CMP #$03                        ; Top floor?
+        BNE .check_bottom
+        LDA #$14                        ; Flicker X column = $14 (top)
+        STA ZP_SPRITE_X
+        LDA #$83                        ; Flicker mask = AND #$83
+        STA SMC_SPRITE_MASK_ARG
+        JMP .flicker_setup
+.check_bottom:
+        CMP #$09                        ; Bottom floor?
+        BNE .body_from_active           ;   neither: skip flicker
+        LDA #$11                        ; Flicker X column = $11 (bottom)
+        STA ZP_SPRITE_X
+        LDA #$B0                        ; Flicker mask = AND #$B0
+        STA SMC_SPRITE_MASK_ARG
+
+; --- Flicker draw: static from code image, masked by AND imm ---
+.flicker_setup:
+        LDA #$29                        ; $29 = AND #imm opcode
+        STA SMC_SPRITE_MASK_OP          ;   patch live SMC slot in DRAW_SPRITE
+        LDA ZP_PLAYER_COL               ; $06
+        CLC
+        ADC #$0D                        ;   + $0D
+        STA ZP_SPRITE_Y                 ; Y = player_col + $0D
+        LDA #$00
+        STA ZP_SPRITE_W                 ; Width = 0+1 byte
+        LDA #$06
+        STA ZP_SPRITE_H                 ; Height = 6 rows
+        LDY $FD                         ; Frame counter
+        LDA PLAYER_STATIC_LO,Y          ; Pseudo-random low from own code
+        STA SMC_DS_SRC_LO
+        LDA PLAYER_STATIC_HI,Y          ; Pseudo-random high ...
+        AND #$7F                        ;   masked into $6000-$66FF range
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+        LDA #$24                        ; $24 = BIT zp opcode (2-byte NOP)
+        STA SMC_SPRITE_MASK_OP          ;   restore normal draw path
+
+; --- Main body draw from PLAYER_SPR_ACTIVE tables ---
+.body_from_active:
+        LDX ZP_PLAYER_STANCE            ; $03
+        LDA PLAYER_SPR_ACTIVE_LO,X      ; Pointer low
+        STA SMC_DS_SRC_LO
+        LDA PLAYER_SPR_ACTIVE_HI,X      ; Pointer high
+        STA SMC_DS_SRC_HI
+        LDA #$03
+        STA ZP_SPRITE_W                 ; Width = 3 bytes
+        LDA #$14
+        STA ZP_SPRITE_H                 ; Height = $14 (one taller than idle)
+        JMP .share_tail                 ; Share idle-path tail at $64F9:
+                                        ;   loads ZP_PLAYER_COL, sets
+                                        ;   X=$14, JSR DRAW_SPRITE, RTS.
+@ %def DRAW_PLAYER PLAYER_SPR_IDLE_LO PLAYER_SPR_IDLE_HI
+@ %def PLAYER_SPR_ACTIVE_LO PLAYER_SPR_ACTIVE_HI
+@ %def PLAYER_STATIC_LO PLAYER_STATIC_HI
+@ %def SMC_SR_HEIGHT SMC_SR_YSRC ZP_ACTION_DIR ZP_PLAYER_STANCE
 
 \section{Sprite draw (transparent blit)}
 
@@ -8549,7 +8795,7 @@ any toggle of the display soft-switch.
 
 \paragraph{Cross-reference to [[LEVEL_INTRO_TICK]].}  Earlier prose
 speculated that this chunk patches the same [[SMC_SR_HEIGHT]] /
-[[SMC_SR_YSRC]] operands inside [[SPRITE_RENDER]] (\$64F6 / \$64FA)
+[[SMC_SR_YSRC]] operands inside [[DRAW_PLAYER]] (\$64F6 / \$64FA)
 that [[LEVEL_INTRO_TICK]] patches.  That was incorrect --- this
 routine does \emph{not} touch those operands.  The two SMC slots
 [[DRAW_ENTITIES]] patches are [[SMC_PFB_SRC_LO]] (\$6615) and
@@ -8883,16 +9129,16 @@ between level transitions:
 
 The routine also patches two ZP-aliased self-modifying operands in the
 preceding game-engine chunks: the sprite-height immediate at
-[[SMC_SR_HEIGHT]] (\$64F6, inside [[SPRITE_RENDER]]) and the Y-source
+[[SMC_SR_HEIGHT]] (\$64F6, inside [[DRAW_PLAYER]]) and the Y-source
 ZP operand at [[SMC_SR_YSRC]] (\$64FA, same routine).  On init it
-re-points [[SPRITE_RENDER]] at the intro row in [[ZP_INTRO_Y]]; on
+re-points [[DRAW_PLAYER]] at the intro row in [[ZP_INTRO_Y]]; on
 activation it restores the default $06 source and resets the
 height immediate to \$13.
 
 <<level intro defines>>=
 
 ; --- Zero-page (level-intro state) ---
-ZP_INTRO_Y        = $17         ; Intro sprite Y row (also SPRITE_RENDER source during intro)
+ZP_INTRO_Y        = $17         ; Intro sprite Y row (also DRAW_PLAYER source during intro)
 ZP_INTRO_COUNTDOWN = $18        ; Intro countdown frames remaining (starts at $12)
 ZP_INTRO_TIMEOUT  = $19         ; Auto-start timeout counter (wraps through $00 to trigger)
 
@@ -8903,9 +9149,11 @@ LEVEL_DATA_BASE = $0200         ; Level data (ticks indexed 0..$12 via ZP_INTRO_
 SPRITE_TABLE_LO = $B000         ; Low bytes of sprite pointers ($B000-$B07F)
 SPRITE_TABLE_HI = $B080         ; High bytes of sprite pointers ($B080-$B0FF)
 
-; --- Self-modifying operand aliases inside SPRITE_RENDER ($64DF) ---
-SMC_SR_HEIGHT   = $64F6         ; Immediate operand of "LDA #$13" — sprite height
-SMC_SR_YSRC     = $64FA         ; ZP operand of "LDA $06" — sprite Y source address
+; SMC_SR_HEIGHT ($64F6) / SMC_SR_YSRC ($64FA) are the self-modifying
+; operand bytes inside DRAW_PLAYER; they are declared in the draw-player
+; defines chunk.  LEVEL_INTRO_TICK patches them on init (to shrink the
+; sprite and re-point it at ZP_INTRO_Y) and on activation (to restore
+; the default $13 height and $06 Y source).
 
 ; --- Self-modifying operand slot inside DRAW_SPRITE ---
 ; SMC_SPRITE_MASK_OP ($65B7) / SMC_SPRITE_MASK_ARG ($65B8) are declared
@@ -8949,14 +9197,14 @@ LEVEL_INTRO_TICK:
         ;   $1E > 0: RTS (fast path during gameplay).
         ;   $1E < 0: one-shot init --- disable input / movement / render
         ;     SMC slots; clear state; save $06 into ZP_INTRO_Y; point
-        ;     SPRITE_RENDER at ZP_INTRO_Y (SMC_SR_YSRC); set
+        ;     DRAW_PLAYER at ZP_INTRO_Y (SMC_SR_YSRC); set
         ;     ZP_INTRO_COUNTDOWN=$12, ZP_INTRO_TIMEOUT=$40; $1E=0.
         ;     Falls through into the tick phase.
         ;   Tick phase (while ZP_INTRO_COUNTDOWN > 0): on odd frames
         ;     decrement the counter, decrement SMC_SR_HEIGHT and bump
         ;     ZP_INTRO_Y (unless $02 suppresses).  Patch the sprite
         ;     mask SMC to AND #<FD|$80> for flicker, draw the sprite
-        ;     via SPRITE_RENDER, restore BIT opcode, then pulse
+        ;     via DRAW_PLAYER, restore BIT opcode, then pulse
         ;     SFX_TONE with the level-data byte at LEVEL_DATA_BASE,$18.
         ;   Wait phase (ZP_INTRO_COUNTDOWN == 0): software timer in
         ;     $06 BCD-decrements ZP_LEVEL_STATE when it wraps.  If
@@ -9001,7 +9249,7 @@ LEVEL_INTRO_TICK:
         LDA ZP_PLAYER_COL               ; Save current player column
         STA ZP_INTRO_Y                  ;   into intro Y
         LDA #$17
-        STA SMC_SR_YSRC                 ; Re-point SPRITE_RENDER at ZP_INTRO_Y
+        STA SMC_SR_YSRC                 ; Re-point DRAW_PLAYER at ZP_INTRO_Y
         LDA #$00
         STA $05                         ; Clear scratch
         STA $1E                         ; State $00 = intro running
@@ -9027,16 +9275,16 @@ LEVEL_INTRO_TICK:
         STX ZP_INTRO_COUNTDOWN          ; Odd frame: decrement counter
         LDA $02                         ; Suppress row bump?
         BNE .flicker_draw
-        DEC SMC_SR_HEIGHT               ; Shrink SPRITE_RENDER sprite height
+        DEC SMC_SR_HEIGHT               ; Shrink DRAW_PLAYER sprite height
         INC ZP_INTRO_Y                  ;   and nudge Y down one row
 .flicker_draw:
-; --- Draw flickering intro sprite via SPRITE_RENDER ---
+; --- Draw flickering intro sprite via DRAW_PLAYER ---
         LDA #$29                        ; AND #imm opcode
         STA SMC_SPRITE_MASK_OP          ;   patched into DRAW_SPRITE BIT slot
         LDA $FD
         ORA #$80                        ; Force bit 7 of flicker mask
         STA SMC_SPRITE_MASK_ARG
-        JSR SPRITE_RENDER               ; Draw the intro sprite
+        JSR DRAW_PLAYER                 ; Draw the intro sprite
         LDA #$24                        ; BIT zp opcode
         STA SMC_SPRITE_MASK_OP          ; Restore DRAW_SPRITE BIT slot
         LDY ZP_INTRO_COUNTDOWN
@@ -9137,7 +9385,7 @@ LEVEL_INTRO_TICK:
         STA $1E                         ; State = gameplay active
         STA $0D
         LDA #$06
-        STA SMC_SR_YSRC                 ; SPRITE_RENDER reads ZP_PLAYER_COL again
+        STA SMC_SR_YSRC                 ; DRAW_PLAYER reads ZP_PLAYER_COL again
         LDA #$20                        ; JSR opcode
         STA SMC_INPUT                   ; Re-enable input dispatch
         STA SMC_RENDER                  ; Re-enable sprite render
@@ -10316,6 +10564,9 @@ LEVEL_INTRO_TICK:
 <<display page flip>>
 ; --- ORG $614B: Game engine A ---
 <<game engine A>>
+; --- ORG $64DF: Player sprite renderer ---
+<<draw player defines>>
+<<draw player>>
 ; --- ORG $656F: Draw sprite ---
 <<draw sprite>>
 ; --- ORG $65D5: Draw sprite (playfield, HUD-clipped) ---

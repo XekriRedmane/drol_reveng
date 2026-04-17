@@ -4,3 +4,4 @@
 - [Drol difficulty tiers](drol-difficulty-tiers.md) — $31/$32/$33/$34/$35/$40 tier state set by DIFFICULTY_UPDATE ($719D)
 - [Drol beam subsystem](drol-beam-subsystem.md) — BEAM_UPDATE at $130A; $03FE/$03FF beam state, $0237/$023C tracer slots, $9B/$9F/$A3 enemies
 - [Drol entity-slot tick+draw pattern](drol-entity-slot-pattern.md) — 3 parallel enemy slots (A/B/C at $DC/$E0/$D4), all 6 tick+draw routines RE'd; A and B hit player, C hits floor-enemies
+- [Drol DRAW_PLAYER at $64DF](drol-draw-player.md) — main-loop player draw; NOT DRAW_ENTITIES phase-2 (which is perspective-grid sprite); gates on $02/$03, SMC patched by intro/complete

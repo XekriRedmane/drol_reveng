@@ -9,14 +9,16 @@ routines and all three enemy draw routines are byte-perfect RE'd
 With the triplet, `BEAM_UPDATE` ($130A), `DRAW_ENTITIES` ($683C),
 `DISPLAY_UPDATE` ($10AB), `DIFFICULTY_UPDATE` ($719D),
 `LEVEL_INTRO_TICK` ($699C), `SFX_TONE` ($67C1), `INPUT_DISPATCH`
-($6000), and the three blitters (`DRAW_SPRITE`,
-`DRAW_SPRITE_PLAYFIELD`, `DRAW_SPRITE_OPAQUE`) all documented,
-the MAIN_LOOP dispatch is now almost entirely covered.  The
-remaining high-priority `MAIN_LOOP`-reachable work is: the player
-render routines (gated on $0E, called inside `DRAW_ENTITIES`
-phase~2), `GAME_START_INIT` ($13A4), and the large
-`$6ABA-$719C` "game engine B tail" blob (sound/animation/entity
-processing/level logic, 1763 bytes still as HEX).
+($6000), `DRAW_PLAYER` ($64DF), and the three blitters
+(`DRAW_SPRITE`, `DRAW_SPRITE_PLAYFIELD`, `DRAW_SPRITE_OPAQUE`) all
+documented, the MAIN_LOOP dispatch is now essentially complete ---
+every `JSR` target in the main loop either has its own ORG chunk or
+sits inside one of the named hex blobs awaiting further carve-out.
+The remaining high-priority work is: `GAME_START_INIT` ($13A4),
+the large `$6ABA-$719C` "game engine B tail" blob (sound/animation/
+entity processing/level logic, 1763 bytes still as HEX), and the
+remaining hex tail of `<<game engine A>>` at $614B-$64DE (movement
+and action dispatch --- input-driven game state transitions).
 
 ## Immediate: apply new code chunk rules
 
@@ -211,6 +213,47 @@ Review existing chunks for violations:
       ($755A), `ENEMY_B_PUFF_HI` ($765A).  Retires the
       `SPRITE_DRAW_3 = $1591` EQU stub and carves $1591-$1645 out
       of the `<<sprite player code 1591>>` HEX blob.
+- [x] `$64DF` — `DRAW_PLAYER`: main-loop player sprite renderer
+      (retires the `SPRITE_RENDER` EQU stub).  Two paths selected
+      by the action flag `ZP_ACTION_DIR` ($02 = $00 idle / $01
+      ascend / $FF descend).  Idle path: single $03x$13 body from
+      `PLAYER_SPR_IDLE_LO/HI` ($7527/$7627) indexed by
+      `ZP_PLAYER_STANCE` ($03, clamped $03..$09), drawn at column
+      $14 with Y from `ZP_PLAYER_COL` ($06) via the live SMC
+      operand `SMC_SR_YSRC` ($64FA).  Action path: if `ZP_HIT_FLAG`
+      ($1E) is positive and the stance is $03 or $09 (top/bottom
+      floor), first draws a $00x$06 "teleport flicker" sprite
+      whose source bytes come from the routine's *own code image*
+      at `PLAYER_STATIC_LO/HI` ($6500/$6600 indexed by `$FD`), with
+      the live `SMC_SPRITE_MASK_OP/ARG` slot in `DRAW_SPRITE`
+      patched to `AND #$83` or `AND #$B0`.  Then the main body
+      draws from `PLAYER_SPR_ACTIVE_LO/HI` ($7531/$7631) at
+      $03x$14 (one row taller than idle).  Corrects the prior
+      mis-naming `SMC_COLLISION_A/B` ($64FA/$64F6) which were
+      actually `SMC_SR_YSRC` / `SMC_SR_HEIGHT` --- the self-mod
+      operand bytes for `DRAW_PLAYER`'s idle path, patched by
+      `LEVEL_INTRO_TICK` and restored by `LEVEL_COMPLETE`.
+      Discovered: the "static" texture used for the teleport
+      flicker has no dedicated data region; it is the routine's
+      own opcodes interpreted as bytes (a code-as-data trick).
+      **Note on `DRAW_ENTITIES` phase~2**: despite prior prose,
+      the phase-2 draw is *not* the big centre-screen player
+      sprite --- that is drawn by `DRAW_PLAYER` here, not from
+      `DRAW_ENTITIES`.  Phase~2 is a small $01x$04 perspective-grid
+      sprite drawn at `FLOOR_SCREEN_COL[$4A+$10]` using separate
+      sprite-pointer tables at $7542/$7642/$7552/$7652; it
+      represents the player (or a starting-position indicator)
+      in the receding-floor perspective view, gated by `$0E` as
+      an intro/wait-phase suppression flag (set to $FF during the
+      countdown and $01 during wait-for-start/gameplay by
+      `LEVEL_INTRO_TICK`).  New ZP EQUs: `ZP_ACTION_DIR` ($02),
+      `ZP_PLAYER_STANCE` ($03).  New data EQUs:
+      `PLAYER_SPR_IDLE_LO/HI`, `PLAYER_SPR_ACTIVE_LO/HI`,
+      `PLAYER_STATIC_LO/HI`.  SMC aliases `SMC_SR_HEIGHT` /
+      `SMC_SR_YSRC` relocated from the level-intro defines chunk
+      to the draw-player defines chunk (where they are physically
+      declared).  Carved out of `<<game engine A>>`, which now
+      ends at $64DE (was $656E, 1060 bytes; now 916 bytes).
 - [x] `$656F` — `DRAW_SPRITE`: transparent (OR) blit to hidden hi-res page.
 - [x] `$65D5` — `DRAW_SPRITE_PLAYFIELD`: sibling of DRAW_SPRITE.
       Identical structure, but inner-loop column check rejects col

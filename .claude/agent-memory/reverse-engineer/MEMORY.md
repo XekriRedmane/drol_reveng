@@ -3,3 +3,4 @@
 - [Drol BCD score at $D1/$D2/$D3](drol-score-zp.md) — ZP_SCORE_HI/MID/LO; not "entity state"
 - [Drol difficulty tiers](drol-difficulty-tiers.md) — $31/$32/$33/$34/$35/$40 tier state set by DIFFICULTY_UPDATE ($719D)
 - [Drol beam subsystem](drol-beam-subsystem.md) — BEAM_UPDATE at $130A; $03FE/$03FF beam state, $0237/$023C tracer slots, $9B/$9F/$A3 enemies
+- [Drol entity-slot tick+draw pattern](drol-entity-slot-pattern.md) — 3 parallel enemy slots (A/B/C at $DC/$E0/$D4) share tick+rearm shape driven by ZP_ADVANCE_RATE

@@ -312,7 +312,7 @@ when a symbolic name exists for it. Use `[[LABEL]]` or `[[ZP_ALIAS]]` noweb
 code refs — they render as navigable tt-styled hyperlinks to the defining
 chunk; raw hex in prose fails the reader.
 
-When no symbol exists yet, the raw form `[[\$XXXX]]` is acceptable during
+When no symbol exists yet, the raw form `[[$XXXX]]` is acceptable during
 active RE, but mark it with a LaTeX comment so it can be upgraded later:
 
 ```latex

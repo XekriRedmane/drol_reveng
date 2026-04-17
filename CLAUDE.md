@@ -167,7 +167,7 @@ In LaTeX prose (sections, paragraphs, captions, figure labels), never write a ra
 
 Applies to: addresses with ORG labels, EQU-defined constants (ZP aliases, table offsets, soft switches, SMC operand-byte labels), and any `@ %def`-exported symbol. When the prose describes *where* in memory something lives and the reader benefits from the numeric address, write `[[LABEL]] (\$XXXX)` — the symbol is still the primary reference.
 
-When no symbol exists yet (common during active RE), the raw form `[[\$XXXX]]` is acceptable, but flag it with a LaTeX comment so it's easy to upgrade later:
+When no symbol exists yet (common during active RE), the raw form `[[$XXXX]]` is acceptable, but flag it with a LaTeX comment so it's easy to upgrade later:
 
 ```latex
 The routine reads from [[$XXXX]] % TODO-SYM: needs label

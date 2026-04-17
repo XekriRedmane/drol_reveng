@@ -1,0 +1,2 @@
+- [Drol SFX architecture](drol-sfx-architecture.md) — speaker-click via indirect ZP pointer; bit-4 toggle selects $C030 vs $C020
+- [Drol $37 assumption](drol-zp-37-assumption.md) — $37 holds $C0 from boot ZP state; never explicitly written by game

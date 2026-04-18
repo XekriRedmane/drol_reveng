@@ -1397,6 +1397,38 @@ FIRST_BOOT:
         HEX 04 A5 00 04         ; Residual data
 @ %def DISPATCH FIRST_BOOT
 
+\section{Empty page and zero-page image}
+
+[[UNUSED_PAGE]] at [[$5600]] is 256 bytes of padding between the
+loader code at [[$5500]] and the on-disk zero-page image at [[$5700]].
+Nothing in any shipped binary references any address in this page;
+it exists because the sector layout reserves one full page for the
+loader's track-dispatch table plus trailing residue, and the next
+persistent byte on track~0 starts a page later.
+
+[[ZP_SAVE]] at [[$5700]]--[[$57FF]] is the on-disk image of zero
+page at cold start.  [[FIRST_BOOT]] copies this buffer byte-by-byte
+into [[$0000]]--[[$00FF]] right before [[JMP (ZP_GAME_ENTRY)]] hands
+control to the game.  The two bytes at offset [[$4E]]/[[$4F]]
+([[ZP_GAME_ENTRY]]) are [[$A3 $72]] --- that is, [[$72A3]] =
+[[START_ATTRACT]], which is why the attract loop is the first live
+game code to run.
+
+[[ZP_SAVE]] also serves as the save/restore backing when the game
+re-enters the loader for a level swap: [[SAVE_ZP]] copies
+[[$0000]]--[[$00FF]] back into [[ZP_SAVE]] before [[JSR LOADER_ENTRY]],
+and [[SEEK_AND_RESTORE_ZP]] reloads the saved bytes before
+returning to game code.  The bytes shipped on disk are therefore the
+\emph{initial} state of every ZP variable; most subsequent rewrites
+happen through [[INIT_LEVEL_STATE]] (which copies [[LVL_INIT_ENTITY]],
+[[LVL_INIT_SPRITE]] and [[LVL_INIT_INPUT]] over ZP~[[$01]]--[[$B4]] on
+each level start) or directly by the live code.
+
+Each 8-byte row in the chunk below carries an inline comment listing
+the named ZP symbols that receive non-zero seeds in that span, making
+the cold-start value of every variable in the game visible at a
+glance.
+
 <<empty and zp save>>=
 
 ; =========================================================================
@@ -1408,39 +1440,79 @@ UNUSED_PAGE:
         DS $100,0               ; Unused page
 
         ORG $5700
-ZP_SAVE:                        ; Zero page save/restore buffer
-        HEX 80 00 00 06 00 00 30 00
-        HEX 04 01 01 01 01 01 01 00
-        HEX 00 40 50 00 03 3B 63 00
-        HEX 00 00 00 00 00 FF 01 09
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 20 00 00 00 27 00
-        HEX 40 FF FF FF 00 00 30 C0
-        HEX 30 01 00 00 00 00 00 00
-        HEX 00 0B 0A 0F 00 00 00 00
-        HEX 01 01 6B 02 02 00 A3 72
-        HEX 00 00 61 C0 62 C0 00 00
-        HEX 00 00 00 00 00 00 04 03
-        HEX 22 4A 70 90 B6 DE 56 DA
-        HEX 2A 56 82 6C AE 2A 98 C4
-        HEX 40 C4 43 6B 93 93 93 6B
-        HEX 6B 43 43 43 6B 93 00 24
-        HEX 48 70 98 00 30 58 80 A8
-        HEX 7C 01 01 01 00 FF FF FF
-        HEX BC AB AB FF 56 00 58 00
-        HEX 55 00 00 00 00 00 00 00
-        HEX DF ED EF F7 00 0C 08 18
-        HEX 08 00 00 01 3E 00 4D 00
-        HEX 00 01 FF 01 01 FF FF FF
-        HEX FF 00 48 92 DA 84 83 81
-        HEX 80 80 01 03 04 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 01 52 03 4E
-        HEX 88 CC EE FF 01 61 03 55
-        HEX 01 04 03 80 FF 11 14 16
-        HEX 18 6A 6A 6A 6A 02 02 01
-        HEX 01 1A 14 83 75 0C 02 01
-        HEX D0 00 00 00 00 00 00 00
+ZP_SAVE:
+        ; 256-byte image of zero page at cold start.  Copied byte-by-byte
+        ; into $00..$FF by FIRST_BOOT just before JMP (ZP_GAME_ENTRY);
+        ; every ZP variable's initial value comes from here.  Also used
+        ; as save/restore backing when the game re-enters the loader
+        ; (SAVE_ZP writes ZP back here before LOADER_ENTRY, and
+        ; SEEK_AND_RESTORE_ZP reloads it before returning to the game).
+        ;
+        ; The bytes are laid out in ZP offset order; each HEX row below
+        ; covers an 8-byte span $00+N..$00+N+7 and the row comment lists
+        ; the named ZP symbols that receive non-zero seeds in that span.
+
+        HEX 80 00 00 06 00 00 30 00  ; $00-$07: ZP_PAGE_FLAG=$80 (skip flip),
+                                     ;   ZP_PLAYER_STANCE=$06, ZP_PLAYER_COL=$30
+        HEX 04 01 01 01 01 01 01 00  ; $08-$0F: ZP_SPECIAL_HP=$04,
+                                     ;   ZP_BEAM_SEED_FLOOR..ZP_HIT_GATE=$01
+        HEX 00 40 50 00 03 3B 63 00  ; $10-$17: ZP_COMPANION_COL=$5040 (LO,HI),
+                                     ;   ZP_COMPANION_OFF=$0300,
+                                     ;   ZP_COMPANION_ROW=$633B
+        HEX 00 00 00 00 00 FF 01 09  ; $18-$1F: ZP_ENT_RESCUED=$FF,
+                                     ;   ZP_HIT_FLAG=$01 (gameplay),
+                                     ;   ZP_ANIM_COUNTER=$09
+        HEX 00 00 00 00 00 00 00 00  ; $20-$27: ZP_HIGH_SCORE_0/1/2 = $00
+        HEX 00 00 20 00 00 00 27 00  ; $28-$2F: $2A=$20 (unnamed),
+                                     ;   ZP_CLEAR_COL=$27
+        HEX 40 FF FF FF 00 00 30 C0  ; $30-$37: $30=$40 (unnamed),
+                                     ;   ZP_PROJ_MAX/GATE/COMPANION_GATE=$FF,
+                                     ;   ZP_SFX_CLICK=$30 $37=$C0
+                                     ;   (SW_SPEAKER hi via ZP_SFX_CLICK+1)
+        HEX 30 01 00 00 00 00 00 00  ; $38-$3F: ZP_SFX_CLICK_SAVED=$30,
+                                     ;   ZP_GAME_OVER=$01 (one hit credit)
+        HEX 00 0B 0A 0F 00 00 00 00  ; $40-$47: ZP_HIT_MAX=$0B,
+                                     ;   ZP_HIT_Y_OFFSET=$0A, ZP_HIT_Y_SPAN=$0F
+        HEX 01 01 6B 02 02 00 A3 72  ; $48-$4F: ZP_INPUT_MODE=$01,
+                                     ;   ZP_BTN_STATE=$01, ZP_PLAYER_Y=$6B,
+                                     ;   ZP_WALK_FRAME=$02, ZP_SPRITE_XREF=$02,
+                                     ;   ZP_GAME_ENTRY=$72A3 (= START_ATTRACT)
+        HEX 00 00 61 C0 62 C0 00 00  ; $50-$57: ZP_INPUT_1=$C061 (SW_PUSH_BTN0),
+                                     ;   ZP_INPUT_2=$C062 (SW_PUSH_BTN1)
+        HEX 00 00 00 00 00 00 04 03  ; $58-$5F: ZP_LIVES_BCD=$04 (four lives),
+                                     ;   ZP_PRNG_A=$03
+        HEX 22 4A 70 90 B6 DE 56 DA  ; $60-$67: per-floor Y-threshold table
+        HEX 2A 56 82 6C AE 2A 98 C4  ; $68-$6F: (12-entry floor seed)
+        HEX 40 C4 43 6B 93 93 93 6B  ; $70-$77: per-floor row anchors
+        HEX 6B 43 43 43 6B 93 00 24  ; $78-$7F: (FLOOR_THRESH family at $70)
+        HEX 48 70 98 00 30 58 80 A8  ; $80-$87: scratch seeds for draw params
+        HEX 7C 01 01 01 00 FF FF FF  ; $88-$8F: ZP_SPRITE_BLOCK start ($7C),
+                                     ;   ZP_EXTRA_LIVES=$00
+        HEX BC AB AB FF 56 00 58 00  ; $90-$97: per-slot hit-entity state
+        HEX 55 00 00 00 00 00 00 00  ; $98-$9F: ZP_ENEMY_FLAG (4 slots) = $00
+        HEX DF ED EF F7 00 0C 08 18  ; $A0-$A7: scratch pointer pair $A0-$A3,
+                                     ;   ZP_ENEMY_Y (4 slots) at $A3
+        HEX 08 00 00 01 3E 00 4D 00  ; $A8-$AF: ZP_SPECIAL_STATE=$01,
+                                     ;   ZP_SPECIAL_POS=$003E, ZP_SPECIAL_ROW=$4D
+        HEX 00 01 FF 01 01 FF FF FF  ; $B0-$B7: ZP_COMPANION_STATE=$01,
+                                     ;   ZP_SPECIAL_SND_CTR=$FF (idle),
+                                     ;   ZP_ENEMY_C_SND_CTR=$FF (idle)
+        HEX FF 00 48 92 DA 84 83 81  ; $B8-$BF: ZP_ENEMY_A_SND_CTR=$FF (idle)
+        HEX 80 80 01 03 04 00 00 00  ; $C0-$C7: ZP_PROJ_DIR (4 slots) = $00
+        HEX 00 00 00 00 00 00 00 00  ; $C8-$CF: ZP_PROJ_X/Y = $00
+        HEX 00 00 00 00 01 52 03 4E  ; $D0-$D7: ZP_SCORE_HI/MID/LO=$00,
+                                     ;   ZP_ENEMY_C_STATE=$01,
+                                     ;   ZP_ENEMY_C_POS=$0352, ZP_ENEMY_C_ROW=$4E
+        HEX 88 CC EE FF 01 61 03 55  ; $D8-$DF: ZP_ENEMY_A_STATE=$01,
+                                     ;   ZP_ENEMY_A_POS=$0361, ZP_ENEMY_A_ROW=$55
+        HEX 01 04 03 80 FF 11 14 16  ; $E0-$E7: ZP_ENEMY_B_STATE=$01,
+                                     ;   ZP_ENEMY_B_POS=$0304, ZP_ENEMY_B_ROW=$80,
+                                     ;   ZP_ENEMY_B_SND_CTR=$FF (idle)
+        HEX 18 6A 6A 6A 6A 02 02 01  ; $E8-$EF: ZP_ATTRACT_ENT_Y (4 slots, $E9-$EC)
+        HEX 01 1A 14 83 75 0C 02 01  ; $F0-$F7: attract-mode scratch
+        HEX D0 00 00 00 00 00 00 00  ; $F8-$FF: ZP_BEAM_TICK=$D0 (idle),
+                                     ;   ZP_BEAM_SND_CTR=$00,
+                                     ;   ZP_FRAME_COUNTER=$00
 @ %def UNUSED_PAGE ZP_SAVE
 
 <<rwts high level>>=

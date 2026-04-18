@@ -40,3 +40,4 @@
 - [Drol $5ED4-$5FFF dead twin of RWTS](drol-stage-dead-tail.md) — pre-release twin of $BED4-$BFFF; SM refs at $5F25/$5F2B mutate live $BF21 not self
 - [Drol ZP-symbol sweep candidates](drol-zp-symbol-sweep-candidates.md) — grep pattern + alias-selection rules for periodic raw-$XX -> ZP_SYMBOL style passes
 - [Drol sprite pointer tables](drol-sprite-pointer-tables.md) — $7500-$76FF split into 37 labeled LO/HI sub-tables + SPRITE_PIXEL_DATA at $7700-$8BFF
+- [Drol ZP_SAVE cold-start image](drol-zp-save-image.md) — $5700-$57FF is the full on-disk zero-page image; explains why $37=$C0 and why attract runs first (ZP_GAME_ENTRY=$72A3 from $4E/$4F)

@@ -11019,47 +11019,114 @@ STAGE_STACK_DEAD_TAIL:
 
         ORG $5D00
 STAGE_VECTORS:
-        ; Staging buffer for the vector page ($0300-$03EF).  Copied
-        ; to VECTOR_PAGE by FIRST_BOOT; the first 40 bytes are the
-        ; $55/$2A TEXT_STRIP_SRC dither source, the remaining
-        ; $5D28-$5DEF are small data tables (music/pitch sequences,
-        ; entity seeds, etc.) consumed elsewhere in the game.  The
-        ; trailing $5DF0-$5DFF is install-time residue not referenced
-        ; at runtime.
+        ; Staging buffer for the vector page ($0300-$03EF).  FIRST_BOOT's
+        ; .copy_init loop reads 240 bytes ($F0) from here and writes
+        ; them into VECTOR_PAGE ($0300).  After that one-shot install
+        ; the game never reads from $5Dxx again --- every live
+        ; consumer addresses the $03xx destinations directly (see
+        ; TEXT_STRIP_SRC_DATA, HIT_BG_HI_DATA, ENTITY_FLOOR_COL_DATA,
+        ; etc.).  The twelve sub-tables below match the $0300 layout
+        ; byte-for-byte (verified against reference/drol.bin); the
+        ; final 16 bytes at $5DF0-$5DFF are \emph{outside} the 240-
+        ; byte copy window and are install-time residue not
+        ; referenced at runtime.
 
+; --- $5D00-$5D27 -> $0300-$0327: TEXT_STRIP_SRC (dither source) ---
+STAGE_TEXT_STRIP_SRC:
         HEX 55 2A 55 2A 55 2A 55 2A
         HEX 55 2A 55 2A 55 2A 55 2A
         HEX 55 2A 55 2A 55 2A 55 2A
         HEX 55 2A 55 2A 55 2A 55 2A
         HEX 55 2A 55 2A 55 2A 55 2A
+
+; --- $5D28-$5D33 -> $0328-$0333: HIT_BG_HI (12 bytes) ---
+STAGE_HIT_BG_HI:
         HEX 20 21 21 21 21 21 21 20
-        HEX 20 20 21 21 90 19 8D 90
-        HEX 93 11 16 8D 95 98 0E 98
+        HEX 20 20 21 21
+
+; --- $5D34-$5D3F -> $0334-$033F: HIT_BG_LO (12 bytes) ---
+STAGE_HIT_BG_LO:
+        HEX 90 19 8D 90 93 11 16 8D
+        HEX 95 98 0E 98
+
+; --- $5D40-$5D4B -> $0340-$034B: HIT_BG_BYTE1 (12 bytes) ---
+STAGE_HIT_BG_BYTE1:
         HEX 20 00 50 20 40 00 00 50
-        HEX 54 28 00 28 05 2A 02 05
-        HEX 0A 2A 15 02 00 01 15 01
+        HEX 54 28 00 28
+
+; --- $5D4C-$5D57 -> $034C-$0357: HIT_BG_BYTE0 (12 bytes) ---
+STAGE_HIT_BG_BYTE0:
+        HEX 05 2A 02 05 0A 2A 15 02
+        HEX 00 01 15 01
+
+; --- $5D58-$5D6B -> $0358-$036B: ENTITY_FLOOR_COL (20 bytes) ---
+STAGE_ENTITY_FLOOR_COL:
         HEX 6E DA 4A B8 26 94 02 6E
         HEX DA 4A B8 26 94 02 6E DA
-        HEX 4A B8 26 94 00 00 01 01
-        HEX 02 02 03 00 00 01 01 02
-        HEX 02 03 00 00 01 01 02 02
+        HEX 4A B8 26 94
+
+; --- $5D6C-$5D7F -> $036C-$037F: ENTITY_XOFF_IDX (20 bytes) ---
+STAGE_ENTITY_XOFF_IDX:
+        HEX 00 00 01 01 02 02 03 00
+        HEX 00 01 01 02 02 03 00 00
+        HEX 01 01 02 02
+
+; --- $5D80-$5D93 -> $0380-$0393: ENTITY_FLOOR_POS (20 bytes) ---
+STAGE_ENTITY_FLOOR_POS:
         HEX 51 51 51 51 51 51 51 79
         HEX 79 79 79 79 79 79 A1 A1
-        HEX A1 A1 A1 A1 01 01 FF FF
-        HEX 01 01 FF 01 01 FF FF 01
-        HEX 01 FF 01 FF 01 FF 01 FF
+        HEX A1 A1 A1 A1
+
+; --- $5D94-$5DA7 -> $0394-$03A7: RESCUE_DIR (20 bytes) ---
+STAGE_RESCUE_DIR:
+        HEX 01 01 FF FF 01 01 FF 01
+        HEX 01 FF FF 01 01 FF 01 FF
+        HEX 01 FF 01 FF
+
+; --- $5DA8-$5DBB -> $03A8-$03BB: ENTITY_ACTIVE (20 bytes, all zero) ---
+STAGE_ENTITY_ACTIVE:
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 07 07 00 00
-        HEX 07 07 00 07 07 00 00 07
-        HEX 07 00 07 00 07 00 07 00
+        HEX 00 00 00 00
+
+; --- $5DBC-$5DCF -> $03BC-$03CF: RESCUE_ANIM (20 bytes) ---
+STAGE_RESCUE_ANIM:
+        HEX 07 07 00 00 07 07 00 07
+        HEX 07 00 00 07 07 00 07 00
+        HEX 07 00 07 00
+
+; --- $5DD0-$5DE3 -> $03D0-$03E3: RESCUE_FLOOR (20 bytes) ---
+STAGE_RESCUE_FLOOR:
         HEX 02 02 02 02 02 02 02 03
         HEX 03 03 03 03 03 03 04 04
-        HEX 04 04 04 04 C2 AA AC C1
-        HEX AA 60 4C 51 A8 EA EA 4C
+        HEX 04 04 04 04
+
+; --- $5DE4-$5DEF -> $03E4-$03EF: RESCUE_COUNTDOWN head (12 bytes) ---
+; FIRST_BOOT's 240-byte copy ends at $5DEF inclusive; these 12 bytes
+; form the RESCUE_COUNTDOWN head ($03E4-$03EF).  The corresponding
+; $03E4-$03EF twin in the entity-tables-03A8 chunk is prose-annotated
+; as stale disk-image residue (never read at runtime --- cleared by
+; the level-init zero-pass).  Bytes $4C 51 A8 EA EA 4C disassemble
+; as 'JMP $A851; NOP; NOP; JMP ...' but no code jumps to $03E4, so
+; this is data-image residue, not code.
+STAGE_RESCUE_COUNTDOWN_HEAD:
+        HEX C2 AA AC C1 AA 60 4C 51
+        HEX A8 EA EA 4C
+
+; --- $5DF0-$5DFF: install-time residue (outside 240-byte copy window) ---
+; Sixteen bytes not copied by FIRST_BOOT and not referenced at
+; runtime.  The byte sequence $4C 58 FF / $4C 65 FF would disassemble
+; as JMP MON_RESET_VECTOR / JMP MON_SOFT_RESET if reached, but
+; nothing jumps here.  Preserved verbatim for byte-exact drol.bin
+; match.
+STAGE_VECTORS_RESIDUE:
         HEX 59 FA BF 9D 38 4C 58 FF
         HEX 4C 65 FF 4C 65 FF 65 FF
-@ %def STAGE_VECTORS
+@ %def STAGE_VECTORS STAGE_TEXT_STRIP_SRC STAGE_HIT_BG_HI STAGE_HIT_BG_LO
+@ %def STAGE_HIT_BG_BYTE1 STAGE_HIT_BG_BYTE0 STAGE_ENTITY_FLOOR_COL
+@ %def STAGE_ENTITY_XOFF_IDX STAGE_ENTITY_FLOOR_POS STAGE_RESCUE_DIR
+@ %def STAGE_ENTITY_ACTIVE STAGE_RESCUE_ANIM STAGE_RESCUE_FLOOR
+@ %def STAGE_RESCUE_COUNTDOWN_HEAD STAGE_VECTORS_RESIDUE
 
 <<stage residue dead>>=
 

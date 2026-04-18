@@ -329,6 +329,82 @@ symbol in the same commit. Full policy (including exceptions for
 memory-map tables and ORG directives) lives in the `### Prose rules`
 section of `CLAUDE.md`.
 
+## Standing rule: every round ends with style-sweep, commit, push
+
+Every RE round ends with three non-optional steps, in order. Do not report
+the round "done" until all three succeed.
+
+### 1. Style-guideline sweep
+
+After the main RE work, pass over `main.nw` and apply the style rules in
+`CLAUDE.md` to anything this round touched or surfaced. In particular:
+
+- **New symbols.** For every label/EQU introduced this round, grep `main.nw`
+  for raw hex occurrences of that address and replace with the symbol — in
+  code operands (`JSR $XXXX` → `JSR LABEL`, `LDA $XXXX,X` → `LDA LABEL,X`),
+  in inline comments, and in prose (`[[$XXXX]]` → `[[LABEL]]`). Use
+  word-boundary regex to avoid prefix collisions. Skip lines containing
+  `EQU` or `%def` to avoid circular definitions.
+- **Prose address wrapping.** Every numeric address in prose must be
+  `[[SYMBOL]]` or `[[$XXXX]]` — never bare `\$XXXX`, never `[[\$XXXX]]`.
+  Clear resolved `TODO-SYM` markers.
+- **Code comments.** Remove comments that merely restate the instruction or
+  carry a raw `$XXXX` where a symbol exists. Use `<-` and `#$` in
+  assignment comments. Refer to indexed tables as `SYMBOL[Y]` in prose
+  (never `SYMBOL,Y`). Comments are ASCII-only.
+- **Immediates.** `LDA #imm` where `imm` is a label or label byte must be
+  `#<label` / `#>label`.
+- **Chunk placement.** Run
+  `python3 .claude/skills/chunk-placement/check_placement.py`. Report any
+  NEW violations introduced by this round (pre-existing violations are not
+  the round's responsibility, but note the count delta in the round
+  summary).
+- **ORG order.** If the collection chunk's ORG addresses are out of
+  ascending order, run `.claude/skills/assemble/reorder_chunks.py`.
+
+### 2. Build-verify gate
+
+Run the full tangle-build-verify pipeline (the `/assemble` skill, or
+equivalently re-run `python3 weave.py main.nw output`, `dasm` each target,
+then `python3 .claude/skills/assemble/verify.py <target>` for each of
+`boot1`, `loader`, `rwts`, `drol`, `level1`).
+
+All targets must be byte-perfect. If any target diverges, roll back the
+offending edit and re-verify. Do not commit a red build.
+
+### 3. Commit and push
+
+Once verification is green, stage the round's changes, commit with a
+descriptive message, and push. A working invocation that does not rely on
+any global git config being present inside the container:
+
+```bash
+git -c safe.directory=/project/drol_re add \
+    main.nw \
+    images/ \
+    .claude/agent-memory/reverse-engineer/ \
+    .claude/scripts/
+
+git -c safe.directory=/project/drol_re \
+    -c user.email=robert.c.baruch@gmail.com \
+    -c user.name="Xekri Redmane" \
+    commit -m "$(cat <<'EOF'
+<concise subject, <=72 chars: address or region reversed>
+
+<body: what was learned, names introduced, verification result>
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+
+git -c safe.directory=/project/drol_re push
+```
+
+Only stage files the round actually modified or created — do not use
+`git add -A` (it can pick up stray build artifacts or credential files).
+If `git push` fails (network, credentials, non-fast-forward), surface the
+failure in the round summary rather than retrying blindly or force-pushing.
+
 ## Chunk hygiene
 
 Throughout all rounds, maintain chunk quality:

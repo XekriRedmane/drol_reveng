@@ -1585,6 +1585,10 @@ HIRES2_ROW191   = $5FD0         ; Hi-res page 2, row 191
 TEXT_SCREEN     = $0400          ; First line of text screen
 BOTTOM_ROW_DATA = $0300          ; Screen row data for bottom fill
 
+; --- Reset vector (Apple II soft-entry) ---
+SOFTEV          = $03F2          ; Soft-entry reset vector (low/high bytes)
+SOFTEV_CHK      = $03F4          ; SOFTEV checksum (SOFTEV+1 EOR #$A5)
+
 ; --- Applesoft ROM ---
 AS_HPLOT_ENTRY  = $E3E0         ; Applesoft HPLOT entry point
 AS_GETNUM       = $E254         ; Applesoft GETNUM (parse numeric parameter)
@@ -1593,8 +1597,6 @@ AS_DIV_ZERO_ERR = $E77E         ; Applesoft division by zero error
 ; --- Game code stubs (not yet reverse-engineered) ---
 GAME_LINE_TBL_LO = $7380        ; Hi-res line address table (low bytes)
 GAME_LINE_TBL_HI = $7440        ; Hi-res line address table (high bytes)
-GAME_ROUTINE_1255 = $1255       ; Game routine (in score routines hex data)
-GAME_SCROLL_HANDLER = $28A0     ; Game scroll handler (called from SCROLL_UP)
 @
 
 \section{RWTS reload}
@@ -1889,8 +1891,11 @@ COPY_ROM_TO_LC:
         BIT LC_BANK1_ROROM      ; Write-protect LC
         RTS
 
-; Jump to game routine.
-        JMP GAME_ROUTINE_1255
+; Three-byte padding to align RESET_R at $BF00. The bytes $4C $55 $12
+; decode as JMP $1255 but are never executed --- the RTS above ends the
+; routine. The target $1255 lands inside BEAM_TARGET_TICK's .seed body
+; (bytes $03 $60, an illegal opcode + RTS) and is not a real entry point.
+        HEX 4C 55 12
 @ %def COPY_ROM_TO_LC
 
 \section{Reset handlers}
@@ -1953,9 +1958,12 @@ RESET_BANG:
         CMP #$08                ; Stop
         BCS .clear_outer        ; Outer loop: next page
 
-; Set reset vector to slot ROM and reboot.
-        STA $03F3               ; Low byte (= $08, harmless value)
-        STA $03F4               ; Checksum (invalid, forces cold start)
+; Invalidate the soft-entry reset vector (A = $07 from the clear-page
+; loop's final page index), then reboot via slot ROM. Writing garbage to
+; SOFTEV+1 (high byte) and SOFTEV_CHK (checksum) makes the Monitor
+; reset path force a cold boot rather than a warm restart.
+        STA SOFTEV+1            ; SOFTEV+1 <- #$07 (reset vector high byte, invalid)
+        STA SOFTEV_CHK          ; SOFTEV_CHK <- #$07 (invalid checksum -> cold start)
         LDA LDR_SLOT            ; Get slot * 16
         LSR                     ; Derive slot ROM page $Cn
         LSR
@@ -1982,47 +1990,59 @@ LDR_PHASE       = $BF4A         ; Boot phase counter
 \section{Screen scroll routines}
 
 Two screen scroll routines save and restore hi-res screen content during
-disk loads. SCROLL\_UP copies 32 hi-res lines to a buffer at [[$4000]].
-SCROLL\_DN copies from the buffer back to the screen, then fills the
-bottom 4 text lines from [[$0300]] data.
+disk loads. SCROLL\_UP copies 32 hi-res lines to a buffer starting at
+[[$4028]] (hi-res page~2, skipping the leftmost 40 bytes). SCROLL\_DN
+copies from the buffer back to the screen, then fills the bottom 4 text
+lines from [[$0300]] data.
 
-SCROLL\_UP has two entry points: a preamble at [[$BF4B]] that checks whether
-to use a game scroll handler, and the main entry at [[$BF50]] which overlaps
-with the operand bytes of a [[JMP $28A0]] instruction (the byte sequence
-[[$A0]] [[$28]] reads as [[LDY #$28]] when entered at [[$BF50]]).  % TODO-SYM: $28
+SCROLL\_UP has two entry points: a preamble at [[SCROLL_UP_PRE]] that would
+delegate to a game scroll handler if A != [[#$FF]] on entry, and the main
+entry at [[SCROLL_UP]] which overlaps with the operand bytes of the
+delegation [[JMP]] (the byte sequence [[$A0]] [[$28]] reads as [[LDY #$28]]
+when entered at [[SCROLL_UP]]).  The delegation path is effectively dead
+code --- [[SCROLL_UP_PRE]] has no callers in the shipped game --- but the
+[[JMP]] is retained because its operand bytes form the [[LDY #$28]]
+initializer at [[SCROLL_UP]].
 
 <<scroll up>>=
 
         ORG $BF4B
 SCROLL_UP_PRE:
         SUBROUTINE
-        ; Save 32 hi-res screen lines to a buffer.
+        ; Save 32 hi-res screen lines to a buffer at $4028.
         ;
         ; Inputs:
-        ;   A -- if $FF, perform scroll; otherwise jump to game handler
+        ;   A   -- (SCROLL_UP_PRE entry) gate byte: $FF skips to scroll;
+        ;          other values would delegate to a game scroll handler.
+        ;          SCROLL_UP_PRE is never called in the shipped game;
+        ;          SCROLL_UP (+5) is the only live entry point.
         ;
         ; Behavior:
-        ;   Checks A for $FF; if not, delegates to game scroll handler.
-        ;   Otherwise copies 32 lines (40 bytes each) from hi-res page 2
-        ;   to the buffer, using SCREEN_ADDR_TBL for source
-        ;   addresses. SCROLL_UP is an alternate entry that
-        ;   overlaps with the JMP operand bytes (LDY #$28).
+        ;   At SCROLL_UP_PRE: TAY / INY / BEQ .skip. A == $FF yields Y=0
+        ;   and takes the branch; any other A falls through to the
+        ;   delegation JMP. The JMP's operand bytes ($A0 $28) are reused
+        ;   as an LDY #$28 initializer at SCROLL_UP.
+        ;
+        ;   At SCROLL_UP: LDY #$28 / LDA #$40 / STY $A0 / STA $A1 sets
+        ;   the destination pointer to $4028, then copies 32 lines of 40
+        ;   bytes each from hi-res page 2 (via SCREEN_ADDR_TBL) into the
+        ;   buffer.
         ;
         ; Modifies:
-        ;   GAME_INIT_NOP-$44FF, $A0-$A3
+        ;   $4028-$44FF, $A0-$A3
         ; Clobbers: A, X, Y
-        TAY                     ; Save A
+        TAY                     ; A -> Y so INY sets Z iff A was $FF
         INY
-        BEQ .skip               ; If A was $FF, skip to main scroll
-        JMP GAME_SCROLL_HANDLER ; Otherwise jump to game scroll handler
-
-; The JMP $28A0 above is ZP_SPRITE_XREF KEY_JUMP $28. Entry sees KEY_JUMP $28 = LDY #$28.
-SCROLL_UP = SCROLL_UP_PRE + 5  ; overlapping entry (LDY #$28)
+        BEQ .skip               ; A was $FF: fall through to scroll
+        HEX 4C A0 28            ; "JMP $28A0" (dead delegation); the $A0
+                                ;   $28 operand bytes serve as LDY #$28
+                                ;   when entered at SCROLL_UP below.
+SCROLL_UP = SCROLL_UP_PRE + 5   ; Live entry: LDY #$28 / LDA #$40 / ...
 
 .skip:
         LDA #$40
-        STY $A0                 ; Dest low = 0 (Y=0 from BEQ path)
-        STA $A1                 ; Dest high = $40
+        STY $A0                 ; $A0 <- Y (0 via BEQ, $28 via SCROLL_UP)
+        STA $A1                 ; $A1 <- #$40 (buffer page = $40xx)
         LDX #$00
 .copy_line:
         LDA SCREEN_ADDR_TBL,X  ; Line address low
@@ -2704,22 +2724,22 @@ SECTOR_RESIDUE_47XX:
 \section{Input dispatcher}
 
 [[INPUT_DISPATCH]] at [[$6000]] handles keyboard and joystick input during
-gameplay. If the input mode flag ([[$48]]) is negative, it delegates to the
-joystick handler at [[$012B]]. Otherwise it reads the keyboard and processes
+gameplay. If [[ZP_INPUT_MODE]] is negative, it delegates to
+[[JOYSTICK_HANDLER]]. Otherwise it reads the keyboard and processes
 five keys:
 
 \begin{itemize}
-\item Right arrow ([[$95]]): enable [[DO_MOVE_RIGHT]], disable [[DO_MOVE_LEFT]]
-\item Left arrow ([[$88]]): enable [[DO_MOVE_LEFT]], disable [[DO_MOVE_RIGHT]]
-\item `A' ([[$C1]]): fire/ascend --- enable [[DO_ASCEND]], disable [[DO_DESCEND]],
+\item Right arrow ([[KEY_RIGHT]]): enable [[DO_MOVE_RIGHT]], disable [[DO_MOVE_LEFT]]
+\item Left arrow ([[KEY_LEFT]]): enable [[DO_MOVE_LEFT]], disable [[DO_MOVE_RIGHT]]
+\item `A' ([[KEY_ACTION]]): fire/ascend --- enable [[DO_ASCEND]], disable [[DO_DESCEND]],
   search for a rescuable entity within range
-\item `Z' ([[$DA]]): descend --- enable [[DO_DESCEND]], disable [[DO_ASCEND]],
-  search for a rescuable entity, advance floor counter
-\item Space ([[$A0]]): set jump flag ([[$05]] = [[$FF]])  % TODO-SYM: $FF
+\item `Z' ([[KEY_DESCEND]]): descend --- enable [[DO_DESCEND]], disable [[DO_ASCEND]],
+  search for a rescuable entity, advance [[ZP_PLAYER_COL]]
+\item Space ([[KEY_JUMP]]): set [[ZP_JUMP_FLAG]] to [[$FF]]
 \end{itemize}
 
 Direction keys work by patching the opcode byte of the movement slots in
-the main loop: [[$20]] (JSR) to enable, [[$2C]] (BIT) to disable.
+the main loop: [[OPCODE_JSR]] to enable, [[OPCODE_BIT]] to disable.
 
 <<drol input defines>>=
 
@@ -2732,7 +2752,35 @@ KEY_JUMP        = $A0           ; Space key code (jump)
 OPCODE_JSR      = $20           ; JSR opcode (enable direction)
 OPCODE_BIT      = $2C           ; BIT abs opcode (disable direction)
 
+; --- Zero-page state shared with the movement action handlers ---
+; ZP_ASC_FLOOR / ZP_DSC_FLOOR / ZP_DSC_DIR / ZP_ENT_RESCUED are
+; seeded by INPUT_DO_ASCEND / INPUT_DO_DESCEND and consumed by
+; DO_ASCEND / DO_DESCEND at $6378.
+ZP_ASC_FLOOR    = $0B           ; Ascent-target floor index (0..5);
+                                ; set by INPUT_DO_ASCEND, read by DO_ASCEND
+                                ; to index FLOOR_CEIL and FLOOR_THRESH
+ZP_FLOOR_MIRROR = $0A           ; Second floor-index mirror (held in sync
+                                ; with ZP_BEAM_SEED_FLOOR / ZP_ASC_FLOOR
+                                ; / ZP_DSC_FLOOR on landing)
+ZP_DSC_FLOOR    = $0C           ; Descent-target floor index (0..5);
+                                ; set by INPUT_DO_DESCEND, read by DO_DESCEND
+ZP_DSC_DIR      = $0D           ; Descent search direction: $FF = searching
+                                ; down from current, $01 = just landed
+                                ; (set by INPUT_DO_ASCEND / DO_DESCEND)
+ZP_ENT_RESCUED  = $1D           ; Entity-rescued / post-hit flag: $FF when
+                                ; a rescue has just succeeded or a hit
+                                ; landed; consumed by DRAW_PLAYER and by
+                                ; MR_HIT_SLIDE / ML_HIT_SLIDE
+
+; --- Hit-entity world-Y table (12 slots, $66,X) ---
+; Parallel to ENTITY_HIT_STATE ($8D) and ENTITY_HIT_ROW ($72).
+; Read by INPUT_DO_ASCEND / INPUT_DO_DESCEND (to find a rescue
+; candidate matching the player's Y) and by REFRESH_HIT_ENTITIES
+; (to derive the on-screen column).
+ENTITY_HIT_Y    = $66           ; Hit-entity world-Y ($66,X, X<=ZP_HIT_MAX)
+
 ; --- Game code stubs (referenced by input) ---
+@ %def ZP_ASC_FLOOR ZP_FLOOR_MIRROR ZP_DSC_FLOOR ZP_DSC_DIR ZP_ENT_RESCUED ENTITY_HIT_Y
 @
 
 <<input dispatch>>=
@@ -2753,7 +2801,9 @@ INPUT_DISPATCH:
         ;
         ; Modifies:
         ;   SMC_ASCEND, SMC_DESCEND, SMC_MOVE_LEFT, SMC_MOVE_RIGHT,
-        ;   ZP $02-$07, $0B-$0D, $1D, $8D+X
+        ;   ZP_ACTION_DIR, ZP_PLAYER_STANCE, ZP_MOVE_DIR, ZP_JUMP_FLAG,
+        ;   ZP_PLAYER_COL, ZP_ASC_FLOOR, ZP_DSC_FLOOR, ZP_DSC_DIR,
+        ;   ZP_ENT_RESCUED, ENTITY_HIT_STATE,X
         ; Clobbers: A, X, Y
 
         LDA ZP_INPUT_MODE       ; Input mode flag
@@ -2802,51 +2852,51 @@ INPUT_DO_ASCEND:
         STY SMC_ASCEND          ; Enable ascend
         LDY #OPCODE_BIT
         STY SMC_DESCEND         ; Disable descend
-        LDA $03                 ; Current floor/level
+        LDA ZP_PLAYER_STANCE    ; Clamp stance into [$03..$09]
         BMI .clamp_low
         CMP #$03
         BCC .clamp_low
         CMP #$0A
         BCC .set_action
-        LDA #$09                ; Clamp high
-        STA $03
+        LDA #$09
+        STA ZP_PLAYER_STANCE    ; ZP_PLAYER_STANCE <- #$09 (clamp high)
         BPL .set_action
 .clamp_low:
-        LDA #$03                ; Clamp low
-        STA $03
+        LDA #$03
+        STA ZP_PLAYER_STANCE    ; ZP_PLAYER_STANCE <- #$03 (clamp low)
 .set_action:
         LDY #$01
-        STY $02                 ; Set action flag
+        STY ZP_ACTION_DIR       ; ZP_ACTION_DIR <- #$01 (ascend)
         DEY
-        STY ZP_KEY_CODE         ; Clear key code
+        STY ZP_KEY_CODE         ; ZP_KEY_CODE <- 0
         DEY
-        STY $0D                 ; Set search direction ($FF)
-        LDX ZP_HIT_MAX          ; Number of entities
+        STY ZP_DSC_DIR          ; ZP_DSC_DIR <- #$FF (searching)
+        LDX ZP_HIT_MAX          ; Iterate hit-entity slots
 .search_entity:
         SEC
-        LDA ENTITY_HIT_Y,X      ; Entity Y position
-        SBC ZP_PLAYER_Y         ; Player Y position
-        CMP #$18                ; Distance check
+        LDA ENTITY_HIT_Y,X      ; ENTITY_HIT_Y[X] - ZP_PLAYER_Y
+        SBC ZP_PLAYER_Y
+        CMP #$18                ; Distance window: [$15, $18)
         BCS .next_entity
         CMP #$15
         BCC .next_entity
-        LDY $0B                 ; Current rescue index
+        LDY ZP_ASC_FLOOR        ; Current ascent-target floor index
         DEY
-        BEQ .next_entity
-        LDA FLOOR_Y_TABLE,Y     ; Floor Y-coordinate
-        CMP $72,X               ; Compare with entity attribute
+        BEQ .next_entity        ; Floor 0 (top): nothing to ascend to
+        LDA FLOOR_Y_TABLE,Y     ; Y row of the next floor up
+        CMP ENTITY_HIT_ROW,X    ; Match entity's anchor row?
         BEQ .found_entity
 .next_entity:
         DEX
         BPL .search_entity
         RTS                     ; No entity found
 .found_entity:
-        STY $0B                 ; Update rescue index
+        STY ZP_ASC_FLOOR        ; Commit new ascent-target floor
         LDA #$01
-        STA $8D,X               ; Activate entity
-        STA $1D                 ; Set entity-found flag
+        STA ENTITY_HIT_STATE,X  ; ENTITY_HIT_STATE[X] <- #$01 (activate)
+        STA ZP_ENT_RESCUED      ; ZP_ENT_RESCUED <- #$01 (rescue succeeded)
         LDA #$00
-        STA $04                 ; Clear state
+        STA ZP_MOVE_DIR         ; ZP_MOVE_DIR <- #$00 (halt horizontal)
         RTS
 
 ; --- 'Z' key (descend) ---
@@ -2855,64 +2905,64 @@ INPUT_DO_ASCEND:
         BNE .check_jump
         BIT KBDSTROBE
 INPUT_DO_DESCEND:
-        LDA $0D                 ; Check current direction
-        BMI .check_floor
-        LDX ZP_HIT_MAX          ; Number of entities
+        LDA ZP_DSC_DIR          ; Check current direction
+        BMI .check_floor        ;   $FF = still searching
+        LDX ZP_HIT_MAX          ; Iterate hit-entity slots
 .search_descend:
         SEC
-        LDA ENTITY_HIT_Y,X      ; Entity Y position
-        SBC ZP_PLAYER_Y         ; Player Y position
+        LDA ENTITY_HIT_Y,X
+        SBC ZP_PLAYER_Y
         CMP #$18
         BCS .no_match_d
         CMP #$15
         BCC .no_match_d
-        LDY $0C                 ; Descend rescue index
-        LDA FLOOR_Y_TABLE,Y     ; Floor Y-coordinate
-        CMP $72,X               ; Compare entity attribute
+        LDY ZP_DSC_FLOOR        ; Descend-target floor index
+        LDA FLOOR_Y_TABLE,Y
+        CMP ENTITY_HIT_ROW,X
         BEQ .found_descend
 .no_match_d:
         DEX
         BPL .search_descend
 .check_floor:
-        LDA $06                 ; Floor counter
-        LDX $0C
-        CMP $83,X               ; Compare with limit
+        LDA ZP_PLAYER_COL       ; Player screen column
+        LDX ZP_DSC_FLOOR
+        CMP FLOOR_THRESH,X      ; FLOOR_THRESH[X]
         BEQ .done_descend
         BNE .set_descend_dir
 .found_descend:
         INY
-        STY $0C                 ; Update descend index
+        STY ZP_DSC_FLOOR        ; Commit new descent-target floor
         LDY #$00
-        STY $04                 ; Clear state
+        STY ZP_MOVE_DIR         ; ZP_MOVE_DIR <- #$00 (halt horizontal)
         INY
-        STY $8D,X               ; Activate entity
-        STY $1D                 ; Set entity-found flag
+        STY ENTITY_HIT_STATE,X  ; ENTITY_HIT_STATE[X] <- #$01 (activate)
+        STY ZP_ENT_RESCUED      ; ZP_ENT_RESCUED <- #$01
         CLC
-        LDA $06                 ; Advance floor counter
+        LDA ZP_PLAYER_COL
         ADC #$04
-        STA $06
+        STA ZP_PLAYER_COL       ; ZP_PLAYER_COL += 4
 .set_descend_dir:
         LDA #OPCODE_JSR
         STA SMC_DESCEND         ; Enable descend
         LDA #OPCODE_BIT
         STA SMC_ASCEND          ; Disable ascend
-        LDA $03                 ; Current floor
+        LDA ZP_PLAYER_STANCE    ; Clamp stance into [$03..$09]
         BMI .clamp_low_d
         CMP #$03
         BCC .clamp_low_d
         CMP #$0A
         BCC .set_descend
         LDA #$09
-        STA $03
+        STA ZP_PLAYER_STANCE    ; ZP_PLAYER_STANCE <- #$09
         BPL .set_descend
 .clamp_low_d:
         LDA #$03
-        STA $03
+        STA ZP_PLAYER_STANCE    ; ZP_PLAYER_STANCE <- #$03
 .set_descend:
         LDY #$FF
-        STY $02                 ; Set descend direction flag
+        STY ZP_ACTION_DIR       ; ZP_ACTION_DIR <- #$FF (descend)
         INY
-        STY ZP_KEY_CODE         ; Clear key code
+        STY ZP_KEY_CODE         ; ZP_KEY_CODE <- 0
 .done_descend:
         RTS
 
@@ -3518,24 +3568,30 @@ rendering, input, physics, collision detection, and AI.
 
 \section{Main loop dispatcher}
 
-[[MAIN_LOOP]] at [[$67CB]] calls subroutines in a fixed order each frame.
-After all per-frame work, it increments the frame counter at [[$FD]], checks
-two game-state flags ([[$5E]] and [[$39]]), and either loops back to [[$67CB]] or
-branches to level-complete ([[$7208]]) or game-over ([[$BDA0]]) handlers.
+[[MAIN_LOOP]] at [[MAIN_LOOP]] calls subroutines in a fixed order each frame.
+After all per-frame work, it increments the frame counter at
+[[ZP_FRAME_COUNTER]], checks two game-state flags ([[ZP_LIVES_BCD]] and
+[[ZP_GAME_OVER]]), and either loops back to [[MAIN_LOOP]] or branches to
+level-complete ([[LIFE_LOST_HANDLER]]) or game-over ([[GAME_OVER]])
+handlers.
 
 \paragraph{Attract mode.}
-During the attract/title screen, the loop is entered via [[JSR $67D7]],
-which skips the first three calls (rendering setup, scroll, and input).
-Four [[BIT abs]] instructions at [[$67D7]]--[[$67E0]] serve as 3-byte NOPs
-during normal play; during attract mode they are the entry point that
-harmlessly reads memory before falling through to the active subroutines.
+During the attract/title screen, the loop is entered via
+[[JSR ATTRACT_ENTRY]], which skips the first three calls (rendering
+setup, scroll, and input).  Four [[BIT abs]] instructions at
+[[ATTRACT_ENTRY]] serve as 3-byte NOPs during normal play; during
+attract mode they are the entry point that harmlessly reads memory
+before falling through to the active subroutines.
 
 \paragraph{Self-modifying patches.}
 Three bytes are patched when transitioning from attract to game mode:
 \begin{itemize}
-\item [[$67D1]]: changed from [[BIT]] ([[$2C]]) to [[JSR]] ([[$20]]) --- enables input handling
-\item [[$67EF]]: changed from [[BIT]] ([[$2C]]) to [[JSR]] ([[$20]]) --- enables another subsystem
-\item [[$6827]]: changed from [[JSR]] ([[$20]]) to [[NOP]] ([[$EA]]) --- disables attract-mode behavior  % TODO-SYM: $EA
+\item [[SMC_INPUT]]: changed from [[BIT]] ([[$2C]]) to [[JSR]]
+  ([[OPCODE_JSR]]) --- enables input dispatch.
+\item [[SMC_RENDER]]: changed from [[BIT]] ([[$2C]]) to [[JSR]]
+  ([[OPCODE_JSR]]) --- enables sprite rendering.
+\item [[SMC_ATTRACT]]: changed from [[JSR]] ([[OPCODE_JSR]]) to
+  [[NOP]] ([[$EA]]) --- disables the attract post-frame callback.
 \end{itemize}
 
 <<main loop>>=
@@ -3578,8 +3634,8 @@ SMC_MOVE_RIGHT = *
 
         JSR DISPLAY_PAGE_FLIP   ; Toggle hi-res display page
         JSR PLAYER_MOVE_TICK    ; Player movement tick dispatcher
-        JSR ENEMY_AI_1          ; Enemy AI (part 1)
-        JSR ENEMY_AI_2          ; Enemy AI (part 2)
+        JSR SCROLL_EDGE_R       ; Right-edge top-band pillar painter
+        JSR SCROLL_EDGE_L       ; Left-edge top-band pillar painter
 SMC_RENDER = *
         JSR DRAW_PLAYER         ; Draw player sprite (BIT during attract)
         JSR FLOOR_ENEMY_ADVANCE ; 4-slot floor-enemy AI advance + spawn
@@ -4893,13 +4949,15 @@ tables at [[$B006]] and [[$B086]]. Each entity is drawn with height~8 via
 [[SPRITE_DRAW_CALL]].
 
 After the entity loop, it draws a fixed ``logo'' sprite at column~[[$1D]],  % TODO-SYM: $1D
-row~[[$A5]], dimensions [[$12]]$\times$[[$08]], with sprite data at [[$BCF1]].  % TODO-SYM: $A5 $12 $BCF1
+row~[[$A5]], dimensions [[$12]]$\times$[[$08]], with sprite data at
+[[BRODERBUND_LOGO_SPR]].
 
-\paragraph{The ``logo'' sprite at [[$BCF1]].}  Despite the code comment,  % TODO-SYM: $BCF1
-rendering the [[$13]]$\times$[[$08]] byte region at [[$BCF1]]  % TODO-SYM: $BCF1
-(Figure~\ref{fig:drol_logo}) reveals that this fixed sprite is not
-the game title at all --- it is the \textbf{\textcopyright 1983
-Broderbund} attribution strip shown during the attract sequence.
+\paragraph{The ``logo'' sprite at [[BRODERBUND_LOGO_SPR]].}  Despite the
+code comment, rendering the [[$13]]$\times$[[$08]] byte region at
+[[BRODERBUND_LOGO_SPR]] (Figure~\ref{fig:drol_logo}) reveals that this
+fixed sprite is not the game title at all --- it is the
+\textbf{\textcopyright 1983 Broderbund} attribution strip shown during
+the attract sequence.
 The title-screen ``DROL'' logo is drawn by a different routine via
 the [[ATTRACT_SPR2]] / [[ATTRACT_SPR]] tables at [[$B002]]/[[$B006]] whose
 sprite widths and heights come from the runtime ZP slots
@@ -4909,10 +4967,10 @@ simulating the attract-mode animation state.
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.60\textwidth]{images/drol_logo.png}
-\caption{The fixed sprite at [[$BCF1]], dimensions $[[$13]]\times[[$08]]$  % TODO-SYM: $BCF1
-bytes (W=[[$12]], H=[[$08]]).  Drawn by [[ATTRACT_ANIM_4]] after the  % TODO-SYM: $12
-variable-entity loop.  The sprite renders the ``(c) 1983
-Broderbund'' attribution.}
+\caption{The fixed sprite at [[BRODERBUND_LOGO_SPR]], dimensions
+$[[$13]]\times[[$08]]$ bytes (W=[[$12]], H=[[$08]]).  Drawn by
+[[ATTRACT_ANIM_4]] after the variable-entity loop.  The sprite renders
+the ``(c) 1983 Broderbund'' attribution.}
 \label{fig:drol_logo}
 \end{figure}
 
@@ -4927,21 +4985,32 @@ ZP_SAVE_X       = $5C           ; Saved X index during draw
 ; --- Attract sprite tables ---
 ATTRACT_SPR_LO  = $B006         ; Attract sprite pointer table, low bytes
 ATTRACT_SPR_HI  = $B086         ; Attract sprite pointer table, high bytes
-@
+
+; --- Broderbund attribution logo sprite (attract mode) ---
+; $13 x $08-byte fixed sprite drawn by ATTRACT_ANIM_4 after the
+; 2-entity draw loop.  Lives in level-1 swappable data ($8C00-$BDFF)
+; and is rendered at column $1D, row $A5.  See figure drol_logo.
+BRODERBUND_LOGO_SPR = $BCF1     ; Level-1 "(c) 1983 Broderbund" strip
+@ %def BRODERBUND_LOGO_SPR
 
 <<attract anim 4>>=
 
         ORG $1844
 ATTRACT_ANIM_4:
         SUBROUTINE
-        ; Attract sprite draw -- renders attract-mode entities and logo.
+        ; Attract sprite draw: renders attract-mode entities then the
+        ; fixed "(c) 1983 Broderbund" attribution strip.
         ;
         ; Behavior:
-        ;   Loops X = 1..0, drawing each entity from ZP arrays.
-        ;   Then draws a fixed logo sprite.
+        ;   1. Loop X = 1 down to 0, drawing entity X from the
+        ;      ZP_ATTRACT_X/Y/W arrays with sprite data pointed at
+        ;      by ATTRACT_SPR_LO/HI[X].
+        ;   2. Draw BRODERBUND_LOGO_SPR (fixed $13x$08 sprite at
+        ;      column $1D, row $A5) via DRAW_SPRITE.
         ;
         ; Modifies:
-        ;   Sprite parameters ($56, $57, $5B, $5D, $65B3, $65B4)
+        ;   ZP_SPRITE_W, ZP_SPRITE_H, ZP_SPRITE_X, ZP_SPRITE_Y,
+        ;   SPRITE_PTR_LO, SPRITE_PTR_HI, ZP_SAVE_X
         ; Clobbers: A, X
 
 ; --- Entity draw loop (X = 1 down to 0) ---
@@ -4965,20 +5034,20 @@ ATTRACT_ANIM_4:
         DEX
         BPL .draw_entity         ; Next entity (1 -> 0)
 
-; --- Draw fixed logo sprite ---
+; --- Draw fixed Broderbund-attribution sprite at col $1D, row $A5 ---
         LDA #$12
-        STA ZP_SPRITE_W          ; Width = $12
+        STA ZP_SPRITE_W                 ; ZP_SPRITE_W <- #$12 ($13 cols-1)
         LDA #$08
-        STA ZP_SPRITE_H          ; Height = $08
+        STA ZP_SPRITE_H                 ; ZP_SPRITE_H <- #$08 (8 rows)
         LDA #$A5
-        STA ZP_SPRITE_Y          ; Y = $A5
+        STA ZP_SPRITE_Y                 ; ZP_SPRITE_Y <- #$A5
         LDA #$1D
-        STA ZP_SPRITE_X          ; X column = $1D
-        LDA #$BC
-        STA SPRITE_PTR_HI        ; Sprite data high = $BC
-        LDA #$F1
-        STA SPRITE_PTR_LO        ; Sprite data low = $F1
-        JSR DRAW_SPRITE     ; Draw logo sprite
+        STA ZP_SPRITE_X                 ; ZP_SPRITE_X <- #$1D (left edge)
+        LDA #>BRODERBUND_LOGO_SPR
+        STA SPRITE_PTR_HI               ; SPRITE_PTR_HI <- #>BRODERBUND_LOGO_SPR
+        LDA #<BRODERBUND_LOGO_SPR
+        STA SPRITE_PTR_LO               ; SPRITE_PTR_LO <- #<BRODERBUND_LOGO_SPR
+        JSR DRAW_SPRITE                 ; Draw attribution strip
         RTS
 @ %def ATTRACT_ANIM_4
 
@@ -5011,7 +5080,8 @@ ATTRACT_LOOP:
         ;   MAIN_LOOP.
         ;
         ; Modifies:
-        ;   $48, $67D1, $67EF, $6827 (self-modifying patches)
+        ;   ZP_INPUT_MODE, SMC_INPUT, SMC_RENDER, SMC_ATTRACT
+        ;   (self-modifying patches toggle attract -> game mode)
         ; Clobbers: A, X, Y
 
 ; --- Attract frame ---
@@ -5023,9 +5093,9 @@ ATTRACT_LOOP:
 
 ; --- Poll input ---
         LDY #$00
-        LDA ($52),Y             ; Read joystick button 1
+        LDA (ZP_INPUT_1),Y      ; Read joystick button 1
         BMI ATTRACT_JOY_DETECT  ; Bit 7 set = button pressed
-        LDA ($54),Y             ; Read joystick button 2
+        LDA (ZP_INPUT_2),Y      ; Read joystick button 2
         BMI ATTRACT_JOY_DETECT
         LDA KEYBOARD            ; Read keyboard
         BPL ATTRACT_LOOP        ; No key = continue attract
@@ -5235,38 +5305,79 @@ ROW_COPY_CLICK_GATE:
 \section{Initial data tables on page 2}
 
 The bytes at [[$0200]]--[[$02B6]] hold a mixed bag of small data
-tables (pitch sequences, the [[ROW_COPY_BUFFER]] wipe pattern,
-entity-state seeds, and other initialiser bytes) that subsystems
-elsewhere in the binary index into. Only the [[ROW_COPY_BUFFER]] span
-at [[$024C]]--[[$0273]] has a live consumer in the shipped code
-([[SCREEN_ROW_COPY]]); the remainder is included here verbatim for
-byte-exactness and awaits per-consumer dissection.
+tables consumed by distinct subsystems: level tones, pitch sequences
+for each sound-emitting subsystem, the beam tracer's runtime state,
+the post-hit beam jingle, and the [[ROW_COPY_BUFFER]] wipe pattern.
+Sub-table layout (running concatenated so adjacent tables share a
+boundary byte; see the EQU declarations elsewhere in the document for
+each table's semantic role):
+
+\begin{itemize}
+\item [[LEVEL_DATA_BASE]] ([[$0200]]) --- 19 bytes, level-intro tone
+  amplitude/pitch table indexed $0..\$12$ by [[ZP_INTRO_COUNTDOWN]].
+\item [[RESCUE_DRIFT_PITCH]] ([[$0213]]) --- 5 bytes, rescue-child
+  drift-mode pitch indexed by [[RESCUE_COUNTDOWN]].
+\item [[SND_PITCH_TBL_SPECIAL]] ([[$0218]]) --- 12 bytes, ascending
+  pitch table for the special-sprite sound channel.
+\item [[SND_PITCH_TBL_SPECIAL_B]] ([[$021F]]) --- tail 5 bytes
+  (overlaps [[SND_PITCH_TBL_SPECIAL]]); descending-tone variant.
+\item [[SND_PITCH_TBL_C]] ([[$0224]]) --- 8 bytes, enemy-C click pitches.
+\item [[SND_PITCH_TBL_A]] ([[$0229]]) --- 8 bytes (overlaps C tail);
+  enemy-A click pitches.
+\item [[SND_PITCH_TBL_B]] ([[$0231]]) --- 6 bytes, enemy-B click
+  pitches.  Followed by five sentinel [[$FF]] bytes.
+\item [[TRACER_STATE]] ([[$0237]]) / [[TRACER_ROW]] ([[$023C]]) ---
+  two 5-slot parallel arrays for the beam tracer subsystem.  Initial
+  state is [[$FF]] / [[$00]] (inactive slot).
+\item [[BEAM_JINGLE]] ([[$0241]]) --- 11 bytes, post-hit jingle
+  pitch table.
+\item [[ROW_COPY_BUFFER]] ([[$024C]]) --- 40 bytes, title/restore
+  wipe pattern consumed by [[SCREEN_ROW_COPY]].
+\item [[$0274]]--[[$02B6]] --- miscellaneous initial seeds for
+  further subsystems; not yet decomposed into labelled sub-tables.
+\end{itemize}
 
 <<row copy data>>=
 
         ORG $0200
-        ; Initial data tables ($0200-$02B6, 183 bytes).
-        ; ROW_COPY_BUFFER is the 40-byte span at $024C-$0273.
+        ; --- LEVEL_DATA_BASE ($0200-$0212, 19 bytes): level-intro tone
+        ;     amplitudes indexed by ZP_INTRO_COUNTDOWN (0..$12).
         HEX 20 19 05 09 02 04 10 1E
         HEX 1A 2A 04 05 09 02 04 10
-        HEX 1E 09 04 07 0C 10 13 15
+        HEX 1E 09 04
+        ; --- RESCUE_DRIFT_PITCH ($0213-$0217, 5 bytes): drift-mode pitch
+        ;     indexed by RESCUE_COUNTDOWN.
+        HEX 07 0C 10 13 15
+        ; --- SND_PITCH_TBL_SPECIAL ($0218-$0223, 12 bytes): ascending
+        ;     pitch for the special-sprite sound channel.  The last 5
+        ;     bytes ($021F-$0223) double as SND_PITCH_TBL_SPECIAL_B.
         HEX 14 12 09 0E 10 13 16 15
-        HEX 17 1A 1C 1E 1E 1A 17 14
-        HEX 11 1A 0C 08 11 1C 16 0C
-        HEX 0F 10 12 14 0C 16 0E FF
-        HEX FF FF FF FF 00 00 00 00
-        HEX 00 1E 09 16 18 1B 0A 07
-        HEX 05 1E 1B 19
-        ; $024C: ROW_COPY_BUFFER (40-byte title-wipe pattern, consumed
-        ; by SCREEN_ROW_COPY; every screen row is overwritten with
-        ; this sequence during the title/restore wipe).
+        HEX 17 1A 1C 1E
+        ; --- SND_PITCH_TBL_C ($0224-$022B, 8 bytes): enemy-C click pitches.
+        ;     Tail overlaps SND_PITCH_TBL_A at $0229-$022B.
+        HEX 1E 1A 17 14 11 1A 0C 08
+        ; --- SND_PITCH_TBL_A tail ($022C-$0230, 5 more bytes to make 8).
+        HEX 11 1C 16 0C 0F
+        ; --- SND_PITCH_TBL_B ($0231-$0236, 6 bytes): enemy-B click pitches.
+        HEX 10 12 14 0C 16 0E
+        ; --- TRACER_STATE ($0237-$023B, 5 slots, disk $FF=inactive).
+        HEX FF FF FF FF FF
+        ; --- TRACER_ROW ($023C-$0240, 5 slots, disk $00).
+        HEX 00 00 00 00 00
+        ; --- BEAM_JINGLE ($0241-$024B, 11 bytes): post-hit jingle pitches
+        ;     read via ZP_BEAM_SND_CTR after a successful beam hit.
+        HEX 1E 09 16 18 1B 0A 07 05
+        HEX 1E 1B 19
+        ; --- ROW_COPY_BUFFER ($024C-$0273, 40 bytes): title-wipe pattern
+        ;     consumed by SCREEN_ROW_COPY; every screen row is overwritten
+        ;     with this sequence during the title/restore wipe.
         HEX 3E 57 2B 57
         HEX 6A 55 2A 75 2A 55 2A 55
         HEX 3A 55 2A 55 2A 55 2A 55
         HEX 2B 55 2A 55 2A 55 2A 5D
         HEX 2A 55 2A 55 2E 55 2A 57
         HEX 6A 55 6B 7D
-        ; $0274: remaining initial data (awaiting per-consumer RE).
+        ; --- $0274-$02B6: remaining initial data (awaiting per-consumer RE).
         HEX 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 D4 82 D4 82 D4 82 D4
@@ -7972,18 +8083,18 @@ four tracked enemies for collision with that trail.
 \item Compute $\Delta Y$~=~[[FLOOR_Y_TABLE]]$[{\rm state\_lo}]
   - $~[[BEAM_Y]].  If zero, RTS.  Clamp to 4 if $\geq$~5, otherwise
   use the raw delta as sprite height.
-\item Draw the beam sprite at [[$B529]] via [[DRAW_SPRITE]], using  % TODO-SYM: $B529
-  width~2, height~$\Delta Y$, column~[[$24]], Y~=~[[BEAM_Y]].  (The  % TODO-SYM: $24
-  source-pointer operands at [[SMC_DS_SRC_LO]] /
-  [[SMC_DS_SRC_HI]]~=~[[$65B3]]/[[$65B4]] are patched to~[[$B529]].)  % TODO-SYM: $B529
+\item Draw [[BEAM_SPR]] via [[DRAW_SPRITE]], using
+  width~2, height~$\Delta Y$, column~[[$24]], Y~=~[[BEAM_Y]].  (The
+  source-pointer operands [[SMC_DS_SRC_LO]]/[[SMC_DS_SRC_HI]] are
+  patched to [[BEAM_SPR]].)
 \item For each of four enemy slots X~=~3..0: if [[ZP_ENEMY_FLAG]],X
-  ([[$9B]]) is zero, skip.  Otherwise fetch [[ZP_ENEMY_COL]],X ([[$9F]])
-  as an index into [[PROJ_SCREEN_COL]] and require the
-  screen column to be in $[[[$23]], [[$25]])$.  If so, compare  % TODO-SYM: $23 $25
-  [[BEAM_Y]] against [[ZP_ENEMY_Y]],X ([[$A3]]) $\pm$~3:
-  a~\emph{hit} zeros the enemy flag, clears [[BEAM_STATE]],
-  re-arms the post-hit jingle ([[ZP_BEAM_SND_CTR]]~$\leftarrow$~[[$0A]]),
-  and awards 100~BCD points via [[SCORE_ADD]].
+  is zero, skip.  Otherwise fetch [[ZP_ENEMY_COL]],X as an index into
+  [[PROJ_SCREEN_COL]] and require the screen column to be in
+  $([[$23]], [[$25]]]$ (i.e.\ $\{[[$24]], [[$25]]\}$).  If so, require
+  [[BEAM_Y]]~$<$~[[ZP_ENEMY_Y]],X~$\le$~[[BEAM_Y]]~$+$~[[$03]]: a
+  \emph{hit} zeros the enemy flag, clears [[BEAM_STATE]], re-arms
+  the post-hit jingle ([[ZP_BEAM_SND_CTR]]~$\leftarrow$~[[$0A]]), and
+  awards [[$0100]]~BCD points via [[SCORE_ADD]].
 \end{enumerate}
 
 The ZP symbols [[$9B]]/[[$9F]]/[[$A3]]/[[$A7]]/[[$AB]] introduced here  % TODO-SYM: $A7
@@ -7993,14 +8104,14 @@ ESC-key location at [[$9B]] (renamed here from [[KEY_ESC]] for the
 purposes of this subsystem; the ESC-key alias only aliases [[$9B]] when
 the input dispatcher polls it).
 
-\paragraph{Beam sprite and ready-prompt.}  The beam source pointer
-[[$B529]] is sprite id~0 of the general [[SPRITE_TABLE]] family at  % TODO-SYM: $B529
+\paragraph{Beam sprite and ready-prompt.}  [[BEAM_SPR]] is sprite
+id~0 of the general [[SPRITE_TABLE]] family at
 [[$B000]]/[[$B080]] (the main 128-entry sprite pointer table shared by
 attract, enemy-B, and UI draws).  Adjacent id~1 at [[$B535]] is the  % TODO-SYM: $B535
 ``ready'' prompt sprite drawn at the top of each level intro by
 [[LEVEL_INTRO_TICK]].  Both live in the swappable level-data region
 and are shown in Figure~\ref{fig:sprite_table_ui} --- the beam's
-sprite bytes are the first [[$0C]] bytes at [[$B529]] and render as a  % TODO-SYM: $B529
+sprite bytes are the first [[$0C]] bytes at [[BEAM_SPR]] and render as a
 short vertical dashed trail; the ready-prompt sprite is
 $[[$04]]\times[[$0F]]$ (W=[[$03]], H=[[$0F]]).
 
@@ -8008,36 +8119,131 @@ $[[$04]]\times[[$0F]]$ (W=[[$03]], H=[[$0F]]).
 \centering
 \includegraphics[width=0.35\textwidth]{images/sprite_table_ui.png}
 \caption{[[SPRITE_TABLE]] UI sprites.  Left: the beam sprite at id~0
-([[$B529]]), drawn by [[BEAM_TARGET_DRAW]] as a variable-height trail  % TODO-SYM: $B529
+([[BEAM_SPR]]), drawn by [[BEAM_TARGET_DRAW]] as a variable-height trail
 1..4~rows tall between [[BEAM_Y]] and the target floor.  Right: the
 ``ready'' prompt at id~1 ([[$B535]]), drawn by [[LEVEL_INTRO_TICK]].}  % TODO-SYM: $B535
 \label{fig:sprite_table_ui}
 \end{figure}
 
-<<beam target draw hex>>=
+<<beam target draw defines>>=
+
+; --- Level-1 swappable sprite pointer ---
+BEAM_SPR        = $B529         ; beam sprite (id 0 of SPRITE_TABLE family)
+@
+
+<<beam target draw>>=
 
         ORG $1297
 BEAM_TARGET_DRAW:
         SUBROUTINE
-        ; Draw beam sprite trail + enemy collision check.
-        ; Raw data --- 115 bytes (to be disassembled).
+        ; Render the beam trail and run the 4-slot enemy-collision check.
+        ;
+        ; Inputs:
+        ;   BEAM_STATE           --- $00 idle (return), $0X chase, $FX attack.
+        ;                            Low nibble = target floor index.
+        ;   BEAM_Y               --- current beam scan row.
+        ;   FLOOR_Y_TABLE[X]     --- target floor walk-row.
+        ;   ZP_ENEMY_FLAG,X ($9B)  --- 4-slot enemy active flags.
+        ;   ZP_ENEMY_COL,X ($9F)   --- 4-slot PROJ_SCREEN_COL indices.
+        ;   ZP_ENEMY_Y,X ($A3)     --- 4-slot enemy hi-res Y row.
+        ;   PROJ_SCREEN_COL[Y]   --- perspective-grid screen column.
+        ;
+        ; Behavior:
+        ;   1. If BEAM_STATE == 0, return.
+        ;   2. Compute height = FLOOR_Y_TABLE[floor_idx] - BEAM_Y.
+        ;      Zero delta: return.  Delta >= 5: clamp to 4.
+        ;   3. Draw BEAM_SPR (2-wide, `height'-rows, col $24, row BEAM_Y)
+        ;      via DRAW_SPRITE (SMC_DS_SRC_LO/HI patched to BEAM_SPR).
+        ;   4. Walk X = 3..0 over enemy slots.  Each active slot whose
+        ;      screen column (PROJ_SCREEN_COL[ZP_ENEMY_COL]) lies in
+        ;      ($23, $25] and whose Y sits in (BEAM_Y, BEAM_Y+3] is a
+        ;      hit: clear the enemy flag, reset BEAM_STATE to idle,
+        ;      re-arm the post-hit jingle (ZP_BEAM_SND_CTR <- #$0A),
+        ;      and award +$0100 BCD via SCORE_ADD.
+        ;
+        ; Outputs:
+        ;   On hit: ZP_ENEMY_FLAG,X <- #$00, BEAM_STATE <- #$00,
+        ;           ZP_BEAM_SND_CTR <- #$0A, SCORE += $0100 BCD.
+        ;
+        ; Modifies:
+        ;   SMC_DS_SRC_LO/HI, ZP_SPRITE_W, ZP_SPRITE_H, ZP_SPRITE_X,
+        ;   ZP_SPRITE_Y, ZP_SCORE_ADD_LO, ZP_SCORE_ADD_HI,
+        ;   ZP_BEAM_SND_CTR, BEAM_STATE, ZP_ENEMY_FLAG,X.
+        ; Clobbers: A, X, Y
 
-        HEX AD FF 03 D0 01 60 29 0F
-        HEX AA BD F8 03 38 ED FE 03
-        HEX F0 F3 C9 05 90 02 A9 04
-        HEX 85 57 A9 02 85 56 A9 24
-        HEX 85 5D AD FE 03 85 5B A9
-        HEX 29 8D B3 65 A9 B5 8D B4
-        HEX 65 20 6F 65 A2 03 B5 9B
-        HEX F0 35 B4 9F A9 25 D9 34
-        HEX 1C 90 2C A9 23 D9 34 1C
-        HEX B0 25 AD FE 03 D5 A3 B0
-        HEX 1E 18 69 03 D5 A3 90 17
-        HEX A9 00 95 9B 8D FF 03 A9
-        HEX 0A 85 F9 A9 00 85 1A A9
-        HEX 01 85 1B 20 1A 12 60 CA
-        HEX 10 C4 60
-@ %def BEAM_TARGET_DRAW
+; --- Gate: only run when beam is active ---
+        LDA BEAM_STATE
+        BNE .active
+.ret:
+        RTS                             ; idle: nothing to draw or test
+
+; --- Height calculation ---
+.active:
+        AND #$0F                        ; extract floor idx from state
+        TAX
+        LDA FLOOR_Y_TABLE,X
+        SEC
+        SBC BEAM_Y                      ; A = target_Y - BEAM_Y
+        BEQ .ret                        ; zero delta: beam on target, skip draw
+        CMP #$05
+        BCC .set_h                      ; delta < 5: use as height
+        LDA #$04                        ; else clamp to 4 rows
+.set_h:
+        STA ZP_SPRITE_H                 ; sprite height = height
+        LDA #$02
+        STA ZP_SPRITE_W                 ; sprite width = 2 bytes/row
+        LDA #$24
+        STA ZP_SPRITE_X                 ; sprite col = $24 (right edge)
+        LDA BEAM_Y
+        STA ZP_SPRITE_Y                 ; sprite row = BEAM_Y
+
+; --- Patch DRAW_SPRITE source-ptr to BEAM_SPR ---
+        LDA #<BEAM_SPR
+        STA SMC_DS_SRC_LO
+        LDA #>BEAM_SPR
+        STA SMC_DS_SRC_HI
+        JSR DRAW_SPRITE
+
+; --- 4-slot enemy collision scan (X = 3..0) ---
+        LDX #$03
+.slot:
+        LDA ZP_ENEMY_FLAG,X
+        BEQ .next_slot                  ; inactive slot
+        LDY ZP_ENEMY_COL,X              ; Y = perspective-grid index
+; Column test: require PROJ_SCREEN_COL[Y] in ($23, $25] (beam column +/- 1).
+        LDA #$25
+        CMP PROJ_SCREEN_COL,Y
+        BCC .next_slot                  ; enemy col > $25: right of beam
+        LDA #$23
+        CMP PROJ_SCREEN_COL,Y
+        BCS .next_slot                  ; enemy col <= $23: left of beam
+; Row test: enemy Y in (BEAM_Y, BEAM_Y+3].
+        LDA BEAM_Y
+        CMP ZP_ENEMY_Y,X
+        BCS .next_slot                  ; BEAM_Y >= enemy_Y: beam below
+        CLC
+        ADC #$03
+        CMP ZP_ENEMY_Y,X
+        BCC .next_slot                  ; BEAM_Y+3 < enemy_Y: beam too far above
+
+; --- Hit: clear enemy, idle beam, queue jingle + score ---
+        LDA #$00
+        STA ZP_ENEMY_FLAG,X             ; enemy slot <- inactive
+        STA BEAM_STATE                  ; BEAM_STATE <- #$00 (idle)
+        LDA #$0A
+        STA ZP_BEAM_SND_CTR             ; arm post-hit jingle (10 notes)
+        LDA #$00
+        STA ZP_SCORE_ADD_LO             ; +$0100 BCD
+        LDA #$01
+        STA ZP_SCORE_ADD_HI
+        JSR SCORE_ADD
+        RTS
+
+.next_slot:
+        DEX
+        BPL .slot                       ; continue 3..0
+        RTS
+@ %def BEAM_TARGET_DRAW BEAM_SPR
 
 \section{Beam subsystem: per-frame update}
 
@@ -8139,8 +8345,6 @@ SMC_DS_SRC_HI   = $65B4         ; DRAW_SPRITE source-ptr high operand
 ; (SND_DELAY_UP / SND_DELAY_DOWN are carved routines; see their own
 ;  chunks at $109E / $1091.)
 
-; --- Callable routines ---
-DRAW_SPRITE_B529 = $656F        ; DRAW_SPRITE (alias for the beam-draw call)
 @
 
 <<beam update>>=
@@ -8303,7 +8507,6 @@ BEAM_TRACER_SPAWN:
 @ %def ZP_BEAM_TICK ZP_BEAM_SND_CTR ZP_BEAM_SEED_FLOOR FLOOR_CEIL
 @ %def ZP_ENEMY_FLAG ZP_ENEMY_COL ZP_ENEMY_Y FLOOR_THRESH
 @ %def SMC_DS_SRC_LO SMC_DS_SRC_HI SND_DELAY_UP SND_DELAY_DOWN
-@ %def DRAW_SPRITE_B529
 
 \section{Enemy-A advance timer}
 
@@ -10489,6 +10692,48 @@ address in [[$5C2B]]--[[$5FFF]] other than the live [[$5C00]] entry.
 The bytes are preserved verbatim for byte-exactness but serve no
 runtime purpose.
 
+\paragraph{The [[$5ED4]]--[[$5FFF]] tail: pre-release twin of
+[[$BED4]]--[[$BFFF]].}  The remaining 300-byte chunk is the single
+most revealing piece of dead residue in the staging area.  It
+partitions into three sub-blocks:
+
+\begin{itemize}
+\item [[$5ED4]]--[[$5EFF]] (44 bytes, [[STAGE_DEAD_RELOAD]]): two
+  small RWTS-retry helpers that call into the [[$BE95]] /
+  [[$BE5A]] / [[$BDBC]] rwts entry points and fall through into the
+  reset-handler body below.  These 44 bytes have no counterpart in
+  the live [[rwts.bin]] --- they are unique to this dead region.
+\item [[$5F00]]--[[$5F47]] (72 bytes, [[STAGE_DEAD_RESET]]): an
+  almost-exact copy of the reset-handler common body at
+  [[$BF00]]--[[$BF47]] ([[RESET_R]]/[[RESET_P]]/[[RESET_L]]/[[RESET_BANG]]
+  minus their [[BIT]]-abs selector prefix).  A single byte differs:
+  the clear-memory pointer is initialised to [[$BE00]] here, whereas
+  the live reset handler at [[$BF00]] starts one page lower at
+  [[$BD00]].  Later in development somebody shifted the clear-memory
+  top by one page to avoid stepping on newly-added game data, but
+  neglected to update this twin copy.
+\item [[$5F48]]--[[$5FFF]] (184 bytes): an exact byte-for-byte
+  duplicate of [[$BF48]]--[[$BFFF]] --- the trailing
+  [[LDR_TRACK]]/[[LDR_SLOT]]/[[LDR_PHASE]] slot, the
+  [[SCROLL_UP_PRE]]/[[SCROLL_DN]] pair, and the 64-byte
+  [[SCREEN_ADDR_TBL]] --- with one caveat: the scroll routines here
+  still index [[SCREEN_ADDR_TBL]] at [[$BFC0]] (the post-relocation
+  address), not at [[$5FC0]] (this copy), so even if their [[$5F4B]]
+  and [[$5F7F]] entry points were called they would reach into the
+  live language-card table anyway.  This strongly suggests that the
+  original loader plan was to copy [[$5E00]]--[[$5FFF]] into
+  [[$BE00]]--[[$BFFF]] via [[COPY_ROM_TO_LC]], matching the shape of
+  the other relocations in the boot chain.  The plan was dropped
+  (the live [[rwts.bin]] is assembled directly at [[$BE00]] and copied
+  into place by the loader's dedicated copy step), but the staging
+  bytes were left behind --- verbatim for [[$5F48]]--[[$5FFF]], with
+  one stale page byte at [[$5F21]] for the reset handler.
+\end{itemize}
+
+No shipped binary jumps into any address in [[$5ED4]]--[[$5FFF]];
+confirmed by linear disassembly of all four targets.  The bytes are
+preserved for byte-exact matching against [[drol.bin]].
+
 \paragraph{Layout summary.}
 
 \begin{center}
@@ -10503,7 +10748,12 @@ Range & Size & Role \\
 [[$5DF0]]--[[$5DFF]] & 16 bytes & Install-time padding/residue \\
 [[$5E00]]--[[$5EC4]] & 197 bytes & Dead fragment --- nibble-level sector reader \\
 [[$5EC5]]--[[$5ED3]] & 15 bytes & [[RESTART_DISPATCH]] (dead) \\
-[[$5ED4]]--[[$5FFF]] & 300 bytes & Dead code residue \\
+[[$5ED4]]--[[$5EFF]] & 44 bytes & [[STAGE_DEAD_RELOAD]]: dead RWTS-retry helpers \\
+[[$5F00]]--[[$5F47]] & 72 bytes & [[STAGE_DEAD_RESET]]: dead twin of [[RESET_R]] body \\
+[[$5F48]]--[[$5F4A]] & 3 bytes & Dead [[LDR_TRACK]]/[[LDR_SLOT]]/[[LDR_PHASE]] twin (stale) \\
+[[$5F4B]]--[[$5F7E]] & 52 bytes & [[STAGE_DEAD_SCROLL_UP]]: exact dup of [[SCROLL_UP_PRE]] \\
+[[$5F7F]]--[[$5FBF]] & 65 bytes & [[STAGE_DEAD_SCROLL_DN]]: exact dup of [[SCROLL_DN]] \\
+[[$5FC0]]--[[$5FFF]] & 64 bytes & [[STAGE_DEAD_ADDR_TBL]]: exact dup of [[SCREEN_ADDR_TBL]] \\
 \hline
 \end{tabular}
 \end{center}
@@ -10729,44 +10979,267 @@ RESTART_DISPATCH:
                                         ;   the life-lost handler.
 @ %def RESTART_DISPATCH
 
-<<staging buffers 5ED4>>=
+<<stage dead reload>>=
 
         ORG $5ED4
+STAGE_DEAD_RELOAD:
         SUBROUTINE
-        ; Remainder of the staging-buffers hex blob ($5ED4-$5FFF).
-        ; Immediately preceded by RESTART_DISPATCH ($5EC5-$5ED3).
-        ; Raw data --- 300 bytes
+        ; Dead residue ($5ED4-$5EFF, 44 bytes): two small RWTS-retry
+        ; helpers unique to the pre-relocation staging area.  No
+        ; shipped binary jumps into either entry point; they are kept
+        ; for byte-exact matching only.  Both helpers fall through
+        ; into STAGE_DEAD_RESET at $5F00 to select one of the four
+        ; "error" variants using the same BIT-abs skip pattern as the
+        ; live RESET_R/P/L/BANG handlers at $BF00.
+        ;
+        ; The two entries are:
+        ;   $5ED4: calls $BE95 (rwts reload), decrements a retry
+        ;          counter at $06F8; on zero branches to $5F04 --- a
+        ;          BNE opcode ($D0) that with Z-set always falls
+        ;          through to the 'L' error char LDA #$CC at $5F06.
+        ;          Otherwise reseeds $04F8 <- #$04, calls $BE5A twice
+        ;          (with A=0, then with the stacked byte) and JMPs
+        ;          to $BDBC.
+        ;   $5EED: reads ZP $2E, compares against $0478; on match
+        ;          branches to $5F10 which lands inside the operand
+        ;          of the following JSR $FB2F (byte $2F, an illegal
+        ;          6502 opcode), so that path would crash.  Otherwise
+        ;          saves $0478, calls $BE95, decrements $04F8 and
+        ;          falls through into STAGE_DEAD_RESET at $5F00 (the
+        ;          'R' error-char path).
 
-        HEX 20 95 BE CE
-        HEX F8 06 F0 28 A9 04 8D F8
-        HEX 04 A9 00 20 5A BE 68 20
-        HEX 5A BE 4C BC BD A4 2E CC
-        HEX 78 04 F0 1C AD 78 04 48
-        HEX 98 20 95 BE 68 CE F8 04
-        HEX A9 D2 2C A9 D0 2C A9 CC
-        HEX 2C A9 A1 48 20 E0 BE 20
-        HEX 2F FB 20 58 FC 20 84 FE
-        HEX 68 8D 00 04 A0 00 98 99
-        HEX 00 BE C8 D0 FA CE 21 BF
-        HEX 2C 30 C0 AD 21 BF C9 08
-        HEX B0 EA 8D F3 03 8D F4 03
-        HEX AD 49 BF 4A 4A 4A 4A 09
-        HEX C0 E9 00 48 A9 FF 48 60
-        HEX 00 60 FF A8 C8 F0 03 4C
-        HEX A0 28 A9 40 84 A0 85 A1
-        HEX A2 00 BD C0 BF 85 A2 BD
-        HEX C1 BF 85 A3 A0 27 B1 A2
-        HEX 91 A0 88 10 F9 18 A5 A0
-        HEX 69 28 85 A0 90 02 E6 A1
-        HEX E8 E8 E0 40 90 DC 60 A0
-        HEX 00 A9 45 84 A0 85 A1 A2
-        HEX 3E BD C0 BF 85 A2 BD C1
-        HEX BF 85 A3 A0 27 B1 A0 91
-        HEX A2 88 10 F9 38 A5 A0 E9
-        HEX 28 85 A0 B0 02 C6 A1 CA
-        HEX CA 10 DE A2 27 BD 00 03
-        HEX 9D D0 53 9D D0 57 9D D0
-        HEX 5B 9D D0 5F CA 10 EE 60
+; --- $5ED4: retry helper 1 ---
+        JSR $BE95                       ; $BE95: rwts reload entry  TODO-SYM
+        DEC $06F8                       ; text-page scratch as retry counter
+        BEQ STAGE_DEAD_RESET_L_ALT      ; counter=0 -> 'L' error path (via Z-set BNE fall-through)
+        LDA #$04
+        STA $04F8                       ; reseed inner counter <- #$04
+        LDA #$00
+        JSR $BE5A                       ; $BE5A: rwts sector read  TODO-SYM
+        PLA
+        JSR $BE5A                       ; call again with stacked byte
+        JMP $BDBC                       ; jump into $BDxx  TODO-SYM
+
+; --- $5EED: retry helper 2 ---
+        LDY $2E                         ; ZP $2E
+        CPY $0478                       ; compare against text-page byte
+        BEQ STAGE_DEAD_RESET_L_BROKEN   ; match -> $5F10 (mid-operand: would crash)
+        LDA $0478
+        PHA
+        TYA
+        JSR $BE95
+        PLA
+        DEC $04F8
+;       fall through into STAGE_DEAD_RESET
+@ %def STAGE_DEAD_RELOAD
+
+<<stage dead reset>>=
+
+STAGE_DEAD_RESET:
+        SUBROUTINE
+        ; Dead residue ($5F00-$5F47, 72 bytes): a near-exact duplicate
+        ; of the reset-handler common body at $BF00-$BF47.  The live
+        ; handler is RESET_R/P/L/BANG (address $BF00-$BF0A: four BIT
+        ; $XXYY skip entries that each LDA #error_char, then fall
+        ; through to the common body).  This twin is byte-identical
+        ; through $5F47 except for one byte: at $5F21 the clear-memory
+        ; self-modifying page is $BE instead of $BD, so this twin
+        ; would wipe $BE00 downward while the live handler wipes
+        ; $BD00 downward.
+        ;
+        ; Nothing in any shipped binary jumps here.  STAGE_DEAD_RELOAD
+        ; above falls through into this body but STAGE_DEAD_RELOAD
+        ; itself has no callers.
+
+; --- Error-char select prefix (BIT-abs skips between LDA #imm slots) ---
+; The four entry points here are shifted by one byte relative to the
+; live RESET_R/P/L/BANG (at $BF00).  In that layout each entry was
+; exactly at $BF00/$BF03/$BF06/$BF09 (LDA #imm directly).  Here the
+; twin lays them at $5F00/$5F04/$5F06/... with the second entry
+; hidden behind a BNE (opcode $D0) that the only real caller
+; (STAGE_DEAD_RELOAD's BEQ) always falls through (because Z is
+; guaranteed set when branching here).
+        LDA #$D2                        ; 'R' error char
+        DC.B $2C                        ; BIT abs (skip 2)
+STAGE_DEAD_RESET_L_ALT = *+1
+        LDA #$D0                        ; 'P' error char (direct entry not exposed as a label)
+        DC.B $2C                        ; BIT abs (skip 2)
+STAGE_DEAD_RESET_L = *
+        LDA #$CC                        ; 'L' error char
+        DC.B $2C                        ; BIT abs (skip 2)
+STAGE_DEAD_RESET_BANG = *
+        LDA #$A1                        ; '!' error char
+
+; --- Common body (copied from RESET_R tail at $BF0B) ---
+        PHA                             ; save error char
+        JSR $BEE0                       ; COPY_ROM_TO_LC
+        JSR $FB2F                       ; MON_INIT
+        JSR $FC58                       ; MON_HOME
+        JSR $FE84                       ; MON_NORMAL
+        PLA
+        STA $0400                       ; write error char to text row 0
+
+; --- Clear memory $BEFF downward with speaker beeps ---
+; (In the live RESET_R at $BF1F this STA targets $BD00; here it
+; targets $BE00 instead --- the only genuine-code byte of this twin
+; that differs from the live handler.  The self-modifying DEC / LDA
+; below still reference $BF21 --- the live handler's internal SM
+; byte --- because when this twin was cloned from the $BF00 routine
+; nobody updated its SM addresses to the new $5F21 location.  So if
+; this twin were ever called it would nonsensically mutate the live
+; RESET_R's SM byte rather than its own.  Dead regardless.)
+STAGE_DEAD_CLEAR_OUTER:
+        LDY #$00
+        TYA
+STAGE_DEAD_CLEAR_INNER:
+        STA $BE00,Y                     ; self-modifying page start (baked high byte $BE vs $BD)
+        INY
+        BNE STAGE_DEAD_CLEAR_INNER
+        DEC $BF21                       ; decrements LIVE RESET_R's SM byte, not this twin's!
+        BIT SW_SPEAKER                  ; beep
+        LDA $BF21                       ; likewise reads the live handler's SM byte
+        CMP #$08                        ; stop at page 8
+        BCS STAGE_DEAD_CLEAR_OUTER
+; --- Reboot via slot ROM (soft-entry invalidate + PHA/PHA/RTS trick) ---
+        STA $03F3                       ; invalidate SOFTEV high
+        STA $03F4                       ; invalidate SOFTEV checksum
+        LDA $BF49                       ; LDR_SLOT (slot*16)
+        LSR
+        LSR
+        LSR
+        LSR                             ; A = slot
+        ORA #$C0
+        SBC #$00                        ; A = $Cn (carry was set)
+        PHA
+        LDA #$FF
+        PHA
+        RTS                             ; 'returns' to $CnFF+1 = $Cn00 slot ROM
+
+; STAGE_DEAD_RESET_L_BROKEN is the target of $5EED's BEQ $5F10 ---
+; $5F10 lands inside the operand of JSR $FB2F (byte $2F), so on this
+; illegal opcode path the machine enters undefined territory.  Since
+; STAGE_DEAD_RELOAD has no live callers, this path never runs.
+STAGE_DEAD_RESET_L_BROKEN = STAGE_DEAD_RESET + $10
+@ %def STAGE_DEAD_RESET STAGE_DEAD_RESET_L_ALT STAGE_DEAD_RESET_L STAGE_DEAD_RESET_BANG STAGE_DEAD_CLEAR_OUTER STAGE_DEAD_CLEAR_INNER STAGE_DEAD_RESET_L_BROKEN
+
+<<stage dead ldr slots>>=
+
+STAGE_DEAD_LDR_TRACK:
+        ; Dead twin of $BF48-$BF4A (the trailing PHP/RTS/BRK trio
+        ; that serves as the on-disk initial values for LDR_TRACK /
+        ; LDR_SLOT / LDR_PHASE in the live RWTS).  Here the bytes
+        ; differ from the live slot (drol has $00/$60/$FF, rwts.bin
+        ; has $08/$60/$00) because these slot values were re-seeded
+        ; at install time for the live region but left at their
+        ; pre-release values here.  Not referenced at runtime.
+        HEX 00 60 FF
+@ %def STAGE_DEAD_LDR_TRACK
+
+<<stage dead scroll up>>=
+
+STAGE_DEAD_SCROLL_UP_PRE:
+        SUBROUTINE
+        ; Dead residue ($5F4B-$5F7E, 52 bytes): exact byte-for-byte
+        ; duplicate of SCROLL_UP_PRE / SCROLL_UP at $BF4B in the live
+        ; RWTS.  Both entry points index SCREEN_ADDR_TBL at the
+        ; post-relocation address $BFC0 (not at the $5FC0 twin below),
+        ; so even if this dead entry were called it would reach into
+        ; the live language-card table.  See SCROLL_UP_PRE ($BF4B) for
+        ; the live annotated version.
+        TAY
+        INY
+        BEQ .skip
+        HEX 4C A0 28                    ; JMP $28A0 (dead delegation twin;
+                                        ;   operand bytes form LDY #$28 at
+                                        ;   the SCROLL_UP entry below)
+STAGE_DEAD_SCROLL_UP = STAGE_DEAD_SCROLL_UP_PRE + 5
+.skip:
+        LDA #$40
+        STY $A0
+        STA $A1
+        LDX #$00
+.copy_line:
+        LDA $BFC0,X                     ; SCREEN_ADDR_TBL (post-relocation, live copy)
+        STA $A2
+        LDA $BFC1,X
+        STA $A3
+        LDY #$27
+.copy_byte:
+        LDA ($A2),Y
+        STA ($A0),Y
+        DEY
+        BPL .copy_byte
+        CLC
+        LDA $A0
+        ADC #$28
+        STA $A0
+        BCC .no_carry
+        INC $A1
+.no_carry:
+        INX
+        INX
+        CPX #$40
+        BCC .copy_line
+        RTS
+@ %def STAGE_DEAD_SCROLL_UP_PRE STAGE_DEAD_SCROLL_UP
+
+<<stage dead scroll dn>>=
+
+STAGE_DEAD_SCROLL_DN:
+        SUBROUTINE
+        ; Dead residue ($5F7F-$5FBF, 65 bytes): exact byte-for-byte
+        ; duplicate of SCROLL_DN at $BF7F in the live RWTS.  Also
+        ; references SCREEN_ADDR_TBL at $BFC0 rather than at the
+        ; local $5FC0 twin.  See SCROLL_DN ($BF7F) for annotation.
+        LDY #$00
+        LDA #$45
+        STY $A0
+        STA $A1
+        LDX #$3E
+.copy_line:
+        LDA $BFC0,X                     ; SCREEN_ADDR_TBL (live copy)
+        STA $A2
+        LDA $BFC1,X
+        STA $A3
+        LDY #$27
+.copy_byte:
+        LDA ($A0),Y
+        STA ($A2),Y
+        DEY
+        BPL .copy_byte
+        SEC
+        LDA $A0
+        SBC #$28
+        STA $A0
+        BCS .no_borrow
+        DEC $A1
+.no_borrow:
+        DEX
+        DEX
+        BPL .copy_line
+; --- Fill bottom 4 hi-res rows (188-191) from text-strip source ---
+        LDX #$27
+.fill_bottom:
+        LDA $0300,X                     ; TEXT_STRIP_SRC
+        STA $53D0,X                     ; hi-res page 2 row 188
+        STA $57D0,X                     ; row 189
+        STA $5BD0,X                     ; row 190
+        STA $5FD0,X                     ; row 191
+        DEX
+        BPL .fill_bottom
+        RTS
+@ %def STAGE_DEAD_SCROLL_DN
+
+<<stage dead addr tbl>>=
+
+STAGE_DEAD_ADDR_TBL:
+        ; Dead residue ($5FC0-$5FFF, 64 bytes): exact byte-for-byte
+        ; duplicate of SCREEN_ADDR_TBL at $BFC0 (32 (lo, hi) pairs
+        ; pointing at hi-res page 2 line addresses $4028, $4128,
+        ; $4228, ...).  Not read at runtime --- the live SCROLL_UP /
+        ; SCROLL_DN routines index $BFC0 directly, and so do the
+        ; $5F4B / $5F7F twins above.  Preserved here for byte-exact
+        ; matching only.
         HEX 80 40 00 41 80 41 00 42
         HEX 00 44 80 44 00 45 80 45
         HEX 00 48 80 48 00 49 80 49
@@ -10775,7 +11248,7 @@ RESTART_DISPATCH:
         HEX 00 54 80 54 00 55 80 55
         HEX 00 58 80 58 00 59 80 59
         HEX 00 5C 80 5C 00 5D 80 5D
-@
+@ %def STAGE_DEAD_ADDR_TBL
 
 <<player tick handlers>>=
 
@@ -11606,13 +12079,6 @@ tall, planted at screen row [[ENTITY_HIT_ROW]],X.
 
 <<refresh hit entities defines>>=
 
-; --- Hit-entity Y-coordinate (world) table ---
-; Parallel 12-slot array with ENTITY_HIT_STATE ($8D) and
-; ENTITY_HIT_ROW ($72).  Read by INPUT_DO_ASCEND / INPUT_DO_DESCEND
-; (to find a rescue candidate matching the player's Y) and by
-; REFRESH_HIT_ENTITIES (to derive the on-screen column).
-ENTITY_HIT_Y    = $66           ; Hit-entity world-Y ($66,X, X<=ZP_HIT_MAX)
-
 ; --- Hit-entity sprite-pointer tables (level-data) ---
 ; Two 8-entry pointer tables indexed by ZP_SPRITE_XREF (the 0..7
 ; walking-animation slot).  The routine patches the SMC source
@@ -11623,7 +12089,11 @@ HIT_SPR_POS_HI  = $763B         ; Positive-state sprite ptr, high
 HIT_SPR_NEG_LO  = $7507         ; Negative-state sprite ptr, low
 HIT_SPR_NEG_HI  = $7607         ; Negative-state sprite ptr, high
 
-@ %def ENTITY_HIT_Y HIT_SPR_POS_LO HIT_SPR_POS_HI HIT_SPR_NEG_LO HIT_SPR_NEG_HI
+; (ENTITY_HIT_Y ($66) is defined in <<drol input defines>> since
+;  INPUT_DO_ASCEND / INPUT_DO_DESCEND at $6000 read it before
+;  REFRESH_HIT_ENTITIES here.)
+
+@ %def HIT_SPR_POS_LO HIT_SPR_POS_HI HIT_SPR_NEG_LO HIT_SPR_NEG_HI
 
 <<refresh hit entities>>=
 
@@ -11833,31 +12303,16 @@ whole game state agrees on which floor the player is now standing on.
 
 <<movement handlers defines>>=
 
-; --- Zero-page (movement action handlers) ---
-ZP_ASC_FLOOR    = $0B           ; Ascent-target floor index (0..5);
-                                ; set by INPUT_DO_ASCEND, read by DO_ASCEND
-                                ; to index FLOOR_CEIL and FLOOR_THRESH
-ZP_FLOOR_MIRROR = $0A           ; Second floor-index mirror (held in sync
-                                ; with ZP_BEAM_SEED_FLOOR / ZP_ASC_FLOOR
-                                ; / ZP_DSC_FLOOR on landing)
-ZP_DSC_FLOOR    = $0C           ; Descent-target floor index (0..5);
-                                ; set by INPUT_DO_DESCEND, read by DO_DESCEND
-ZP_DSC_DIR      = $0D           ; Descent search direction: $FF = searching
-                                ; down from current, $01 = just landed
-                                ; (set by INPUT_DO_ASCEND / DO_DESCEND)
-ZP_ENT_RESCUED  = $1D           ; Entity-rescued / post-hit flag: $FF when
-                                ; a rescue has just succeeded or a hit
-                                ; landed; consumed by DRAW_PLAYER and by
-                                ; MR_HIT_SLIDE / ML_HIT_SLIDE
-
 ; --- Main-loop SMC operand addresses (probed by DO_DESCEND's landed path) ---
 SMC_DESCEND_OP     = $67DA      ; Opcode byte of MAIN_LOOP's SMC_DESCEND slot
 SMC_MOVE_LEFT_OP   = $67DD      ; Opcode byte of MAIN_LOOP's SMC_MOVE_LEFT slot
 SMC_MOVE_RIGHT_OP  = $67E0      ; Opcode byte of MAIN_LOOP's SMC_MOVE_RIGHT slot
 
-; (KEY_LEFT / KEY_RIGHT key codes are defined in <<drol input defines>>.)
+; (KEY_LEFT / KEY_RIGHT and the ZP_ASC_FLOOR / ZP_FLOOR_MIRROR /
+;  ZP_DSC_FLOOR / ZP_DSC_DIR / ZP_ENT_RESCUED EQUs are defined in
+;  <<drol input defines>> since INPUT_DO_ASCEND / INPUT_DO_DESCEND
+;  at $6000 seed them before DO_ASCEND / DO_DESCEND here consume them.)
 
-@ %def ZP_ASC_FLOOR ZP_FLOOR_MIRROR ZP_DSC_FLOOR ZP_DSC_DIR ZP_ENT_RESCUED
 @ %def SMC_DESCEND_OP SMC_MOVE_LEFT_OP SMC_MOVE_RIGHT_OP
 
 <<movement action handlers>>=
@@ -17204,10 +17659,13 @@ SCREEN_ROW_ADDR_HI2:
 <<pause handler>>
 ; --- ORG $0E5A: Hazard check ---
 <<hazard check>>
-; --- ORG $0F37: Enemy AI 2 ---
-<<enemy ai 2>>
-; --- ORG $0F5D: Enemy AI 1 ---
-<<enemy ai 1>>
+; --- ORG $0F37: SCROLL_EDGE_L (left-edge top-band pillar) ---
+<<scroll edge defines>>
+<<scroll edge left>>
+; --- ORG $0F5D: SCROLL_EDGE_R (right-edge top-band pillar) ---
+<<scroll edge right>>
+; --- ORG $100C: SCROLL_EDGE_BLIT_P2 (page-2 twin) ---
+<<scroll edge blit p2>>
 ; --- ORG $1091: SND_DELAY_DOWN (descending-pitch speaker click) ---
 <<snd delay down>>
 ; --- ORG $109E: SND_DELAY_UP (ascending-pitch speaker click) ---
@@ -17225,8 +17683,9 @@ SCREEN_ROW_ADDR_HI2:
 <<score add>>
 ; --- ORG $1230: Beam target tick ---
 <<beam target tick>>
-; --- ORG $1297: Beam target draw (hex blob) ---
-<<beam target draw hex>>
+; --- ORG $1297: Beam target draw + 4-slot enemy collision ---
+<<beam target draw defines>>
+<<beam target draw>>
 ; --- ORG $130A: Beam update ---
 <<beam update defines>>
 <<beam update>>
@@ -17303,8 +17762,18 @@ SCREEN_ROW_ADDR_HI2:
 <<stage residue dead>>
 ; --- ORG $5EC5: Restart-flag dispatcher (DEAD CODE) ---
 <<restart dispatch>>
-; --- ORG $5ED4: Staging buffers (second slice, $5ED4-$5FFF) ---
-<<staging buffers 5ED4>>
+; --- ORG $5ED4: Dead RWTS-retry helpers (unique to staging area) ---
+<<stage dead reload>>
+; --- ORG $5F00: Dead twin of RESET_R body (wipes $BE00 instead of $BD00) ---
+<<stage dead reset>>
+; --- ORG $5F48: Dead twin of LDR_TRACK/SLOT/PHASE trio ---
+<<stage dead ldr slots>>
+; --- ORG $5F4B: Dead twin of SCROLL_UP_PRE ---
+<<stage dead scroll up>>
+; --- ORG $5F7F: Dead twin of SCROLL_DN ---
+<<stage dead scroll dn>>
+; --- ORG $5FC0: Dead twin of SCREEN_ADDR_TBL ---
+<<stage dead addr tbl>>
 ; --- ORG $6000: Input dispatch ---
 <<input dispatch>>
 <<input process>>
@@ -17420,8 +17889,8 @@ hold real bytes; every non-level page stays at [[$00]]:
   \texttt{drol.bin}) --- the bulk of the level-1 content: per-level
   sprite tables ([[ATTRACT_SPR]] / [[ATTRACT_SPR2]] at [[$B002]]/[[$B006]]
   with pointers into [[$B500]]--[[$BC]]\textit{xx}), the ``Broderbund''  % TODO-SYM: $B500 $BC
-  attribution strip at [[$BCF1]], and the end-of-game handler  % TODO-SYM: $BCF1
-  [[GAME_OVER]] at [[$BDA0]].
+  attribution strip at [[BRODERBUND_LOGO_SPR]], and the end-of-game
+  handler [[GAME_OVER]] at [[$BDA0]].
 \end{itemize}
 
 All of the shared pages ([[$0200]], [[$1300]]--[[$18FF]], [[$6700]]--[[$72FF]],  % TODO-SYM: $1300 $18FF $6700 $72FF

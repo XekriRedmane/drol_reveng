@@ -4,6 +4,7 @@
 - [Drol difficulty tiers](drol-difficulty-tiers.md) — $31/$32/$33/$34/$35/$40 tier state set by DIFFICULTY_UPDATE ($719D)
 - [Drol beam subsystem](drol-beam-subsystem.md) — BEAM_UPDATE at $130A; $03FE/$03FF beam state, $0237/$023C tracer slots, $9B/$9F/$A3 enemies
 - [Drol BEAM_TARGET_TICK](drol-beam-target-tick.md) — $1230 idle/chase/attack state machine; attack flag is ORA #$F0, FLOOR_CEIL at $7E, ZP_BEAM_SEED_FLOOR at $09
+- [Drol BEAM_TARGET_DRAW](drol-beam-target-draw.md) — $1297 trail draw + 4-slot enemy hit-test; col ($23,$25], Y-band (BEAM_Y, BEAM_Y+3]; +$0100 BCD on hit; BEAM_SPR=$B529
 - [Drol entity-slot tick+draw pattern](drol-entity-slot-pattern.md) — 3 parallel enemy slots (A/B/C at $DC/$E0/$D4), all 6 tick+draw routines RE'd; A and B hit player, C hits floor-enemies
 - [Drol DRAW_PLAYER at $64DF](drol-draw-player.md) — main-loop player draw; NOT DRAW_ENTITIES phase-2 (which is perspective-grid sprite); gates on $02/$03, SMC patched by intro/complete
 - [Drol movement dispatch](drol-move-dispatch.md) — $04=ZP_MOVE_DIR (0/+/-); PLAYER_MOVE_TICK at $64CB routes to three tick handlers still inside game engine A HEX
@@ -33,3 +34,7 @@
 - [Drol player-tick handlers](drol-player-tick-handlers.md) — PLAYER_TICK_MOVE_LEFT/IDLE/MOVE_RIGHT at $614B/$6184/$619A + CLEAR_DRAW_PAGE $61E4; 7-step sub-frame pacing via ZP_SPRITE_XREF, motion at 4/7 frame-rate
 - [Drol floor-position lookup tables](drol-floor-position-tables.md) — FLOOR_TO_ROW/FLOOR_SPRITE_IDX/FLOOR_SCREEN_COL at $1D40/$1E00/$1F00; 697 bytes driving DRAW_ENTITIES perspective projection
 - [Drol perspective-grid lookup tables](drol-perspective-grid-data.md) — $188A-$1CED: FLOOR_BASE_ROW / PERSPECTIVE_XOFF_HI/LO / PROJ_FRAME_IDX / PROJ_SCREEN_COL / FLOOR_ENEMY_SPAWN_SCHED (7 sub-tables, 1124 bytes)
+- [Drol $0200 data region layout](drol-0200-data-region.md) — overlapping SFX pitch tables $0200-$024B (SPECIAL/C/A pairs share tail bytes); full sub-table map
+- [Drol RWTS dead residue](drol-rwts-dead-residue.md) — $BEFD JMP $1255 is padding; $BF4F JMP $28A0 is dead delegation whose $A0 $28 bytes form LDY #$28 at SCROLL_UP
+- [Drol INPUT_DISPATCH symbol cleanup](drol-input-dispatch-cleanup.md) — shared ZP EQUs ZP_ASC_FLOOR/ZP_DSC_FLOOR/ZP_DSC_DIR/ZP_ENT_RESCUED/ENTITY_HIT_Y live in drol-input-defines
+- [Drol $5ED4-$5FFF dead twin of RWTS](drol-stage-dead-tail.md) — pre-release twin of $BED4-$BFFF; SM refs at $5F25/$5F2B mutate live $BF21 not self

@@ -500,7 +500,7 @@ once from tracks 1--4, and \textbf{swappable level data} loaded from a
 [[$6000]]--[[$66FF]] & Track 3                               & Game code (persistent) \\  % TODO-SYM: $66FF
 [[$6700]]--[[$72FF]] & Track 5+ S7--S15, Track 6+ S0--S2    & Level data (swappable) \\  % TODO-SYM: $6700 $72FF
 [[$7300]]--[[$74FF]] & Track 3                               & Game code (persistent) \\  % TODO-SYM: $7300 $74FF
-[[$7500]]--[[$7AFF]] & Track 6+ S3--S8                       & Level data (swappable) \\  % TODO-SYM: $7500 $7AFF
+[[$7500]]--[[$7AFF]] & Track 6+ S3--S8                       & Level data (swappable) \\
 [[$7B00]]--[[$8BFF]] & Tracks 3--4                           & Game code (persistent) \\  % TODO-SYM: $7B00 $8BFF
 [[$8C00]]--[[$BDFF]] & Tracks 6+--9+                         & Level data (swappable) \\  % TODO-SYM: $8C00 $BDFF
 [[$BE00]]--[[$BFFF]] & Track 0 ([[$5800]]--[[$59FF]]), relocated   & RWTS / reset handlers \\  % TODO-SYM: $BFFF $59FF
@@ -3167,8 +3167,8 @@ the player. The player's horizontal position is taken as column range
 [[$40]]--[[$47]] (from ZP~[[$06]]), and the vertical overlap is checked against  % TODO-SYM: $47
 [[$CD]]+X. A hit sets ZP~[[$1E]] to [[$FF]] and deactivates the projectile.  % TODO-SYM: $FF
 
-Left-moving projectiles use sprite tables at [[$AFD3]]/[[$B053]]; right-moving
-ones use [[$75F7]]/[[$76F7]]. Screen column lookup is via [[PROJ_SCREEN_COL]]
+Left-moving projectiles use sprite tables at [[PROJ_SPR_L_LO]]/[[PROJ_SPR_L_HI]]; right-moving
+ones use [[PROJ_SPR_R_LO]]/[[PROJ_SPR_R_HI]]. Screen column lookup is via [[PROJ_SCREEN_COL]]
 indexed by [[$C9]]+X, and sprite frame selection via [[PROJ_FRAME_IDX]].
 
 <<hazard check defines>>=
@@ -3187,8 +3187,6 @@ ZP_HIT_FLAG     = $1E           ; Hit detection flag ($FF = player hit)
 ; labels in their ORG chunks inside the perspective-grid data region.
 PROJ_SPR_L_LO   = $AFD3         ; Left-moving projectile sprite table, low
 PROJ_SPR_L_HI   = $B053         ; Left-moving projectile sprite table, high
-PROJ_SPR_R_LO   = $75F7         ; Right-moving projectile sprite table, low
-PROJ_SPR_R_HI   = $76F7         ; Right-moving projectile sprite table, high
 
 @
 
@@ -3196,8 +3194,8 @@ PROJ_SPR_R_HI   = $76F7         ; Right-moving projectile sprite table, high
 as a $3\times 3$-byte sprite (that is, [[ZP_SPRITE_W]]~=~2 and
 [[ZP_SPRITE_H]]~=~3), indexed by the perspective-frame index
 [[PROJ_FRAME_IDX]].  Figure~\ref{fig:projectile_sprites} shows the 8
-right-moving frames (top row, pointers fetched from [[$75F7]]/[[$76F7]])
-and the 8 left-moving frames (bottom row, from [[$AFD3]]/[[$B053]] in the
+right-moving frames (top row, pointers fetched from [[PROJ_SPR_R_LO]]/[[PROJ_SPR_R_HI]])
+and the 8 left-moving frames (bottom row, from [[PROJ_SPR_L_LO]]/[[PROJ_SPR_L_HI]] in the
 level-swappable region).  The right-moving pointer table is in
 [[drol.bin]] but the sprite bytes themselves live beyond it, so
 rendering requires replaying the loader's phase-0 track read; the
@@ -7127,8 +7125,8 @@ variants picked by walking direction ([[RESCUE_DIR]]) and step phase
 \begin{tabular}{l|l|l|l|l}
 Phase & +dir lo/hi base & +dir h & -dir lo/hi base & -dir h \\
 \hline
-mid-step (anim $\notin \{0,7,8\}$) & [[$75F0]]/[[$76F0]] & [[$1C]] & [[$75E2]]/[[$76E2]] & [[$1C]] \\  % TODO-SYM: $1C
-end-step (anim $\in \{0,7,8\}$)    & [[$75E9]]/[[$76E9]] & [[$1A]] & [[$75DB]]/[[$76DB]] & [[$1A]] \\
+mid-step (anim $\notin \{0,7,8\}$) & [[RESCUE_SPR_POS_MID_LO]]/[[HI]] & [[$1C]] & [[RESCUE_SPR_NEG_MID_LO]]/[[HI]] & [[$1C]] \\  % TODO-SYM: $1C
+end-step (anim $\in \{0,7,8\}$)    & [[RESCUE_SPR_POS_END_LO]]/[[HI]] & [[$1A]] & [[RESCUE_SPR_NEG_END_LO]]/[[HI]] & [[$1A]] \\
 \end{tabular}
 \end{center}
 
@@ -7212,15 +7210,8 @@ ZP_PERSP_OFFSET_HI = $10        ; Pre-computed perspective X offset (high)
 
 ; --- Rescue-child sprite tables (per step phase x direction) ---
 ; Width = $03, height = $1A or $1C; indexed by PROJ_FRAME_IDX[$0358,Y].
-; The four pairs sit/$75E9/$75F0 (low) and $76DB/...$76F0 (high).
-RESCUE_SPR_NEG_END_LO  = $75DB  ; -dir end-of-step body (h=$1A)
-RESCUE_SPR_NEG_END_HI  = $76DB
-RESCUE_SPR_NEG_MID_LO  = $75E2  ; -dir mid-step body (h=$1C)
-RESCUE_SPR_NEG_MID_HI  = $76E2
-RESCUE_SPR_POS_END_LO  = $75E9  ; +dir end-of-step body (h=$1A)
-RESCUE_SPR_POS_END_HI  = $76E9
-RESCUE_SPR_POS_MID_LO  = $75F0  ; +dir mid-step body (h=$1C)
-RESCUE_SPR_POS_MID_HI  = $76F0
+; The four pairs are RESCUE_SPR_NEG_END / RESCUE_SPR_NEG_MID /
+; RESCUE_SPR_POS_END / RESCUE_SPR_POS_MID, each with LO/HI halves.
 
 ; --- Drift-state pitch table (4 entries, indexed 1..4 by RESCUE_COUNTDOWN) ---
 ; The 4 descending pitches that play across the 4 drift-mode frames after
@@ -7536,7 +7527,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         BPL .proj_loop
         JMP .slot_next
 
-@ %def RESCUE_DRAW RESCUE_DRAW_PERSPECTIVE_CACHE RESCUE_DRIFT_PITCH ZP_PERSP_OFFSET_LO ZP_PERSP_OFFSET_HI RESCUE_SPR_NEG_END_LO RESCUE_SPR_NEG_END_HI RESCUE_SPR_NEG_MID_LO RESCUE_SPR_NEG_MID_HI RESCUE_SPR_POS_END_LO RESCUE_SPR_POS_END_HI RESCUE_SPR_POS_MID_LO RESCUE_SPR_POS_MID_HI
+@ %def RESCUE_DRAW RESCUE_DRAW_PERSPECTIVE_CACHE RESCUE_DRIFT_PITCH ZP_PERSP_OFFSET_LO ZP_PERSP_OFFSET_HI
 
 \section{Top-band scrolling-edge pillar painters}
 
@@ -8895,7 +8886,7 @@ Main body size          & $[[$03]]\times[[$13]]$              & $[[$05]]\times[[
 Main body table         & [[$B009]]/[[$B089]]                 & [[$B025]]/[[$B0A5]]                 & [[$AFE1]]/[[$B061]]         \\
 Secondary sprite        & feet ($[[$03]]\times[[$03]]$) or walk ($[[$03]]\times[[$04]]$) & \emph{none} & tail ($[[$01]]\times[[$07]]$) \\
 Animation               & [[$FD]]-gated walking frames      & \emph{none}                  & \emph{none}           \\
-Drift puff              & \emph{none} (drift = stance)   & $[[$02]]\times[[$06]]$ at [[$755A]]/[[$765A]] & $[[$02]]\times[[$06]]$ at [[$7559]]/[[$7659]] \\
+Drift puff              & \emph{none} (drift = stance)   & $[[$02]]\times[[$06]]$ at [[ENEMY_B_PUFF_LO]]/[[ENEMY_B_PUFF_HI]] & $[[$02]]\times[[$06]]$ at [[ENEMY_C_PUFF_LO]]/[[ENEMY_C_PUFF_HI]] \\
 State polarity dispatch & \texttt{BPL} $\to$ steady animates  & \texttt{BPL} $\to$ steady    & \texttt{BPL} $\to$ steady \\
 Right X clip            & [[$9A]]                          & [[$9C]]                          & [[$94]]                  \\  % TODO-SYM: $9A $94
 Hit target              & player ([[$06]]/[[$4A]])            & player ([[$06]]/[[$4A]])            & 4-slot enemy ([[$9F]]/[[$A3]]) \\
@@ -9428,7 +9419,7 @@ drift-mode draw tail.  The overall layout is:
   points via [[SCORE_ADD]], and decrement the game-over flag [[$39]].
   The draw call itself is skipped on this path.
 \item The drift-mode branch at [[$1623]] draws a smaller [[$02]]$\times$[[$06]]  % TODO-SYM: $1623
-  ``puff'' sprite from the level-data pointer pair at [[$755A]]/[[$765A]]
+  ``puff'' sprite from the level-data pointer pair at [[ENEMY_B_PUFF_LO]]/[[ENEMY_B_PUFF_HI]]
   (inside the per-level swappable region).
 \end{enumerate}
 
@@ -9470,11 +9461,11 @@ indexes [[SPRITE_TABLE_LO]] / [[SPRITE_TABLE_HI]] at base [[$25]]  % TODO-SYM: $
 enemy-A's multiple sprite variants (body / walk-1 / stance-feet /
 walk-2).
 
-\paragraph{Drift-mode puff at [[$755A]]/[[$765A]].}  When
+\paragraph{Drift-mode puff at [[ENEMY_B_PUFF_LO]]/[[ENEMY_B_PUFF_HI]].}  When
 [[ZP_ENEMY_B_STATE]] is negative the draw path jumps to the short
 drift-tail at [[$1623]] which patches [[SMC_DS_SRC_LO]] /  % TODO-SYM: $1623
-[[SMC_DS_SRC_HI]] to the 16-bit pointer pair at [[$755A]] / [[$765A]]
---- inside the per-level swappable region [[$7500]]-[[$7AFF]] --- and  % TODO-SYM: $7500 $7AFF
+[[SMC_DS_SRC_HI]] to the 16-bit pointer pair at [[ENEMY_B_PUFF_LO]] / [[ENEMY_B_PUFF_HI]]
+--- inside the per-level swappable region [[$7500]]--[[$7AFF]] --- and
 draws a [[$02]]$\times$[[$06]] sprite.  The pointer is therefore
 \emph{level-specific}: each level's data contributes its own
 enemy-B drift-puff sprite.  This is different from the steady-mode
@@ -9532,8 +9523,6 @@ SPRITE_TABLE_B_HI = $B0A5       ; Enemy-B body sprite pointers, high
 ; Inside the swappable level-data region $7500-$7AFF.  The two bytes
 ; form the 16-bit address that SMC_DS_SRC_LO/HI are patched to on
 ; B's drift-mode draw path.
-ENEMY_B_PUFF_LO = $755A         ; Drift-mode puff sprite pointer, low byte
-ENEMY_B_PUFF_HI = $765A         ; Drift-mode puff sprite pointer, high byte
 
 ; --- Game-over/hit-remaining flag ---
 ; Initialized to ZP_LAST_DIR by INIT_LEVEL_STATE and reset to ZP_LAST_DIR by the
@@ -9696,7 +9685,6 @@ ENEMY_B_DRAW:
 @ %def ENEMY_B_DRAW
 @ %def ZP_CLIP_X_LO ZP_CLIP_X_HI ZP_SPRITE_XREF ZP_GAME_OVER
 @ %def SPRITE_TABLE_B_LO SPRITE_TABLE_B_HI
-@ %def ENEMY_B_PUFF_LO ENEMY_B_PUFF_HI
 
 \section{Enemy-C advance timer}
 
@@ -9929,9 +9917,9 @@ substantive differences:
   after the main draw, enemy-C issues a \emph{second} [[DRAW_SPRITE]]
   call for a $[[$01]]\times[[$07]]$ sprite at (clip\_X$-$1, row $+$ [[$0B]]),
   reading from the level-specific pointer pair
-  [[ENEMY_C_TAIL_LO]]/[[ENEMY_C_TAIL_HI]] at [[$7549]]/[[$7649]] (also
+  [[ENEMY_C_TAIL_LO]]/[[ENEMY_C_TAIL_HI]] (also
   indexed by [[PROJ_FRAME_IDX]]).  The tail lives in the per-level
-  swappable region [[$7500]]--[[$7AFF]] so each level contributes its own  % TODO-SYM: $7500 $7AFF
+  swappable region [[$7500]]--[[$7AFF]] so each level contributes its own
   tail art.  A \texttt{BCS} at [[$1706]] skips both the second draw and  % TODO-SYM: $1706
   the hit test if the shifted X underflowed (i.e.\ clip\_X was [[$00]]).
 \item \textbf{Hit target is a 4-slot enemy table, not the player.}
@@ -9974,9 +9962,9 @@ externally by [[ENEMY_A_ADVANCE]]'s rearm at [[$1411]] which writes  % TODO-SYM:
 [[$01]] --- wait, only hits write [[$FF]]; A's rearm writes [[$01]] for  % TODO-SYM: $FF
 steady mode).  The drift-mode draw emits a single $[[$02]]\times[[$06]]$
 ``puff'' sprite at [[ZP_ENEMY_C_POS]]$+1$'s column index, reading
-from [[ENEMY_C_PUFF_LO]]/[[ENEMY_C_PUFF_HI]] at [[$7559]]/[[$7659]] ---
+from [[ENEMY_C_PUFF_LO]]/[[ENEMY_C_PUFF_HI]] ---
 a different level-specific pointer pair from [[ENEMY_B_DRAW]]'s
-[[$755A]]/[[$765A]] puff (one byte earlier).
+[[ENEMY_B_PUFF_LO]]/[[ENEMY_B_PUFF_HI]] puff (one byte earlier).
 
 \paragraph{Contrast with [[ENEMY_B_DRAW]]:}
 
@@ -9989,7 +9977,7 @@ Row                     & [[$E3]]                          & [[$D7]]            
 Main sprite size        & $[[$05]]\times[[$11]]$              & $[[$02]]\times[[$0B]]$      \\
 Main sprite table       & [[$B025]]/[[$B0A5]] (SPRITE\_B)     & [[$AFE1]]/[[$B061]] (SPRITE\_C) \\
 Right X clip            & [[$9C]]                          & [[$94]]                  \\  % TODO-SYM: $94
-Secondary sprite        & \emph{none}                   & $[[$01]]\times[[$07]]$ tail at [[$7549]]/[[$7649]] \\
+Secondary sprite        & \emph{none}                   & $[[$01]]\times[[$07]]$ tail at [[ENEMY_C_TAIL_LO]]/[[ENEMY_C_TAIL_HI]] \\
 Hit target              & player ([[$06]]/[[$4A]])            & 4-slot enemy ([[$9F]]/[[$A3]]) \\
 Hit X window            & [[[$42]], [[$55]])                  & (clip\_X$-$8, clip\_X] \\  % TODO-SYM: $42 $55
 Hit Y window            & $[\textrm{player}-[[$0E]], \textrm{player}+[[$0D]]]$ & $[\textrm{row}-[[$03]], \textrm{row}+[[$09]]]$ \\  % TODO-SYM: $09
@@ -9997,7 +9985,7 @@ Score awarded           & +[[$0300]] (300)                 & +[[$0100]] (100)   
 Game-over decrement     & yes                           & \emph{no}             \\
 Post-hit state writes   & [[$E0]]~$\leftarrow$~[[$FF]]        & [[$D4]]~$\leftarrow$~[[$FF]]; [[$DC]]~$\leftarrow$~[[$FF]] (if non-zero); [[$9B]],X~$\leftarrow$~[[$00]] \\  % TODO-SYM: $FF
 Sound counter reload    & [[$E4]]~$\leftarrow$~[[$05]]        & [[$B7]]~$\leftarrow$~[[$04]] \\
-Drift-mode puff src     & [[$755A]]/[[$765A]]                 & [[$7559]]/[[$7659]]         \\
+Drift-mode puff src     & [[ENEMY_B_PUFF_LO]]/[[ENEMY_B_PUFF_HI]]                 & [[ENEMY_C_PUFF_LO]]/[[ENEMY_C_PUFF_HI]]         \\
 \end{tabular}
 \end{center}
 
@@ -10012,9 +10000,9 @@ only affects its own state.
 \paragraph{Sprite art.}
 Figure~\ref{fig:enemy_c_sprites} shows the seven enemy-C body frames;
 Figure~\ref{fig:enemy_c_auxiliary} shows the secondary
-``tail'' sprite (7 frames from [[ENEMY_C_TAIL]] at [[$7549]]/[[$7649]])
+``tail'' sprite (7 frames from [[ENEMY_C_TAIL]] at [[ENEMY_C_TAIL_LO]]/[[ENEMY_C_TAIL_HI]])
 together with the three un-indexed single-frame sprites that share
-the neighbouring pointer bytes at [[$7559]], [[$755A]], and [[$755B]] ---
+the neighbouring pointer bytes at [[ENEMY_C_PUFF_LO]], [[ENEMY_B_PUFF_LO]], and [[SPECIAL_PEEK_LO]] ---
 [[ENEMY_C_PUFF]], [[ENEMY_B_PUFF]], and [[SPECIAL_PEEK]] (the
 last three are a [[$03]]$\times$[[$06]] (W=2) triplet at adjacent
 addresses, easy to mistake for a single three-frame sprite).
@@ -10036,8 +10024,8 @@ addresses, easy to mistake for a single three-frame sprite).
 [[ENEMY_C_TAIL]] ($[[$02]]\times[[$07]]$), seven frames indexed by
 [[PROJ_FRAME_IDX]].  Last three cells: the single-frame
 drift/peek sprites at adjacent level-data pointers --- [[ENEMY_C_PUFF]]
-([[$7559]]/[[$7659]]), [[ENEMY_B_PUFF]] ([[$755A]]/[[$765A]]), and
-[[SPECIAL_PEEK]] ([[$755B]]/[[$765B]]), all $[[$03]]\times[[$06]]$.}
+([[ENEMY_C_PUFF_LO]]/[[ENEMY_C_PUFF_HI]]), [[ENEMY_B_PUFF]] ([[ENEMY_B_PUFF_LO]]/[[ENEMY_B_PUFF_HI]]), and
+[[SPECIAL_PEEK]] ([[SPECIAL_PEEK_LO]]/[[SPECIAL_PEEK_HI]]), all $[[$03]]\times[[$06]]$.}
 \label{fig:enemy_c_auxiliary}
 \end{figure}
 
@@ -10049,11 +10037,7 @@ SPRITE_TABLE_C_HI = $B061       ; Enemy-C body sprite pointers, high
 
 ; --- Enemy-C level-specific sprites (inside swappable $7500-$7AFF) ---
 ; Steady-mode ``tail'' sprite indexed by PROJ_FRAME_IDX (X).
-ENEMY_C_TAIL_LO = $7549         ; Tail sprite pointers, low (indexed)
-ENEMY_C_TAIL_HI = $7649         ; Tail sprite pointers, high (indexed)
 ; Drift-mode single puff pointer (not indexed).
-ENEMY_C_PUFF_LO = $7559         ; Drift-mode puff sprite pointer, low
-ENEMY_C_PUFF_HI = $7659         ; Drift-mode puff sprite pointer, high
 
 @
 
@@ -10264,7 +10248,6 @@ ENEMY_C_DRAW:
         RTS
 @ %def ENEMY_C_DRAW
 @ %def SPRITE_TABLE_C_LO SPRITE_TABLE_C_HI
-@ %def ENEMY_C_TAIL_LO ENEMY_C_TAIL_HI ENEMY_C_PUFF_LO ENEMY_C_PUFF_HI
 
 \section{Perspective-grid lookup tables (\texttt{\$188A}--\texttt{\$1CED})}
 
@@ -11626,7 +11609,7 @@ bounds:
 
 \paragraph{Shared tail.}  All four cases fall through to [[$624C]],
 the shared three-instruction tail that loads the wall sprite pointer
-from the level-data tables at [[$7520]] (lo) and [[$7620]] (hi)
+from the level-data tables at [[WALL_SPR_LO]] (lo) and [[WALL_SPR_HI]] (hi)
 indexed by [[$4C]] (the walking-animation / X-reference slot), then
 page-gates the paired restore+blit on [[ZP_PAGE_FLAG]].
 
@@ -11638,14 +11621,6 @@ page-gates the paired restore+blit on [[ZP_PAGE_FLAG]].
 ; initialized to ZP_ACTION_DIR by INIT_LEVEL_STATE and cycled through ZP_ACTION_DIR..$07
 ; by PLAYER_TICK_MOVE_LEFT/RIGHT).  The lo-byte table is at page $75
 ; and the hi-byte table is at page $76 at the same offset.
-PILLAR_SPR_LO   = $7500         ; REFRESH_PILLARS sprite ptr, low byte
-PILLAR_SPR_HI   = $7600         ; REFRESH_PILLARS sprite ptr, high byte
-FLOOR_SPR_LO    = $750E         ; REFRESH_FLOOR_LINES sprite ptr, low byte
-FLOOR_SPR_HI    = $760E         ; REFRESH_FLOOR_LINES sprite ptr, high byte
-WALL_L_SPR_LO   = $7519         ; REFRESH_LEFT_WALL sprite ptr, low byte
-WALL_L_SPR_HI   = $7619         ; REFRESH_LEFT_WALL sprite ptr, high byte
-WALL_SPR_LO     = $7520         ; REFRESH_RIGHT_WALL sprite ptr, low byte
-WALL_SPR_HI     = $7620         ; REFRESH_RIGHT_WALL sprite ptr, high byte
 
 @
 
@@ -11797,11 +11772,11 @@ area), and [[ZP_SCORE_2]] / [[HUD_SCORE_COL]] get the computed left
 bound.
 
 \paragraph{Shared tail.}  At [[$62AC]] the routine loads the wall
-sprite pointer from the level-data tables at [[$7519]] (lo) /
-[[$7619]] (hi) indexed by [[$4C]], then page-gates the paired
+sprite pointer from the level-data tables at [[WALL_L_SPR_LO]] (lo) /
+[[WALL_L_SPR_HI]] (hi) indexed by [[$4C]], then page-gates the paired
 [[INTERLACE_RESTORE]] + [[INTERLACE_BLIT]] call on [[ZP_PAGE_FLAG]].
-The [[$7519]]/[[$7619]] table is immediately before the [[$7520]]/
-[[$7620]] table used by the right-wall path; the [[$07]]-byte offset
+The [[WALL_L_SPR_LO]]/[[WALL_L_SPR_HI]] table is immediately before the [[WALL_SPR_LO]]/
+[[WALL_SPR_HI]] table used by the right-wall path; the [[$07]]-byte offset
 between them suggests two adjacent animation-frame banks in the same
 level-data region.
 
@@ -12174,9 +12149,8 @@ drawn.
 \paragraph{Facing direction.}  [[ENTITY_HIT_STATE]],X is both an
 active flag (non-zero = active) and a facing direction (bit~7 =
 inverted variant).  Positive state values select the sprite pointer
-table pair [[HIT_SPR_POS_LO]]/[[HIT_SPR_POS_HI]] (at
-[[$753B]]/[[$763B]]) and negative values select
-[[HIT_SPR_NEG_LO]]/[[HIT_SPR_NEG_HI]] (at [[$7507]]/[[$7607]]).  Both
+table pair [[HIT_SPR_POS_LO]]/[[HIT_SPR_POS_HI]] and negative values
+select [[HIT_SPR_NEG_LO]]/[[HIT_SPR_NEG_HI]].  Both
 pointer pairs live in the swappable level-data region and are indexed
 by [[ZP_SPRITE_XREF]] ([[$4C]], the 0..7 walking-frame index shared
 with the other playfield-refresh routines).  The loaded pointer is
@@ -12195,16 +12169,11 @@ tall, planted at screen row [[ENTITY_HIT_ROW]],X.
 ; walking-animation slot).  The routine patches the SMC source
 ; operand of DRAW_SPRITE_OPAQUE with whichever pair matches the
 ; slot's facing direction (ENTITY_HIT_STATE,X bit 7).
-HIT_SPR_POS_LO  = $753B         ; Positive-state sprite ptr, low
-HIT_SPR_POS_HI  = $763B         ; Positive-state sprite ptr, high
-HIT_SPR_NEG_LO  = $7507         ; Negative-state sprite ptr, low
-HIT_SPR_NEG_HI  = $7607         ; Negative-state sprite ptr, high
 
 ; (ENTITY_HIT_Y ($66) is defined in <<drol input defines>> since
 ;  INPUT_DO_ASCEND / INPUT_DO_DESCEND at $6000 read it before
 ;  REFRESH_HIT_ENTITIES here.)
 
-@ %def HIT_SPR_POS_LO HIT_SPR_POS_HI HIT_SPR_NEG_LO HIT_SPR_NEG_HI
 
 <<refresh hit entities>>=
 
@@ -12942,8 +12911,8 @@ centre) with a much larger $3\times[[$13]]$ (idle) or $3\times[[$14]]$  % TODO-S
 (active) body sprite indexed by the stance byte [[ZP_PLAYER_STANCE]].
 
 \paragraph{Sprite art.}  The seven used stances of the idle-path body
-([[$7527]]/[[$7627]][[[$03]]..[[$09]]]) and the active-path body  % TODO-SYM: $09
-([[$7531]]/[[$7631]][[[$03]]..[[$09]]]) are shown in  % TODO-SYM: $09
+([[PLAYER_SPR_IDLE_LO]]/[[PLAYER_SPR_IDLE_HI]][[[$03]]..[[$09]]]) and the active-path body  % TODO-SYM: $09
+([[PLAYER_SPR_ACTIVE_LO]]/[[PLAYER_SPR_ACTIVE_HI]][[[$03]]..[[$09]]]) are shown in  % TODO-SYM: $09
 Figure~\ref{fig:player_sprites_idle} and
 Figure~\ref{fig:player_sprites_active}.  Both tables point into
 [[$8500]]--[[$8ABF]] inside [[drol.bin]] (persistent data), so no level  % TODO-SYM: $8500 $8ABF
@@ -12959,7 +12928,7 @@ first so the decoder reverses each row before rendering.
 \caption{[[PLAYER_SPR_IDLE]] --- idle-path body sprites at
 [[ZP_PLAYER_STANCE]]~=~[[$03]] (top floor, leftmost) through [[$09]] (bottom  % TODO-SYM: $09
 floor, rightmost).  Dimensions [[$03]]$\times$[[$13]] (four bytes per row
-by 19 rows).  Pointer table at [[$7527]]/[[$7627]]; sprite bytes at
+by 19 rows).  Pointer table at [[PLAYER_SPR_IDLE_LO]]/[[PLAYER_SPR_IDLE_HI]]; sprite bytes at
 [[$8500]]--[[$87FF]].}  % TODO-SYM: $8500 $87FF
 \label{fig:player_sprites_idle}
 \end{figure}
@@ -12969,7 +12938,7 @@ by 19 rows).  Pointer table at [[$7527]]/[[$7627]]; sprite bytes at
 \includegraphics[width=0.95\textwidth]{images/player_sprites_active.png}
 \caption{[[PLAYER_SPR_ACTIVE]] --- active-path body sprites used during
 ascent/descent, same stance index.  Dimensions [[$03]]$\times$[[$14]] (one  % TODO-SYM: $14
-row taller than idle).  Pointer table at [[$7531]]/[[$7631]]; sprite bytes
+row taller than idle).  Pointer table at [[PLAYER_SPR_ACTIVE_LO]]/[[PLAYER_SPR_ACTIVE_HI]]; sprite bytes
 at [[$87AC]]--[[$8ABF]].}  % TODO-SYM: $87AC $8ABF
 \label{fig:player_sprites_active}
 \end{figure}
@@ -12982,10 +12951,6 @@ ZP_PLAYER_STANCE = $03          ; Player stance / floor index (clamped $03..$09)
 ; ZP_PLAYER_COL, ZP_HIT_FLAG, $FD (frame counter) are defined elsewhere.
 
 ; --- Main-player sprite pointer tables (indexed by ZP_PLAYER_STANCE) ---
-PLAYER_SPR_IDLE_LO   = $7527    ; Idle-path sprite pointer low bytes
-PLAYER_SPR_IDLE_HI   = $7627    ; Idle-path sprite pointer high bytes
-PLAYER_SPR_ACTIVE_LO = $7531    ; Active/elevator-path sprite pointer low
-PLAYER_SPR_ACTIVE_HI = $7631    ; Active/elevator-path sprite pointer high
 
 ; --- Pseudo-random static source inside DRAW_PLAYER's own code image ---
 ; Used for the teleport/flicker effect at the top and bottom floors.
@@ -13136,8 +13101,7 @@ DRAW_PLAYER:
         JMP .share_tail                 ; Share idle-path tail at $64F9:
                                         ;   loads ZP_PLAYER_COL, sets
                                         ;   X=$14, JSR DRAW_SPRITE, RTS.
-@ %def DRAW_PLAYER PLAYER_SPR_IDLE_LO PLAYER_SPR_IDLE_HI
-@ %def PLAYER_SPR_ACTIVE_LO PLAYER_SPR_ACTIVE_HI
+@ %def DRAW_PLAYER
 @ %def PLAYER_STATIC_LO PLAYER_STATIC_HI
 @ %def SMC_SR_HEIGHT SMC_SR_YSRC ZP_ACTION_DIR ZP_PLAYER_STANCE
 
@@ -13735,18 +13699,17 @@ level-1 region:
 
 \begin{itemize}
 \item [[FLOOR_ENEMY_SPR_S3_LO]] / [[FLOOR_ENEMY_SPR_S3_HI]]
-  ([[$755C]]/[[$765C]], 7 entries) --- slot~3 sprite frames.
+  ([[FLOOR_ENEMY_SPR_S3_LO]]/[[FLOOR_ENEMY_SPR_S3_HI]], 7 entries) --- slot~3 sprite frames.
 \item [[FLOOR_ENEMY_SPR_S2_LO]] / [[FLOOR_ENEMY_SPR_S2_HI]]
-  ([[$7563]]/[[$7663]], 7 entries) --- slot~2 sprite frames.
+  ([[FLOOR_ENEMY_SPR_S2_LO]]/[[FLOOR_ENEMY_SPR_S2_HI]], 7 entries) --- slot~2 sprite frames.
 \item [[FLOOR_ENEMY_SPR_S1_LO]] / [[FLOOR_ENEMY_SPR_S1_HI]]
-  ([[$756A]]/[[$766A]], 7 entries) --- slot~1 sprite frames.
+  ([[FLOOR_ENEMY_SPR_S1_LO]]/[[FLOOR_ENEMY_SPR_S1_HI]], 7 entries) --- slot~1 sprite frames.
 \item [[FLOOR_ENEMY_SPR_S0_LO]] / [[FLOOR_ENEMY_SPR_S0_HI]]
-  ([[$7571]]/[[$7671]], 7 entries) --- slot~0 sprite frames.
+  ([[FLOOR_ENEMY_SPR_S0_LO]]/[[FLOOR_ENEMY_SPR_S0_HI]], 7 entries) --- slot~0 sprite frames.
 \end{itemize}
 
-The tables form a contiguous 28-entry block [[$755C]]--[[$7577]] /
-[[$765C]]--[[$7677]], preceding the [[SPECIAL_BODY_POSE0_LO]] table at
-[[$7578]].
+The tables form a contiguous 28-entry block starting at
+[[FLOOR_ENEMY_SPR_S3_LO]] (ending just before [[SPECIAL_BODY_POSE0_LO]]).
 
 \paragraph{Historical naming.}  In earlier passes these routines were
 misidentified as ``screen effects'' (advance) and ``score display''
@@ -13764,19 +13727,7 @@ is done inside [[POST_FRAME]] via [[DRAW_DIGIT]].
 ; frame index 0..6 (from PROJ_FRAME_IDX) to yield the sprite-data
 ; address for that slot at that perspective column.  The per-slot
 ; dispatch in FLOOR_ENEMY_DRAW picks one table by slot index X.
-FLOOR_ENEMY_SPR_S3_LO = $755C   ; Slot 3 sprite frames, low byte
-FLOOR_ENEMY_SPR_S3_HI = $765C
-FLOOR_ENEMY_SPR_S2_LO = $7563   ; Slot 2 sprite frames, low byte
-FLOOR_ENEMY_SPR_S2_HI = $7663
-FLOOR_ENEMY_SPR_S1_LO = $756A   ; Slot 1 sprite frames, low byte
-FLOOR_ENEMY_SPR_S1_HI = $766A
-FLOOR_ENEMY_SPR_S0_LO = $7571   ; Slot 0 sprite frames, low byte
-FLOOR_ENEMY_SPR_S0_HI = $7671
 
-@ %def FLOOR_ENEMY_SPR_S3_LO FLOOR_ENEMY_SPR_S3_HI
-@ %def FLOOR_ENEMY_SPR_S2_LO FLOOR_ENEMY_SPR_S2_HI
-@ %def FLOOR_ENEMY_SPR_S1_LO FLOOR_ENEMY_SPR_S1_HI
-@ %def FLOOR_ENEMY_SPR_S0_LO FLOOR_ENEMY_SPR_S0_HI
 
 @
 
@@ -14275,23 +14226,7 @@ FLOOR_SCREEN_COL = $1F00         ; Floor position -> sprite X column
 ; sprite-bitmap region at $8C00-$AFFF (per-level sprite sheet, also
 ; swappable).  Player and Special have two frames toggled by bit 2
 ; of $FD (frame counter); Companion and Entity use a single fixed frame.
-PLAYER_GRID_SPR_A_LO   = $7542  ; Player grid body, frame A (16 entries)
-PLAYER_GRID_SPR_A_HI   = $7642
-PLAYER_GRID_SPR_B_LO   = $7552  ; Player grid body, frame B
-PLAYER_GRID_SPR_B_HI   = $7652
-SPECIAL_GRID_SPR_A_LO  = $7594  ; Special grid body, frame A (7 entries)
-SPECIAL_GRID_SPR_A_HI  = $7694
-SPECIAL_GRID_SPR_B_LO  = $759B  ; Special grid body, frame B
-SPECIAL_GRID_SPR_B_HI  = $769B
-COMPANION_GRID_SPR_LO  = $75CC  ; Companion grid body (no animation)
-COMPANION_GRID_SPR_HI  = $76CC
-ENTITY_GRID_SPR_LO     = $75D4  ; Entity grid body (25 entries, shared by 20 slots)
-ENTITY_GRID_SPR_HI     = $76D4
 
-@ %def PLAYER_GRID_SPR_A_LO PLAYER_GRID_SPR_A_HI PLAYER_GRID_SPR_B_LO PLAYER_GRID_SPR_B_HI
-@ %def SPECIAL_GRID_SPR_A_LO SPECIAL_GRID_SPR_A_HI SPECIAL_GRID_SPR_B_LO SPECIAL_GRID_SPR_B_HI
-@ %def COMPANION_GRID_SPR_LO COMPANION_GRID_SPR_HI
-@ %def ENTITY_GRID_SPR_LO ENTITY_GRID_SPR_HI
 
 @
 
@@ -15142,7 +15077,7 @@ drift-puff player-catch).
 \begin{itemize}
 \item [[$00]] (\textbf{inactive}) --- fall through to [[SPECIAL_INACTIVE_DRAW]]
   at [[$6CDB]], a 29-byte helper that draws a small [[$02]]$\times$[[$06]] marker
-  sprite from the level-data pointer pair at [[$755B]]/[[$765B]] at a
+  sprite from the level-data pointer pair at [[SPECIAL_PEEK_LO]]/[[SPECIAL_PEEK_HI]] at a
   fixed screen position derived from the slot's row anchor ([[$AE]]).
   Conceptually the ``peek'' of the creature waiting off-screen.
 \item positive (\textbf{active}) --- perspective-transform the 16-bit
@@ -15173,7 +15108,7 @@ to one of six small handlers at [[$6C3F]]--[[$6CC0]].  Each handler rewrites  % 
 the operand bytes to the \emph{next} handler in a ring, then patches
 [[SMC_DS_SRC_LO]]/[[SMC_DS_SRC_HI]] with its own sprite source pointer
 and calls [[DRAW_SPRITE]].  The six handlers select from a four-entry
-per-level sprite-pointer table at [[$7578]]/[[$7678]]--[[$758D]]/[[$768D]] using
+per-level sprite-pointer table at [[SPECIAL_BODY_POSE0_LO]]/[[HI]]..[[SPECIAL_BODY_POSE3_LO]]/[[HI]] using
 offsets $\{0, 7, 14, 21, 14, 7\}$ --- a \emph{palindromic} walk cycle
 (poses 0, 1, 2, 3, 2, 1) that gives the creature a bidirectional
 walk-in-place look without storing a frame index in RAM.  The initial
@@ -15282,24 +15217,14 @@ SPECIAL_PUFF_LO = $AFDA         ; Drift-puff pointer table, low bytes
 SPECIAL_PUFF_HI = $B05A         ; Drift-puff pointer table, high bytes
 
 ; --- Walk-cycle body sprite base pointers ---
-; Four poses in the per-level sprite table.. $758D/$768D
+; Four poses in the per-level sprite tables SPECIAL_BODY_POSE0..3 (LO/HI),
 ; indexed by Y (perspective-frame index from PROJ_FRAME_IDX).  The six
 ; SMC handlers visit them in order {0, 1, 2, 3, 2, 1} then cycle.
-SPECIAL_BODY_POSE0_LO = $7578   ; Pose 0 pointer table, low
-SPECIAL_BODY_POSE0_HI = $7678
-SPECIAL_BODY_POSE1_LO = $757F   ; Pose 1 (offset +7)
-SPECIAL_BODY_POSE1_HI = $767F
-SPECIAL_BODY_POSE2_LO = $7586   ; Pose 2 (offset +14)
-SPECIAL_BODY_POSE2_HI = $7686
-SPECIAL_BODY_POSE3_LO = $758D   ; Pose 3 (offset +21)
-SPECIAL_BODY_POSE3_HI = $768D
 
 ; --- Inactive-phase marker sprite (single pointer) ---
 ; One byte after ENEMY_C_PUFF and one before ENEMY_B_PUFF
 ;; a per-level pointer to the small ZP_ACTION_DIRx$06 ``peek''
 ; sprite drawn while the slot is counting down to spawn.
-SPECIAL_PEEK_LO = $755B         ; Inactive-phase peek sprite pointer, low
-SPECIAL_PEEK_HI = $765B         ; Inactive-phase peek sprite pointer, high
 @
 
 <<special draw>>=
@@ -15511,7 +15436,7 @@ SMC_SPECIAL_BODY_HI = *-1               ;   the 6-step palindromic cycle.
         INC ZP_SPECIAL_ROW
 .drift_done:
         RTS
-@ %def SPECIAL_DRAW SMC_SPECIAL_BODY_LO SMC_SPECIAL_BODY_HI ZP_SPECIAL_SND_CTR_B SND_PITCH_TBL_SPECIAL_B SPECIAL_PUFF_LO SPECIAL_PUFF_HI SPECIAL_BODY_POSE0_LO SPECIAL_BODY_POSE0_HI SPECIAL_BODY_POSE1_LO SPECIAL_BODY_POSE1_HI SPECIAL_BODY_POSE2_LO SPECIAL_BODY_POSE2_HI SPECIAL_BODY_POSE3_LO SPECIAL_BODY_POSE3_HI ZP_SCREEN_X ZP_SCREEN_X_HI
+@ %def SPECIAL_DRAW SMC_SPECIAL_BODY_LO SMC_SPECIAL_BODY_HI ZP_SPECIAL_SND_CTR_B SND_PITCH_TBL_SPECIAL_B SPECIAL_PUFF_LO SPECIAL_PUFF_HI ZP_SCREEN_X ZP_SCREEN_X_HI
 
 <<special body draw steps>>=
 
@@ -15654,7 +15579,7 @@ SPECIAL_INACTIVE_DRAW:
         STA SMC_DS_SRC_HI
         JSR DRAW_SPRITE
         RTS
-@ %def SPECIAL_INACTIVE_DRAW SPECIAL_PEEK_LO SPECIAL_PEEK_HI
+@ %def SPECIAL_INACTIVE_DRAW
 
 \section{Companion slot: per-frame tick + draw}
 
@@ -15733,8 +15658,8 @@ through three sprite pointer tables.  A trampoline [[JMP]] at [[$6E30]]
 (positive direction) or [[$6EA9]] (negative direction) dispatches to
 the next pose; each pose's handler patches the trampoline's operand
 bytes to point to the successor, loads the pose pointer from a
-per-level sprite table at [[$75A2]]/[[$75A9]]/[[$75B0]] (for \-direction) or
-[[$75B7]]/[[$75BE]]/[[$75C5]] (for \+direction), patches
+per-level sprite table at [[COMPANION_NEG_POSE1_LO]]/[[COMPANION_NEG_POSE2_LO]]/[[COMPANION_NEG_POSE3_LO]] (for \-direction) or
+[[COMPANION_POS_POSE1_LO]]/[[COMPANION_POS_POSE2_LO]]/[[COMPANION_POS_POSE3_LO]] (for \+direction), patches
 [[SMC_DS_SRC_LO]]/[[HI]] inside [[DRAW_SPRITE]], and [[JSR]]s.  On
 a cold start the on-disk trampoline values are [[JMP $6E33]] and
 [[JMP $6EAC]] (pose 1 for each direction).
@@ -15809,20 +15734,8 @@ ENTITY_HIT_ROW     = $72        ; Hit-entity row attribute ($72,X)
 ; --- Per-level sprite pointer tables (indexed by Y = perspective-frame) ---
 ; Positive-direction body, 3-pose cycle at offsets 0, 7, 14 into these
 ; tables (each entry is a pointer pair LO/HI across the two tables).
-COMPANION_POS_POSE1_LO = $75B7  ; +dir pose 1 (stride 7 per pose)
-COMPANION_POS_POSE1_HI = $76B7
-COMPANION_POS_POSE2_LO = $75BE  ; +dir pose 2
-COMPANION_POS_POSE2_HI = $76BE
-COMPANION_POS_POSE3_LO = $75C5  ; +dir pose 3
-COMPANION_POS_POSE3_HI = $76C5
 
 ; Negative-direction body, 3-pose cycle at offsets 0, 7, 14.
-COMPANION_NEG_POSE1_LO = $75A2  ; -dir pose 1
-COMPANION_NEG_POSE1_HI = $76A2
-COMPANION_NEG_POSE2_LO = $75A9  ; -dir pose 2
-COMPANION_NEG_POSE2_HI = $76A9
-COMPANION_NEG_POSE3_LO = $75B0  ; -dir pose 3
-COMPANION_NEG_POSE3_HI = $76B0
 
 <<companion update>>=
 
@@ -16274,7 +16187,7 @@ COMPANION_NEG_POSE3:
 .drift_to_neg:
         JMP COMPANION_NEG_TRAMP         ; enter -direction SMC chain
 
-@ %def COMPANION_UPDATE ZP_COMPANION_STATE ZP_COMPANION_DIR ZP_COMPANION_POS_LO ZP_COMPANION_POS_HI ZP_PLAYER_FLOOR ENTITY_HIT_ROW COMPANION_POS_POSE1_LO COMPANION_POS_POSE1_HI COMPANION_POS_POSE2_LO COMPANION_POS_POSE2_HI COMPANION_POS_POSE3_LO COMPANION_POS_POSE3_HI COMPANION_NEG_POSE1_LO COMPANION_NEG_POSE1_HI COMPANION_NEG_POSE2_LO COMPANION_NEG_POSE2_HI COMPANION_NEG_POSE3_LO COMPANION_NEG_POSE3_HI SMC_COMPANION_POS_LO SMC_COMPANION_POS_HI SMC_COMPANION_NEG_LO SMC_COMPANION_NEG_HI COMPANION_POS_TRAMP COMPANION_POS_POSE1 COMPANION_POS_POSE2 COMPANION_POS_POSE3 COMPANION_NEG_TRAMP COMPANION_NEG_POSE1 COMPANION_NEG_POSE2 COMPANION_NEG_POSE3
+@ %def COMPANION_UPDATE ZP_COMPANION_STATE ZP_COMPANION_DIR ZP_COMPANION_POS_LO ZP_COMPANION_POS_HI ZP_PLAYER_FLOOR ENTITY_HIT_ROW SMC_COMPANION_POS_LO SMC_COMPANION_POS_HI SMC_COMPANION_NEG_LO SMC_COMPANION_NEG_HI COMPANION_POS_TRAMP COMPANION_POS_POSE1 COMPANION_POS_POSE2 COMPANION_POS_POSE3 COMPANION_NEG_TRAMP COMPANION_NEG_POSE1 COMPANION_NEG_POSE2 COMPANION_NEG_POSE3
 
 \section{Rescue-child entity tick (20 slots)}
 
@@ -16954,426 +16867,701 @@ SCREEN_ROW_ADDR_HI2:
         HEX 43 47 4B 4F 53 57 5B 5F
 @ %def SCREEN_ROW_ADDR_HI2
 
-<<screen data tables>>=
+\section{Sprite pointer tables ([[$7500]]--[[$76FF]])}
+
+The [[$7500]]--[[$76FF]] region is a 512-byte block of 16-bit sprite
+pointer tables, arranged as two parallel 256-byte halves: the low-byte
+half at [[SPRITE_POINTER_TABLES_LO]] and the high-byte half at
+[[SPRITE_POINTER_TABLES_HI]].  For every table entry at
+[[LO+$XX]] there is a matching high byte at [[HI+$XX]]; callers load
+the pair to form a 16-bit sprite-data address which they then patch
+into a [[DRAW_SPRITE*]] SMC source-pointer slot.
+
+\paragraph{Table layout.}  The low-byte half is subdivided into 37
+separate pointer tables ordered by subsystem.  Each sub-table is
+indexed either by a 7-entry perspective-frame index (from
+[[PROJ_FRAME_IDX]]) or by a pose/direction offset.  The high-byte
+half at [[$7600]] mirrors the layout byte-for-byte with page-high
+bytes instead of low bytes.  A single-byte null pad
+([[SPRITE_POINTER_TABLES_LO_PAD]]) occupies [[$75FF]]; its twin
+[[SPRITE_POINTER_TABLES_HI_PAD]] at [[$76FF]] is also [[$00]].  These
+pads are never indexed at runtime.
+
+\paragraph{Sub-tables by subsystem.}  The named sub-tables are:
+
+\begin{itemize}
+\item \emph{Playfield chrome} --- [[PILLAR_SPR_LO]]/[[HI]] (7),
+  [[FLOOR_SPR_LO]]/[[HI]] (11), [[WALL_L_SPR_LO]]/[[HI]] (7),
+  [[WALL_SPR_LO]]/[[HI]] (7), [[HIT_SPR_NEG_LO]]/[[HI]] (7),
+  [[HIT_SPR_POS_LO]]/[[HI]] (7).  Driven by the
+  [[REFRESH_*]] routines and [[REFRESH_HIT_ENTITIES]].
+\item \emph{Player body} --- [[PLAYER_SPR_IDLE_LO]]/[[HI]] (10),
+  [[PLAYER_SPR_ACTIVE_LO]]/[[HI]] (10) for [[DRAW_PLAYER]];
+  [[PLAYER_GRID_SPR_A_LO]]/[[HI]] (7) and [[PLAYER_GRID_SPR_B_LO]]/[[HI]]
+  (7) for [[DRAW_ENTITIES]] phase~2 (flicker A/B selected by
+  [[ZP_FRAME_COUNTER]] bit~2).
+\item \emph{Special slot} --- [[SPECIAL_BODY_POSE0_LO]]/[[HI]]..[[POSE3_LO]]/[[HI]]
+  (7 each) for [[SPECIAL_DRAW]]'s SMC walk cycle;
+  [[SPECIAL_PEEK_LO]]/[[HI]] (1) for [[SPECIAL_INACTIVE_DRAW]];
+  [[SPECIAL_GRID_SPR_A_LO]]/[[HI]] (7) and
+  [[SPECIAL_GRID_SPR_B_LO]]/[[HI]] (7) for [[DRAW_ENTITIES]] phase~3.
+\item \emph{Companion slot} --- [[COMPANION_NEG_POSE1_LO]]/[[HI]]..[[NEG_POSE3_LO]]/[[HI]]
+  and [[COMPANION_POS_POSE1_LO]]/[[HI]]..[[POS_POSE3_LO]]/[[HI]] (7 each,
+  6 poses $\times$ 2 directions) for [[COMPANION_UPDATE]]'s SMC walk cycle;
+  [[COMPANION_GRID_SPR_LO]]/[[HI]] (8) for [[DRAW_ENTITIES]] phase~4.
+\item \emph{Enemy-C (target creature)} --- [[ENEMY_C_TAIL_LO]]/[[HI]]
+  (9 frames) for [[ENEMY_C_DRAW]]'s main tail draw;
+  [[ENEMY_C_PUFF_LO]]/[[HI]] (1) and [[ENEMY_B_PUFF_LO]]/[[HI]] (1) for
+  the drift-mode puff sprites of [[ENEMY_C_DRAW]] and [[ENEMY_B_DRAW]].
+\item \emph{Floor enemies} --- [[FLOOR_ENEMY_SPR_S0_LO]]/[[HI]]..[[S3_LO]]/[[HI]]
+  (7 each, 4 slots $\times$ 7 frames) for [[FLOOR_ENEMY_DRAW]].
+\item \emph{Entity grid} --- [[ENTITY_GRID_SPR_LO]]/[[HI]] (7) for
+  [[DRAW_ENTITIES]] phase~5 (20-slot entity list).
+\item \emph{Rescue children} --- [[RESCUE_SPR_NEG_END_LO]]/[[HI]],
+  [[RESCUE_SPR_NEG_MID_LO]]/[[HI]], [[RESCUE_SPR_POS_END_LO]]/[[HI]],
+  [[RESCUE_SPR_POS_MID_LO]]/[[HI]] (7 each) for [[RESCUE_DRAW]].
+\item \emph{Projectiles (right-moving only)} ---
+  [[PROJ_SPR_R_LO]]/[[HI]] (8) for [[HAZARD_CHECK]]; the left-moving
+  twin [[PROJ_SPR_L_LO]]/[[HI]] lives in the swappable region at
+  [[$AFD3]]/[[$B053]].
+\end{itemize}
+
+\paragraph{Targets of the pointers.}  Every pointer entry targets
+either the immediately-following sprite pixel data region
+[[SPRITE_PIXEL_DATA]] at [[$7700]]--[[$8BFF]] (for the playfield-chrome,
+player-idle/active, and hit sprites that are part of the persistent
+[[drol.bin]]), or a per-level address in the swappable region
+[[$8C00]]--[[$BDFF]] (for the animated grid / body / floor-enemy
+sprites, whose art changes from level to level).  This split lets
+per-level levels change enemy/companion/rescue sprite art while the
+playfield-chrome stays fixed.
+
+<<sprite pointer tables lo>>=
 
         ORG $7500
+SPRITE_POINTER_TABLES_LO:
         SUBROUTINE
-        ; Sprite data and other tables ($7500-$8BFF)
-        ; Raw data --- 5888 bytes
-        HEX 00 8C 18 A4
-        HEX 30 BC 48 D4 FC 24 4C 74
-        HEX 9C C4 EC 14 3C 64 8C B4
-        HEX DC 04 2C 54 7C A4 30 BC
-        HEX 48 D4 60 EC 78 04 90 1C
-        HEX A8 34 C0 4C 98 E4 98 30
-        HEX 7C C8 14 60 AC F8 AC 44
-        HEX 90 E0 30 80 D0 20 70 C0
-        HEX E8 10 38 60 88 B0 D8 E0
-        HEX E8 F0 F8 00 08 10 1E 2C
-        HEX 3A 48 56 64 72 79 87 8F
-        HEX 97 9F A7 AF B7 BF D1 E3
-        HEX F5 FF 09 13 1D 27 31 3B
-        HEX 45 4F 59 63 6D 77 81 8B
-        HEX 95 9F A9 B3 BD C7 D1 DB
-        HEX E5 EF F9 03 0D 99 25 B1
-        HEX 3D C9 55 E1 6D F9 85 11
-        HEX 9D 29 B5 41 CD 59 E5 71
-        HEX FD 89 15 A1 2D B9 45 D1
-        HEX 5D 63 69 6F 75 7B 81 87
-        HEX 8D 93 99 9F A5 AB B1 D1
-        HEX F1 11 31 51 71 91 B1 D1
-        HEX F1 11 31 51 71 91 B1 D1
-        HEX F1 11 31 51 71 91 B1 D1
-        HEX F1 11 31 51 71 91 B1 D1
-        HEX F1 11 31 51 71 91 B1 D1
+        ; Low-byte half of the sprite-pointer tables ($7500-$75FF).
+        ; Each sub-table is indexed by a frame counter (typically
+        ; the perspective-frame index $00..$06 from PROJ_FRAME_IDX,
+        ; or a direction/pose offset).  The matching HI-half tables
+        ; live at SPRITE_POINTER_TABLES_HI ($7600-$76FF) 256 bytes
+        ; later, so for every entry at LO+$XX the high byte is at
+        ; HI+$XX.  A single-byte null pad occupies $75FF.
+
+PILLAR_SPR_LO:
+        ; pointers: $7700 $778C $7818 $78A4 $7930 $79BC $7A48
+        HEX 00 8C 18 A4 30 BC 48
+HIT_SPR_NEG_LO:
+        ; pointers: $7AD4 $7AFC $7B24 $7B4C $7B74 $7B9C $7BC4
+        HEX D4 FC 24 4C 74 9C C4
+FLOOR_SPR_LO:
+        ; pointers: $7BEC $7C14 $7C3C $7C64 $7C8C $7CB4 $7CDC $7D04 $7D2C $7D54 $7D7C
+        HEX EC 14 3C 64 8C B4 DC 04
+        HEX 2C 54 7C
+WALL_L_SPR_LO:
+        ; pointers: $7DA4 $7E30 $7EBC $7F48 $7FD4 $8060 $80EC
+        HEX A4 30 BC 48 D4 60 EC
+WALL_SPR_LO:
+        ; pointers: $8178 $8204 $8290 $831C $83A8 $8434 $84C0
+        HEX 78 04 90 1C A8 34 C0
+PLAYER_SPR_IDLE_LO:
+        ; pointers: $854C $8598 $85E4 $8598 $8630 $867C $86C8 $8714 $8760 $87AC
+        HEX 4C 98 E4 98 30 7C C8 14
+        HEX 60 AC
+PLAYER_SPR_ACTIVE_LO:
+        ; pointers: $87F8 $87AC $8844 $8890 $88E0 $8930 $8980 $89D0 $8A20 $8A70
+        HEX F8 AC 44 90 E0 30 80 D0
+        HEX 20 70
+HIT_SPR_POS_LO:
+        ; pointers: $8AC0 $8AE8 $8B10 $8B38 $8B60 $8B88 $8BB0
+        HEX C0 E8 10 38 60 88 B0
+PLAYER_GRID_SPR_A_LO:
+        ; pointers: $8BD8 $8BE0 $8BE8 $8BF0 $8BF8 $8C00 $8C08
+        HEX D8 E0 E8 F0 F8 00 08
+ENEMY_C_TAIL_LO:
+        ; pointers: $8C10 $8C1E $8C2C $8C3A $8C48 $8C56 $8C64 $8C72 $8C79
+        HEX 10 1E 2C 3A 48 56 64 72
+        HEX 79
+PLAYER_GRID_SPR_B_LO:
+        ; pointers: $8C87 $8C8F $8C97 $8C9F $8CA7 $8CAF $8CB7
+        HEX 87 8F 97 9F A7 AF B7
+ENEMY_C_PUFF_LO:
+        ; pointers: $8CBF
+        HEX BF
+ENEMY_B_PUFF_LO:
+        ; pointers: $8CD1
+        HEX D1
+SPECIAL_PEEK_LO:
+        ; pointers: $8CE3
+        HEX E3
+FLOOR_ENEMY_SPR_S3_LO:
+        ; pointers: $8CF5 $8CFF $8D09 $8D13 $8D1D $8D27 $8D31
+        HEX F5 FF 09 13 1D 27 31
+FLOOR_ENEMY_SPR_S2_LO:
+        ; pointers: $8D3B $8D45 $8D4F $8D59 $8D63 $8D6D $8D77
+        HEX 3B 45 4F 59 63 6D 77
+FLOOR_ENEMY_SPR_S1_LO:
+        ; pointers: $8D81 $8D8B $8D95 $8D9F $8DA9 $8DB3 $8DBD
+        HEX 81 8B 95 9F A9 B3 BD
+FLOOR_ENEMY_SPR_S0_LO:
+        ; pointers: $8DC7 $8DD1 $8DDB $8DE5 $8DEF $8DF9 $8E03
+        HEX C7 D1 DB E5 EF F9 03
+SPECIAL_BODY_POSE0_LO:
+        ; pointers: $8E0D $8E99 $8F25 $8FB1 $903D $90C9 $9155
+        HEX 0D 99 25 B1 3D C9 55
+SPECIAL_BODY_POSE1_LO:
+        ; pointers: $91E1 $926D $92F9 $9385 $9411 $949D $9529
+        HEX E1 6D F9 85 11 9D 29
+SPECIAL_BODY_POSE2_LO:
+        ; pointers: $95B5 $9641 $96CD $9759 $97E5 $9871 $98FD
+        HEX B5 41 CD 59 E5 71 FD
+SPECIAL_BODY_POSE3_LO:
+        ; pointers: $9989 $9A15 $9AA1 $9B2D $9BB9 $9C45 $9CD1
+        HEX 89 15 A1 2D B9 45 D1
+SPECIAL_GRID_SPR_A_LO:
+        ; pointers: $9D5D $9D63 $9D69 $9D6F $9D75 $9D7B $9D81
+        HEX 5D 63 69 6F 75 7B 81
+SPECIAL_GRID_SPR_B_LO:
+        ; pointers: $9D87 $9D8D $9D93 $9D99 $9D9F $9DA5 $9DAB
+        HEX 87 8D 93 99 9F A5 AB
+COMPANION_NEG_POSE1_LO:
+        ; pointers: $9DB1 $9DD1 $9DF1 $9E11 $9E31 $9E51 $9E71
+        HEX B1 D1 F1 11 31 51 71
+COMPANION_NEG_POSE2_LO:
+        ; pointers: $9E91 $9EB1 $9ED1 $9EF1 $9F11 $9F31 $9F51
+        HEX 91 B1 D1 F1 11 31 51
+COMPANION_NEG_POSE3_LO:
+        ; pointers: $9F71 $9F91 $9FB1 $9FD1 $9FF1 $A011 $A031
+        HEX 71 91 B1 D1 F1 11 31
+COMPANION_POS_POSE1_LO:
+        ; pointers: $A051 $A071 $A091 $A0B1 $A0D1 $A0F1 $A111
+        HEX 51 71 91 B1 D1 F1 11
+COMPANION_POS_POSE2_LO:
+        ; pointers: $A131 $A151 $A171 $A191 $A1B1 $A1D1 $A1F1
+        HEX 31 51 71 91 B1 D1 F1
+COMPANION_POS_POSE3_LO:
+        ; pointers: $A211 $A231 $A251 $A271 $A291 $A2B1 $A2D1
+        HEX 11 31 51 71 91 B1 D1
+COMPANION_GRID_SPR_LO:
+        ; pointers: $A2F1 $A2F5 $A2F9 $A2FD $A301 $A305 $A309 $A30D
         HEX F1 F5 F9 FD 01 05 09 0D
-        HEX 7D 87 91 9B A5 AF B9 C3
-        HEX 2B 93 FB 63 CB 33 9B 0B
-        HEX 7B EB 5B CB 3B AB 13 7B
-        HEX E3 4B B3 1B 83 F3 63 D3
-        HEX 43 B3 23 93 9C A5 AE B7
-        HEX C0 C9 D2 00 77 77 78 78
-        HEX 79 79 7A 7A 7A 7B 7B 7B
-        HEX 7B 7B 7B 7C 7C 7C 7C 7C
-        HEX 7C 7D 7D 7D 7D 7D 7E 7E
-        HEX 7F 7F 80 80 81 82 82 83
-        HEX 83 84 84 85 85 85 85 86
-        HEX 86 86 87 87 87 87 87 88
-        HEX 88 88 89 89 89 8A 8A 8A
-        HEX 8A 8B 8B 8B 8B 8B 8B 8B
-        HEX 8B 8B 8B 8C 8C 8C 8C 8C
+ENTITY_GRID_SPR_LO:
+        ; pointers: $A37D $A387 $A391 $A39B $A3A5 $A3AF $A3B9
+        HEX 7D 87 91 9B A5 AF B9
+RESCUE_SPR_NEG_END_LO:
+        ; pointers: $A3C3 $A42B $A493 $A4FB $A563 $A5CB $A633
+        HEX C3 2B 93 FB 63 CB 33
+RESCUE_SPR_NEG_MID_LO:
+        ; pointers: $A69B $A70B $A77B $A7EB $A85B $A8CB $A93B
+        HEX 9B 0B 7B EB 5B CB 3B
+RESCUE_SPR_POS_END_LO:
+        ; pointers: $A9AB $AA13 $AA7B $AAE3 $AB4B $ABB3 $AC1B
+        HEX AB 13 7B E3 4B B3 1B
+RESCUE_SPR_POS_MID_LO:
+        ; pointers: $AC83 $ACF3 $AD63 $ADD3 $AE43 $AEB3 $AF23
+        HEX 83 F3 63 D3 43 B3 23
+PROJ_SPR_R_LO:
+        ; pointers: $AF93 $AF9C $AFA5 $AFAE $AFB7 $AFC0 $AFC9 $AFD2
+        HEX 93 9C A5 AE B7 C0 C9 D2
+SPRITE_POINTER_TABLES_LO_PAD:
+        HEX 00                         ; unreferenced null pad
+@ %def SPRITE_POINTER_TABLES_LO SPRITE_POINTER_TABLES_LO_PAD
+
+<<sprite pointer tables hi>>=
+
+        ORG $7600
+SPRITE_POINTER_TABLES_HI:
+        SUBROUTINE
+        ; High-byte half of the sprite-pointer tables ($7600-$76FF).
+        ; Every entry at LO+$XX in SPRITE_POINTER_TABLES_LO has its
+        ; high byte at HI+$XX here.  A single-byte null pad occupies
+        ; $76FF.
+
+PILLAR_SPR_HI:
+        HEX 77 77 78 78 79 79 7A
+HIT_SPR_NEG_HI:
+        HEX 7A 7A 7B 7B 7B 7B 7B
+FLOOR_SPR_HI:
+        HEX 7B 7C 7C 7C 7C 7C 7C 7D
+        HEX 7D 7D 7D
+WALL_L_SPR_HI:
+        HEX 7D 7E 7E 7F 7F 80 80
+WALL_SPR_HI:
+        HEX 81 82 82 83 83 84 84
+PLAYER_SPR_IDLE_HI:
+        HEX 85 85 85 85 86 86 86 87
+        HEX 87 87
+PLAYER_SPR_ACTIVE_HI:
+        HEX 87 87 88 88 88 89 89 89
+        HEX 8A 8A
+HIT_SPR_POS_HI:
+        HEX 8A 8A 8B 8B 8B 8B 8B
+PLAYER_GRID_SPR_A_HI:
+        HEX 8B 8B 8B 8B 8B 8C 8C
+ENEMY_C_TAIL_HI:
         HEX 8C 8C 8C 8C 8C 8C 8C 8C
-        HEX 8C 8C 8C 8C 8C 8C 8C 8C
-        HEX 8C 8C 8D 8D 8D 8D 8D 8D
-        HEX 8D 8D 8D 8D 8D 8D 8D 8D
-        HEX 8D 8D 8D 8D 8D 8D 8D 8D
-        HEX 8D 8D 8D 8E 8E 8E 8F 8F
-        HEX 90 90 91 91 92 92 93 94
-        HEX 94 95 95 96 96 97 97 98
-        HEX 98 99 9A 9A 9B 9B 9C 9C
-        HEX 9D 9D 9D 9D 9D 9D 9D 9D
-        HEX 9D 9D 9D 9D 9D 9D 9D 9D
-        HEX 9D 9E 9E 9E 9E 9E 9E 9E
-        HEX 9E 9F 9F 9F 9F 9F 9F 9F
-        HEX 9F A0 A0 A0 A0 A0 A0 A0
-        HEX A0 A1 A1 A1 A1 A1 A1 A1
-        HEX A1 A2 A2 A2 A2 A2 A2 A2
+        HEX 8C
+PLAYER_GRID_SPR_B_HI:
+        HEX 8C 8C 8C 8C 8C 8C 8C
+ENEMY_C_PUFF_HI:
+        HEX 8C
+ENEMY_B_PUFF_HI:
+        HEX 8C
+SPECIAL_PEEK_HI:
+        HEX 8C
+FLOOR_ENEMY_SPR_S3_HI:
+        HEX 8C 8C 8D 8D 8D 8D 8D
+FLOOR_ENEMY_SPR_S2_HI:
+        HEX 8D 8D 8D 8D 8D 8D 8D
+FLOOR_ENEMY_SPR_S1_HI:
+        HEX 8D 8D 8D 8D 8D 8D 8D
+FLOOR_ENEMY_SPR_S0_HI:
+        HEX 8D 8D 8D 8D 8D 8D 8E
+SPECIAL_BODY_POSE0_HI:
+        HEX 8E 8E 8F 8F 90 90 91
+SPECIAL_BODY_POSE1_HI:
+        HEX 91 92 92 93 94 94 95
+SPECIAL_BODY_POSE2_HI:
+        HEX 95 96 96 97 97 98 98
+SPECIAL_BODY_POSE3_HI:
+        HEX 99 9A 9A 9B 9B 9C 9C
+SPECIAL_GRID_SPR_A_HI:
+        HEX 9D 9D 9D 9D 9D 9D 9D
+SPECIAL_GRID_SPR_B_HI:
+        HEX 9D 9D 9D 9D 9D 9D 9D
+COMPANION_NEG_POSE1_HI:
+        HEX 9D 9D 9D 9E 9E 9E 9E
+COMPANION_NEG_POSE2_HI:
+        HEX 9E 9E 9E 9E 9F 9F 9F
+COMPANION_NEG_POSE3_HI:
+        HEX 9F 9F 9F 9F 9F A0 A0
+COMPANION_POS_POSE1_HI:
+        HEX A0 A0 A0 A0 A0 A0 A1
+COMPANION_POS_POSE2_HI:
+        HEX A1 A1 A1 A1 A1 A1 A1
+COMPANION_POS_POSE3_HI:
+        HEX A2 A2 A2 A2 A2 A2 A2
+COMPANION_GRID_SPR_HI:
         HEX A2 A2 A2 A2 A3 A3 A3 A3
-        HEX A3 A3 A3 A3 A3 A3 A3 A3
-        HEX A4 A4 A4 A5 A5 A6 A6 A7
-        HEX A7 A7 A8 A8 A9 A9 AA AA
-        HEX AA AB AB AC AC AC AD AD
-        HEX AE AE AF AF AF AF AF AF
-        HEX AF AF AF 00 80 80 80 80
+ENTITY_GRID_SPR_HI:
+        HEX A3 A3 A3 A3 A3 A3 A3
+RESCUE_SPR_NEG_END_HI:
+        HEX A3 A4 A4 A4 A5 A5 A6
+RESCUE_SPR_NEG_MID_HI:
+        HEX A6 A7 A7 A7 A8 A8 A9
+RESCUE_SPR_POS_END_HI:
+        HEX A9 AA AA AA AB AB AC
+RESCUE_SPR_POS_MID_HI:
+        HEX AC AC AD AD AE AE AF
+PROJ_SPR_R_HI:
+        HEX AF AF AF AF AF AF AF AF
+SPRITE_POINTER_TABLES_HI_PAD:
+        HEX 00                         ; unreferenced null pad
+@ %def SPRITE_POINTER_TABLES_HI SPRITE_POINTER_TABLES_HI_PAD
+
+\section{Sprite pixel data ([[$7700]]--[[$8BFF]])}
+
+The [[$7700]]--[[$8BFF]] region is 5376 bytes of sprite pixel data ---
+the actual hi-res byte patterns referenced by the pointer tables at
+[[SPRITE_POINTER_TABLES_LO]]/[[HI]].  Because the pointers from the
+first half of the block ([[PILLAR_SPR]]..[[HIT_SPR_POS]]) land inside
+this range, the playfield-chrome / hit / player-idle / player-active
+sprite art lives here as part of the persistent [[drol.bin]].  The
+grid-body, floor-enemy, companion, rescue and special-body tables
+instead point into the swappable [[$8C00]]--[[$BDFF]] range (loaded
+separately per level) so their art can vary.
+
+\paragraph{Frame sizes.}  Each sprite frame occupies a fixed number of
+bytes depending on its kind.  The playfield chrome frames (pillar,
+wall, floor) take [[$8C]], [[$8C]], and [[$28]] bytes per frame
+respectively; the [[HIT_SPR_*]] frames are [[$28]] bytes (roughly
+2~bytes wide by 20~rows tall including padding); the player-body
+frames are [[$4C]] bytes; the compact hit markers are [[$28]] bytes.
+See the individual [[DRAW_SPRITE*]]-ing routines for the
+exact [[ZP_SPRITE_W]] / [[ZP_SPRITE_H]] values each caller sets before
+the blit.
+
+\paragraph{Not yet decoded.}  This chunk emits the bytes as raw
+[[HEX]] for byte-perfect match.  Per-frame rendering to PNG is a
+future RE task --- each sub-table of pointers gives the starting
+address and the frame count, so an automated renderer can walk the
+table, read W*H bytes per frame, and generate a sprite sheet.
+
+<<sprite pixel data>>=
+
+        ORG $7700
+SPRITE_PIXEL_DATA:
+        ; Sprite pixel data ($7700-$8BFF, 5376 bytes).  Referenced
+        ; via the pointer tables in SPRITE_POINTER_TABLES_LO/HI; each
+        ; entry is a sprite frame.  Not yet decoded per-frame.
+        HEX 80 80 80 80 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 80 80 D5
-        HEX D5 D5 39 06 39 06 19 06
-        HEX 19 15 0D 0D 0D 0D 0D 0D
+        HEX 00 80 80 D5 D5 D5 39 06
+        HEX 39 06 19 06 19 15 0D 0D
         HEX 0D 0D 0D 0D 0D 0D 0D 0D
-        HEX 0D 0D 0D 0D 95 95 0D 95
-        HEX D5 D5 AA AA AA 4E 31 4E
-        HEX 31 4E 31 4E 2A 6E 6E 6E
+        HEX 0D 0D 0D 0D 0D 0D 0D 0D
+        HEX 95 95 0D 95 D5 D5 AA AA
+        HEX AA 4E 31 4E 31 4E 31 4E
+        HEX 2A 6E 6E 6E 6E 6E 6E 6E
         HEX 6E 6E 6E 6E 6E 6E 6E 6E
-        HEX 6E 6E 6E 6E 6E 6E 6E AA
-        HEX AA 6E AA AA AA D6 D6 D4
-        HEX 38 40 38 40 30 40 30 50
+        HEX 6E 6E 6E AA AA 6E AA AA
+        HEX AA D6 D6 D4 38 40 38 40
+        HEX 30 40 30 50 60 60 60 60
         HEX 60 60 60 60 60 60 60 60
-        HEX 60 60 60 60 60 60 60 60
-        HEX 60 60 D8 D8 60 D0 D6 D6
-        HEX 82 82 82 81 00 01 00 00
+        HEX 60 60 60 60 60 60 D8 D8
+        HEX 60 D0 D6 D6 82 82 82 81
+        HEX 00 01 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 80 80 00
-        HEX 80 82 82 D5 D5 D5 66 19
-        HEX 66 19 66 19 66 55 37 37
+        HEX 00 80 80 00 80 82 82 D5
+        HEX D5 D5 66 19 66 19 66 19
+        HEX 66 55 37 37 37 37 37 37
         HEX 37 37 37 37 37 37 37 37
-        HEX 37 37 37 37 37 37 37 37
-        HEX D5 D5 37 D5 D5 D5 AA AA
-        HEX AA 39 46 39 46 39 46 39
-        HEX 2A 3B 3B 3B 3B 3B 3B 3B
+        HEX 37 37 37 37 D5 D5 37 D5
+        HEX D5 D5 AA AA AA 39 46 39
+        HEX 46 39 46 39 2A 3B 3B 3B
         HEX 3B 3B 3B 3B 3B 3B 3B 3B
-        HEX 3B 3B 3B AA AA 3B AA AA
-        HEX AA D8 D8 D0 60 00 60 00
-        HEX 40 00 40 40 00 00 00 00
+        HEX 3B 3B 3B 3B 3B 3B 3B AA
+        HEX AA 3B AA AA AA D8 D8 D0
+        HEX 60 00 60 00 40 00 40 40
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 E0 E0
-        HEX 00 C0 D8 D8 8A 8A 8A 87
-        HEX 00 07 00 03 00 03 02 01
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 E0 E0 00 C0 D8 D8
+        HEX 8A 8A 8A 87 00 07 00 03
+        HEX 00 03 02 01 01 01 01 01
         HEX 01 01 01 01 01 01 01 01
-        HEX 01 01 01 01 01 01 01 01
-        HEX 01 82 82 01 82 8A 8A D5
-        HEX D5 D5 19 66 19 66 19 66
-        HEX 19 55 5D 5D 5D 5D 5D 5D
+        HEX 01 01 01 01 01 82 82 01
+        HEX 82 8A 8A D5 D5 D5 19 66
+        HEX 19 66 19 66 19 55 5D 5D
         HEX 5D 5D 5D 5D 5D 5D 5D 5D
-        HEX 5D 5D 5D 5D D5 D5 5D D5
-        HEX D5 D5 AA AA AA 67 18 67
-        HEX 18 66 18 66 2A 6C 6C 6C
+        HEX 5D 5D 5D 5D 5D 5D 5D 5D
+        HEX D5 D5 5D D5 D5 D5 AA AA
+        HEX AA 67 18 67 18 66 18 66
+        HEX 2A 6C 6C 6C 6C 6C 6C 6C
         HEX 6C 6C 6C 6C 6C 6C 6C 6C
-        HEX 6C 6C 6C 6C 6C 6C 6C AB
-        HEX AB 6C AA AA AA E0 E0 C0
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 80 80 00 80 E0 E0
-        HEX AA AA AA 9C 03 1C 03 0C
-        HEX 03 0C 0A 06 06 06 06 06
-        HEX 06 06 06 06 06 06 06 06
-        HEX 06 06 06 06 06 8A 8A 06
-        HEX 8A AA AA D5 D5 D5 67 18
-        HEX 67 18 67 18 67 55 77 77
-        HEX 77 77 77 77 77 77 77 77
-        HEX 77 77 77 77 77 77 77 77
-        HEX D5 D5 77 D5 D5 D5 AB AB
-        HEX AA 1C 60 1C 60 18 60 18
-        HEX 28 30 30 30 30 30 30 30
-        HEX 30 30 30 30 30 30 30 30
-        HEX 30 30 30 AC AC 30 A8 AB
-        HEX AB 80 80 80 00 00 00 00
+        HEX 6C 6C 6C AB AB 6C AA AA
+        HEX AA E0 E0 C0 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 80 80
-        HEX 00 80 80 80 81 81 81 80
+        HEX 00 80 E0 E0 AA AA AA 9C
+        HEX 03 1C 03 0C 03 0C 0A 06
+        HEX 06 06 06 06 06 06 06 06
+        HEX 06 06 06 06 06 06 06 06
+        HEX 06 8A 8A 06 8A AA AA D5
+        HEX D5 D5 67 18 67 18 67 18
+        HEX 67 55 77 77 77 77 77 77
+        HEX 77 77 77 77 77 77 77 77
+        HEX 77 77 77 77 D5 D5 77 D5
+        HEX D5 D5 AB AB AA 1C 60 1C
+        HEX 60 18 60 18 28 30 30 30
+        HEX 30 30 30 30 30 30 30 30
+        HEX 30 30 30 30 30 30 30 AC
+        HEX AC 30 A8 AB AB 80 80 80
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 00 80 81 81 AA
-        HEX AA AA F3 0C 73 0C 33 0C
-        HEX 33 2A 1B 1B 1B 1B 1B 1B
+        HEX 00 00 80 80 00 80 80 80
+        HEX 81 81 81 80 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 80 80 00
+        HEX 80 81 81 AA AA AA F3 0C
+        HEX 73 0C 33 0C 33 2A 1B 1B
         HEX 1B 1B 1B 1B 1B 1B 1B 1B
-        HEX 1B 1B 1B 1B AA AA 1B AA
-        HEX AA AA D5 D5 D5 1C 63 1C
-        HEX 63 1C 63 1C 55 5D 5D 5D
+        HEX 1B 1B 1B 1B 1B 1B 1B 1B
+        HEX AA AA 1B AA AA AA D5 D5
+        HEX D5 1C 63 1C 63 1C 63 1C
+        HEX 55 5D 5D 5D 5D 5D 5D 5D
         HEX 5D 5D 5D 5D 5D 5D 5D 5D
-        HEX 5D 5D 5D 5D 5D 5D 5D D5
-        HEX D5 5D D5 D5 D5 AC AC A8
-        HEX 70 00 70 00 60 00 60 20
+        HEX 5D 5D 5D D5 D5 5D D5 D5
+        HEX D5 AC AC A8 70 00 70 00
+        HEX 60 00 60 20 40 40 40 40
         HEX 40 40 40 40 40 40 40 40
-        HEX 40 40 40 40 40 40 40 40
-        HEX 40 40 B0 B0 40 A0 AC AC
-        HEX 85 85 85 83 00 03 00 01
-        HEX 00 01 01 00 00 00 00 00
+        HEX 40 40 40 40 40 40 B0 B0
+        HEX 40 A0 AC AC 85 85 85 83
+        HEX 00 03 00 01 00 01 01 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 81 81 00
-        HEX 81 85 85 AA AA AA CC 33
-        HEX 4C 33 4C 33 4C 2A 6E 6E
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 81 81 00 81 85 85 AA
+        HEX AA AA CC 33 4C 33 4C 33
+        HEX 4C 2A 6E 6E 6E 6E 6E 6E
         HEX 6E 6E 6E 6E 6E 6E 6E 6E
-        HEX 6E 6E 6E 6E 6E 6E 6E 6E
-        HEX AA AA 6E AA AA AA D5 D5
-        HEX D5 73 0C 73 0C 73 0C 73
-        HEX 55 76 76 76 76 76 76 76
+        HEX 6E 6E 6E 6E AA AA 6E AA
+        HEX AA AA D5 D5 D5 73 0C 73
+        HEX 0C 73 0C 73 55 76 76 76
         HEX 76 76 76 76 76 76 76 76
-        HEX 76 76 76 D5 D5 76 D5 D5
-        HEX D5 B0 B0 A0 40 00 40 00
+        HEX 76 76 76 76 76 76 76 D5
+        HEX D5 76 D5 D5 D5 B0 B0 A0
+        HEX 40 00 40 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 C0 C0
-        HEX 00 80 B0 B0 95 95 95 8E
-        HEX 01 0E 01 06 01 06 05 03
+        HEX 00 00 C0 C0 00 80 B0 B0
+        HEX 95 95 95 8E 01 0E 01 06
+        HEX 01 06 05 03 03 03 03 03
         HEX 03 03 03 03 03 03 03 03
-        HEX 03 03 03 03 03 03 03 03
-        HEX 03 85 85 03 85 95 95 AA
-        HEX AA AA B3 4C 33 4C 33 4C
-        HEX 33 2A 3B 3B 3B 3B 3B 3B
+        HEX 03 03 03 03 03 85 85 03
+        HEX 85 95 95 AA AA AA B3 4C
+        HEX 33 4C 33 4C 33 2A 3B 3B
         HEX 3B 3B 3B 3B 3B 3B 3B 3B
-        HEX 3B 3B 3B 3B AA AA 3B AA
-        HEX AA AA D5 D5 D5 4E 30 4E
-        HEX 30 4C 30 4C 54 58 58 58
+        HEX 3B 3B 3B 3B 3B 3B 3B 3B
+        HEX AA AA 3B AA AA AA D5 D5
+        HEX D5 4E 30 4E 30 4C 30 4C
+        HEX 54 58 58 58 58 58 58 58
         HEX 58 58 58 58 58 58 58 58
-        HEX 58 58 58 58 58 58 58 D6
-        HEX D6 58 D4 D5 D5 C0 C0 80
+        HEX 58 58 58 D6 D6 58 D4 D5
+        HEX D5 C0 C0 80 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 80 80 00 80 C0 C0
-        HEX 7F 55 7F 7F 7F 7F 7F 75
-        HEX 2A 55 3F 7F 7F 7F 7F 55
-        HEX 2A 55 3F 7F 7F 7F 7F 55
-        HEX 2A 55 3F 7F 7F 7F 7F 55
-        HEX 2A 55 7F 7F 7F 7F 7F 75
-        HEX 7E 57 7F 7F 7F 7F 7F 55
-        HEX 2A 55 7F 7F 7F 7F 7E 55
-        HEX 2A 55 7F 7F 7F 7F 7E 55
-        HEX 2A 55 7F 7F 7F 7F 7E 55
-        HEX 2A 57 7F 7F 7F 7F 7F 55
-        HEX 7A 5F 7F 7F 7F 7F 7E 57
-        HEX 2A 57 7F 7F 7F 7F 7A 55
-        HEX 2A 57 7F 7F 7F 7F 7A 55
-        HEX 2A 57 7F 7F 7F 7F 7A 55
-        HEX 2A 5F 7F 7F 7F 7F 7E 55
-        HEX 6A 7F 7F 7F 7F 7F 7A 5F
-        HEX 2A 5F 7F 7F 7F 7F 6A 55
-        HEX 2A 5F 7F 7F 7F 7F 6A 55
-        HEX 2A 5F 7F 7F 7F 7F 6A 55
-        HEX 2A 7F 7F 7F 7F 7F 7A 55
-        HEX 7F 2B 7F 7F 7F 7F 7F 6A
-        HEX 55 2A 7F 7F 7F 7F 7F 2A
-        HEX 55 2A 7F 7F 7F 7F 7F 2A
-        HEX 55 2A 7F 7F 7F 7F 7F 2A
-        HEX 55 2B 7F 7F 7F 7F 7F 6A
-        HEX 7D 2F 7F 7F 7F 7F 7F 2B
-        HEX 55 2B 7F 7F 7F 7F 7D 2A
-        HEX 55 2B 7F 7F 7F 7F 7D 2A
-        HEX 55 2B 7F 7F 7F 7F 7D 2A
-        HEX 55 2F 7F 7F 7F 7F 7F 2A
-        HEX 75 3F 7F 7F 7F 7F 7D 2F
-        HEX 55 2F 7F 7F 7F 7F 75 2A
-        HEX 55 2F 7F 7F 7F 7F 75 2A
-        HEX 55 2F 7F 7F 7F 7F 75 2A
-        HEX 55 3F 7F 7F 7F 7F 7D 2A
-        HEX 7F 75 3F 7F 7A 5F 7F 7D
-        HEX 2F 7F 7E 57 7F 7F 2B 7F
-        HEX 7F 55 7F 7F 6A 7F 7F 75
-        HEX 3F 7F 7A 5F 7F 7D 2F 7F
-        HEX 7E 57 7F 7F 2B 7F 7F 55
-        HEX 7F 55 7F 7F 6A 7F 7F 75
-        HEX 3F 7F 7A 5F 7F 7D 2F 7F
-        HEX 7E 57 7F 7F 2B 7F 7F 55
-        HEX 7F 7F 6A 7F 7F 75 3F 7F
-        HEX 7A 5F 7F 7D 2F 7F 7E 57
-        HEX 7E 57 7F 7F 2B 7F 7F 55
-        HEX 7F 7F 6A 7F 7F 75 3F 7F
-        HEX 7A 5F 7F 7D 2F 7F 7E 57
-        HEX 7F 7F 2B 7F 7F 55 7F 7F
-        HEX 6A 7F 7F 75 3F 7F 7A 5F
+        HEX 00 00 00 00 00 00 80 80
+        HEX 00 80 C0 C0 7F 55 7F 7F
+        HEX 7F 7F 7F 75 2A 55 3F 7F
+        HEX 7F 7F 7F 55 2A 55 3F 7F
+        HEX 7F 7F 7F 55 2A 55 3F 7F
+        HEX 7F 7F 7F 55 2A 55 7F 7F
+        HEX 7F 7F 7F 75 7E 57 7F 7F
+        HEX 7F 7F 7F 55 2A 55 7F 7F
+        HEX 7F 7F 7E 55 2A 55 7F 7F
+        HEX 7F 7F 7E 55 2A 55 7F 7F
+        HEX 7F 7F 7E 55 2A 57 7F 7F
+        HEX 7F 7F 7F 55 7A 5F 7F 7F
+        HEX 7F 7F 7E 57 2A 57 7F 7F
+        HEX 7F 7F 7A 55 2A 57 7F 7F
+        HEX 7F 7F 7A 55 2A 57 7F 7F
+        HEX 7F 7F 7A 55 2A 5F 7F 7F
+        HEX 7F 7F 7E 55 6A 7F 7F 7F
+        HEX 7F 7F 7A 5F 2A 5F 7F 7F
+        HEX 7F 7F 6A 55 2A 5F 7F 7F
+        HEX 7F 7F 6A 55 2A 5F 7F 7F
+        HEX 7F 7F 6A 55 2A 7F 7F 7F
+        HEX 7F 7F 7A 55 7F 2B 7F 7F
+        HEX 7F 7F 7F 6A 55 2A 7F 7F
+        HEX 7F 7F 7F 2A 55 2A 7F 7F
+        HEX 7F 7F 7F 2A 55 2A 7F 7F
+        HEX 7F 7F 7F 2A 55 2B 7F 7F
+        HEX 7F 7F 7F 6A 7D 2F 7F 7F
+        HEX 7F 7F 7F 2B 55 2B 7F 7F
+        HEX 7F 7F 7D 2A 55 2B 7F 7F
+        HEX 7F 7F 7D 2A 55 2B 7F 7F
+        HEX 7F 7F 7D 2A 55 2F 7F 7F
+        HEX 7F 7F 7F 2A 75 3F 7F 7F
+        HEX 7F 7F 7D 2F 55 2F 7F 7F
+        HEX 7F 7F 75 2A 55 2F 7F 7F
+        HEX 7F 7F 75 2A 55 2F 7F 7F
+        HEX 7F 7F 75 2A 55 3F 7F 7F
+        HEX 7F 7F 7D 2A 7F 75 3F 7F
         HEX 7A 5F 7F 7D 2F 7F 7E 57
         HEX 7F 7F 2B 7F 7F 55 7F 7F
         HEX 6A 7F 7F 75 3F 7F 7A 5F
         HEX 7F 7D 2F 7F 7E 57 7F 7F
-        HEX 2B 7F 7F 55 7F 7F 6A 7F
+        HEX 2B 7F 7F 55 7F 55 7F 7F
         HEX 6A 7F 7F 75 3F 7F 7A 5F
         HEX 7F 7D 2F 7F 7E 57 7F 7F
         HEX 2B 7F 7F 55 7F 7F 6A 7F
         HEX 7F 75 3F 7F 7A 5F 7F 7D
-        HEX 2F 7F 7E 57 7F 7F 2B 7F
+        HEX 2F 7F 7E 57 7E 57 7F 7F
         HEX 2B 7F 7F 55 7F 7F 6A 7F
         HEX 7F 75 3F 7F 7A 5F 7F 7D
         HEX 2F 7F 7E 57 7F 7F 2B 7F
         HEX 7F 55 7F 7F 6A 7F 7F 75
-        HEX 3F 7F 7A 5F 7F 7D 2F 7F
+        HEX 3F 7F 7A 5F 7A 5F 7F 7D
         HEX 2F 7F 7E 57 7F 7F 2B 7F
         HEX 7F 55 7F 7F 6A 7F 7F 75
         HEX 3F 7F 7A 5F 7F 7D 2F 7F
         HEX 7E 57 7F 7F 2B 7F 7F 55
-        HEX 7F 7F 6A 7F 7F 75 3F 7F
+        HEX 7F 7F 6A 7F 6A 7F 7F 75
         HEX 3F 7F 7A 5F 7F 7D 2F 7F
         HEX 7E 57 7F 7F 2B 7F 7F 55
         HEX 7F 7F 6A 7F 7F 75 3F 7F
         HEX 7A 5F 7F 7D 2F 7F 7E 57
-        HEX 7F 7F 2B 7F 7F 55 7F 7F
-        HEX 3F 7F 6A 7F 7F 75 3F 7F
+        HEX 7F 7F 2B 7F 2B 7F 7F 55
+        HEX 7F 7F 6A 7F 7F 75 3F 7F
         HEX 7A 5F 7F 7D 2F 7F 7E 57
         HEX 7F 7F 2B 7F 7F 55 7F 7F
         HEX 6A 7F 7F 75 3F 7F 7A 5F
-        HEX 7F 7D 2F 7F 7E 57 7F 7F
-        HEX 3F 7F 2B 7F 7F 55 7F 7F
+        HEX 7F 7D 2F 7F 2F 7F 7E 57
+        HEX 7F 7F 2B 7F 7F 55 7F 7F
         HEX 6A 7F 7F 75 3F 7F 7A 5F
         HEX 7F 7D 2F 7F 7E 57 7F 7F
         HEX 2B 7F 7F 55 7F 7F 6A 7F
-        HEX 7F 75 3F 7F 7A 5F 7F 7D
-        HEX 3F 7D 2F 7F 7E 57 7F 7F
+        HEX 7F 75 3F 7F 3F 7F 7A 5F
+        HEX 7F 7D 2F 7F 7E 57 7F 7F
         HEX 2B 7F 7F 55 7F 7F 6A 7F
         HEX 7F 75 3F 7F 7A 5F 7F 7D
         HEX 2F 7F 7E 57 7F 7F 2B 7F
+        HEX 7F 55 7F 7F 3F 7F 6A 7F
+        HEX 7F 75 3F 7F 7A 5F 7F 7D
+        HEX 2F 7F 7E 57 7F 7F 2B 7F
         HEX 7F 55 7F 7F 6A 7F 7F 75
+        HEX 3F 7F 7A 5F 7F 7D 2F 7F
+        HEX 7E 57 7F 7F 3F 7F 2B 7F
+        HEX 7F 55 7F 7F 6A 7F 7F 75
+        HEX 3F 7F 7A 5F 7F 7D 2F 7F
+        HEX 7E 57 7F 7F 2B 7F 7F 55
+        HEX 7F 7F 6A 7F 7F 75 3F 7F
+        HEX 7A 5F 7F 7D 3F 7D 2F 7F
+        HEX 7E 57 7F 7F 2B 7F 7F 55
+        HEX 7F 7F 6A 7F 7F 75 3F 7F
+        HEX 7A 5F 7F 7D 2F 7F 7E 57
+        HEX 7F 7F 2B 7F 7F 55 7F 7F
+        HEX 6A 7F 7F 75 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 02
-        HEX 01 03 05 07 07 06 00 00
+        HEX 00 00 00 02 01 03 05 07
+        HEX 07 06 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 05 05
-        HEX 05 05 05 05 5F 7F 7F 1F
-        HEX 05 0F 0F 0F 0F 05 0F 0F
-        HEX 0F 0F 05 0F 0F 0F 0F 05
-        HEX 0F 0F 0F 0F 05 1F 1F 1F
-        HEX 1F 2A 2A 2A 2A 2A 2A 7A
-        HEX 7A 7A 7A 2A 6A 6A 6A 6A
-        HEX 2A 6A 6A 6A 6A 2A 6A 6A
-        HEX 6A 6A 2A 6A 6A 6A 6A 2A
-        HEX 7A 7A 7A 7A 00 00 00 00
+        HEX 00 00 05 05 05 05 05 05
+        HEX 5F 7F 7F 1F 05 0F 0F 0F
+        HEX 0F 05 0F 0F 0F 0F 05 0F
+        HEX 0F 0F 0F 05 0F 0F 0F 0F
+        HEX 05 1F 1F 1F 1F 2A 2A 2A
+        HEX 2A 2A 2A 7A 7A 7A 7A 2A
+        HEX 6A 6A 6A 6A 2A 6A 6A 6A
+        HEX 6A 2A 6A 6A 6A 6A 2A 6A
+        HEX 6A 6A 6A 2A 7A 7A 7A 7A
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 08 04 0E 17 1F
-        HEX 1C 18 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 08
+        HEX 04 0E 17 1F 1C 18 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 15 15 15 15 15 15
-        HEX 7F 7F 7F 7F 15 3F 3F 3F
-        HEX 3F 15 3F 3F 3F 3F 15 3F
-        HEX 3F 3F 3F 15 3F 3F 3F 3F
-        HEX 15 7F 7F 7F 7F 2A 2A 2A
-        HEX 2A 2A 2A 6A 6A 6A 6A 2A
+        HEX 00 00 00 00 00 00 15 15
+        HEX 15 15 15 15 7F 7F 7F 7F
+        HEX 15 3F 3F 3F 3F 15 3F 3F
+        HEX 3F 3F 15 3F 3F 3F 3F 15
+        HEX 3F 3F 3F 3F 15 7F 7F 7F
+        HEX 7F 2A 2A 2A 2A 2A 2A 6A
+        HEX 6A 6A 6A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 6A 6A 6A 6A
+        HEX 6A 6A 6A 6A 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 20
-        HEX 10 3B 5F 7F 73 60 01 01
-        HEX 01 01 00 01 01 01 01 00
-        HEX 01 01 01 01 00 01 01 01
-        HEX 01 00 03 03 03 03 55 55
-        HEX 55 55 55 55 7F 7F 7F 7F
-        HEX 55 7D 7D 7D 7D 55 7D 7D
-        HEX 7D 7D 55 7D 7D 7D 7D 55
-        HEX 7D 7D 7D 7D 55 7F 7F 7F
-        HEX 7F 2A 2A 2A 2A 2A 2A 2A
+        HEX 00 00 00 20 10 3B 5F 7F
+        HEX 73 60 01 01 01 01 00 01
+        HEX 01 01 01 00 01 01 01 01
+        HEX 00 01 01 01 01 00 03 03
+        HEX 03 03 55 55 55 55 55 55
+        HEX 7F 7F 7F 7F 55 7D 7D 7D
+        HEX 7D 55 7D 7D 7D 7D 55 7D
+        HEX 7D 7D 7D 55 7D 7D 7D 7D
+        HEX 55 7F 7F 7F 7F 2A 2A 2A
+        HEX 2A 2A 2A 2A 2A 2A 2A 2A
+        HEX 2A 2A 2A 2A 2A 2A 2A 2A
+        HEX 2A 2A 2A 2A 2A 2A 2A 2A
+        HEX 2A 2A 2A 2A 2A 2A 2A 2A
+        HEX 00 00 00 00 01 00 01 02
+        HEX 03 03 03 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 02 02 02 02 02
+        HEX 42 6F 7F 7F 4F 02 07 07
+        HEX 07 07 02 07 07 07 07 02
+        HEX 07 07 07 07 02 07 07 07
+        HEX 07 02 0F 0F 0F 0F 55 55
+        HEX 55 55 55 55 7D 7D 7D 7D
+        HEX 55 75 75 75 75 55 75 75
+        HEX 75 75 55 75 75 75 75 55
+        HEX 75 75 75 75 55 7D 7D 7D
+        HEX 7D 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 00 00 00 00
-        HEX 01 00 01 02 03 03 03 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 02
-        HEX 02 02 02 02 42 6F 7F 7F
-        HEX 4F 02 07 07 07 07 02 07
-        HEX 07 07 07 02 07 07 07 07
-        HEX 02 07 07 07 07 02 0F 0F
-        HEX 0F 0F 55 55 55 55 55 55
-        HEX 7D 7D 7D 7D 55 75 75 75
-        HEX 75 55 75 75 75 75 55 75
-        HEX 75 75 75 55 75 75 75 75
-        HEX 55 7D 7D 7D 7D 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 04
-        HEX 02 07 0B 0F 0E 0C 00 00
+        HEX 00 00 00 04 02 07 0B 0F
+        HEX 0E 0C 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 0A 0A
-        HEX 0A 0A 0A 0A 3F 7F 7F 3F
-        HEX 0A 1F 1F 1F 1F 0A 1F 1F
-        HEX 1F 1F 0A 1F 1F 1F 1F 0A
-        HEX 1F 1F 1F 1F 0A 3F 3F 3F
-        HEX 3F 55 55 55 55 55 55 75
-        HEX 75 75 75 55 55 55 55 55
+        HEX 00 00 0A 0A 0A 0A 0A 0A
+        HEX 3F 7F 7F 3F 0A 1F 1F 1F
+        HEX 1F 0A 1F 1F 1F 1F 0A 1F
+        HEX 1F 1F 1F 0A 1F 1F 1F 1F
+        HEX 0A 3F 3F 3F 3F 55 55 55
+        HEX 55 55 55 75 75 75 75 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
-        HEX 75 75 75 75 00 00 00 00
+        HEX 55 55 55 55 75 75 75 75
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 10 08 1D 2F 3F
-        HEX 39 30 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 10
+        HEX 08 1D 2F 3F 39 30 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 01 01
-        HEX 01 01 2A 2A 2A 2A 2A 2A
-        HEX 7F 7F 7F 7F 2A 7E 7E 7E
-        HEX 7E 2A 7E 7E 7E 7E 2A 7E
-        HEX 7E 7E 7E 2A 7E 7E 7E 7E
-        HEX 2A 7F 7F 7F 7F 55 55 55
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 01 01 01 01 2A 2A
+        HEX 2A 2A 2A 2A 7F 7F 7F 7F
+        HEX 2A 7E 7E 7E 7E 2A 7E 7E
+        HEX 7E 7E 2A 7E 7E 7E 7E 2A
+        HEX 7E 7E 7E 7E 2A 7F 7F 7F
+        HEX 7F 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55 00 00 00 00
+        HEX 00 00 00 01 01 01 01 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 01
-        HEX 01 01 01 00 00 00 00 00
+        HEX 01 01 01 41 21 77 3F 7F
+        HEX 67 41 03 03 03 03 01 03
+        HEX 03 03 03 01 03 03 03 03
+        HEX 01 03 03 03 03 01 07 07
+        HEX 07 07 2A 2A 2A 2A 2A 2A
+        HEX 7E 7E 7E 7E 2A 7A 7A 7A
+        HEX 7A 2A 7A 7A 7A 7A 2A 7A
+        HEX 7A 7A 7A 2A 7A 7A 7A 7A
+        HEX 2A 7E 7E 7E 7E 55 55 55
+        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 2A 2A 2A 2A 2A
+        HEX 2A 2F 2F 2F 2F 2A 2B 2B
+        HEX 2B 2B 2A 2B 2B 2B 2B 2A
+        HEX 2B 2B 2B 2B 2A 2B 2B 2B
+        HEX 2B 2A 2F 2F 2F 2F 50 50
+        HEX 50 50 50 50 7D 7F 7F 7C
+        HEX 50 78 78 78 78 50 78 78
+        HEX 78 78 50 78 78 78 78 50
+        HEX 78 78 78 78 50 7C 7C 7C
+        HEX 7C 00 00 00 00 20 40 60
+        HEX 50 70 70 30 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 01 01 01 01 41
-        HEX 21 77 3F 7F 67 41 03 03
-        HEX 03 03 01 03 03 03 03 01
-        HEX 03 03 03 03 01 03 03 03
-        HEX 03 01 07 07 07 07 2A 2A
-        HEX 2A 2A 2A 2A 7E 7E 7E 7E
-        HEX 2A 7A 7A 7A 7A 2A 7A 7A
-        HEX 7A 7A 2A 7A 7A 7A 7A 2A
-        HEX 7A 7A 7A 7A 2A 7E 7E 7E
-        HEX 7E 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 55
+        HEX 00 00 00 00 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 2A
-        HEX 2A 2A 2A 2A 2A 2F 2F 2F
-        HEX 2F 2A 2B 2B 2B 2B 2A 2B
-        HEX 2B 2B 2B 2A 2B 2B 2B 2B
-        HEX 2A 2B 2B 2B 2B 2A 2F 2F
-        HEX 2F 2F 50 50 50 50 50 50
-        HEX 7D 7F 7F 7C 50 78 78 78
-        HEX 78 50 78 78 78 78 50 78
-        HEX 78 78 78 50 78 78 78 78
-        HEX 50 7C 7C 7C 7C 00 00 00
-        HEX 00 20 40 60 50 70 70 30
+        HEX 2A 2A 2A 2A 2A 3F 3F 3F
+        HEX 3F 2A 2F 2F 2F 2F 2A 2F
+        HEX 2F 2F 2F 2A 2F 2F 2F 2F
+        HEX 2A 2F 2F 2F 2F 2A 3F 3F
+        HEX 3F 3F 40 40 40 40 41 42
+        HEX 77 7E 7F 73 41 60 60 60
+        HEX 60 40 60 60 60 60 40 60
+        HEX 60 60 60 40 60 60 60 60
+        HEX 40 70 70 70 70 00 00 00
+        HEX 00 00 00 00 40 40 40 40
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
@@ -17382,68 +17570,33 @@ SCREEN_ROW_ADDR_HI2:
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 2A 2A 2A 2A 2A
-        HEX 2A 3F 3F 3F 3F 2A 2F 2F
-        HEX 2F 2F 2A 2F 2F 2F 2F 2A
-        HEX 2F 2F 2F 2F 2A 2F 2F 2F
-        HEX 2F 2A 3F 3F 3F 3F 40 40
-        HEX 40 40 41 42 77 7E 7F 73
-        HEX 41 60 60 60 60 40 60 60
-        HEX 60 60 40 60 60 60 60 40
-        HEX 60 60 60 60 40 70 70 70
-        HEX 70 00 00 00 00 00 00 00
-        HEX 40 40 40 40 00 00 00 00
+        HEX 2A 7F 7F 7F 7F 2A 3F 3F
+        HEX 3F 3F 2A 3F 3F 3F 3F 2A
+        HEX 3F 3F 3F 3F 2A 3F 3F 3F
+        HEX 3F 2A 7F 7F 7F 7F 00 00
+        HEX 00 00 04 08 5C 7A 7E 4E
+        HEX 06 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 40 40 40
+        HEX 40 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 55 55 55 55
+        HEX 55 55 57 57 57 57 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 2A
-        HEX 2A 2A 2A 2A 2A 7F 7F 7F
-        HEX 7F 2A 3F 3F 3F 3F 2A 3F
-        HEX 3F 3F 3F 2A 3F 3F 3F 3F
-        HEX 2A 3F 3F 3F 3F 2A 7F 7F
-        HEX 7F 7F 00 00 00 00 04 08
-        HEX 5C 7A 7E 4E 06 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 40 40 40 40 00 00 00
+        HEX 55 55 55 57 57 57 57 28
+        HEX 28 28 28 28 28 7E 7F 7F
+        HEX 7E 28 7C 7C 7C 7C 28 7C
+        HEX 7C 7C 7C 28 7C 7C 7C 7C
+        HEX 28 7C 7C 7C 7C 28 7E 7E
+        HEX 7E 7E 00 00 00 00 10 20
+        HEX 70 68 78 38 18 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 55 55 55 55 55 55 57 57
-        HEX 57 57 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 57
-        HEX 57 57 57 28 28 28 28 28
-        HEX 28 7E 7F 7F 7E 28 7C 7C
-        HEX 7C 7C 28 7C 7C 7C 7C 28
-        HEX 7C 7C 7C 7C 28 7C 7C 7C
-        HEX 7C 28 7E 7E 7E 7E 00 00
-        HEX 00 00 10 20 70 68 78 38
-        HEX 18 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 55
-        HEX 55 55 55 55 55 5F 5F 5F
-        HEX 5F 55 57 57 57 57 55 57
-        HEX 57 57 57 55 57 57 57 57
-        HEX 55 57 57 57 57 55 5F 5F
-        HEX 5F 5F 20 20 20 20 20 21
-        HEX 7B 7F 7F 79 20 70 70 70
-        HEX 70 20 70 70 70 70 20 70
-        HEX 70 70 70 20 70 70 70 70
-        HEX 20 78 78 78 78 00 00 00
-        HEX 00 40 00 40 20 60 60 60
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
@@ -17452,141 +17605,64 @@ SCREEN_ROW_ADDR_HI2:
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 55 55 55 55 55
-        HEX 55 7F 7F 7F 7F 55 5F 5F
-        HEX 5F 5F 55 5F 5F 5F 5F 55
-        HEX 5F 5F 5F 5F 55 5F 5F 5F
-        HEX 5F 55 7F 7F 7F 7F 00 00
-        HEX 00 00 02 04 6E 7D 7F 67
-        HEX 03 40 40 40 40 00 40 40
-        HEX 40 40 00 40 40 40 40 00
-        HEX 40 40 40 40 00 60 60 60
-        HEX 60 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
+        HEX 55 5F 5F 5F 5F 55 57 57
+        HEX 57 57 55 57 57 57 57 55
+        HEX 57 57 57 57 55 57 57 57
+        HEX 57 55 5F 5F 5F 5F 20 20
+        HEX 20 20 20 21 7B 7F 7F 79
+        HEX 20 70 70 70 70 20 70 70
+        HEX 70 70 20 70 70 70 70 20
+        HEX 70 70 70 70 20 78 78 78
+        HEX 78 00 00 00 00 40 00 40
+        HEX 20 60 60 60 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 2A 2A 2A 2A
-        HEX 2A 2A 2B 2B 2B 2B 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2B 2B 2B 2B 54
-        HEX 54 54 54 54 54 7F 7F 7F
-        HEX 7F 54 7E 7E 7E 7E 54 7E
-        HEX 7E 7E 7E 54 7E 7E 7E 7E
-        HEX 54 7E 7E 7E 7E 54 7F 7F
-        HEX 7F 7F 00 00 00 00 08 10
-        HEX 38 74 7C 1C 0C 00 00 00
+        HEX 2A 2A 2A 2A 2A 2A 2A 2A
+        HEX 2A 2A 2A 2A 2A 2A 2A 55
+        HEX 55 55 55 55 55 7F 7F 7F
+        HEX 7F 55 5F 5F 5F 5F 55 5F
+        HEX 5F 5F 5F 55 5F 5F 5F 5F
+        HEX 55 5F 5F 5F 5F 55 7F 7F
+        HEX 7F 7F 00 00 00 00 02 04
+        HEX 6E 7D 7F 67 03 40 40 40
+        HEX 40 00 40 40 40 40 00 40
+        HEX 40 40 40 00 40 40 40 40
+        HEX 00 60 60 60 60 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 2A 2A 2A 2A 2A 2A 2B 2B
+        HEX 2B 2B 2A 2A 2A 2A 2A 2A
+        HEX 2A 2A 2A 2A 2A 2A 2A 2A
+        HEX 2A 2A 2A 2A 2A 2A 2A 2B
+        HEX 2B 2B 2B 54 54 54 54 54
+        HEX 54 7F 7F 7F 7F 54 7E 7E
+        HEX 7E 7E 54 7E 7E 7E 7E 54
+        HEX 7E 7E 7E 7E 54 7E 7E 7E
+        HEX 7E 54 7F 7F 7F 7F 00 00
+        HEX 00 00 08 10 38 74 7C 1C
+        HEX 0C 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 8A D6 00 00 AA DF 00
-        HEX 00 EA FD 00 81 EA F9 00
-        HEX 82 EA FF 00 82 AA D5 00
-        HEX 86 DD AA 00 8A E9 E5 00
-        HEX 8A EB B5 00 8A EB B5 00
-        HEX 87 EB F5 00 00 89 E4 00
-        HEX 00 94 AA 00 00 BE BF E0
-        HEX 00 EB BD B0 00 8A B5 00
-        HEX 00 82 B4 00 00 00 00 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 8A D6 00 00 AA DF 00
-        HEX 00 EA FD 00 81 EA F9 00
-        HEX 82 EA FF 00 82 AA D5 00
-        HEX 86 DD AA 00 8A E9 E5 00
-        HEX 8A EB B5 00 8A EB B5 00
-        HEX 87 EB F5 00 00 89 E4 00
-        HEX 00 85 A0 00 00 8F F8 00
-        HEX 00 9A DC 00 00 9A DE 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 8A D6 00 00 AA DF 00
-        HEX 00 EA FD 00 81 EA F9 00
-        HEX 82 EA FF 00 82 AA D5 00
-        HEX 86 DD AA 00 8A E9 E5 00
-        HEX 8A EB B5 00 8A EB B5 00
-        HEX 87 EB F5 00 00 89 E4 00
-        HEX 00 95 8A 00 00 BF 9F E0
-        HEX 00 EB CD B0 00 8A E5 00
-        HEX 00 82 E4 00 00 00 00 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 8A DE 00 00 AA FF 00
-        HEX 00 AB F6 00 81 EB E6 00
-        HEX 82 AB FF 00 82 AA D5 00
-        HEX 81 D5 AA 00 82 C7 95 00
-        HEX 82 CD D5 00 82 CD D5 00
-        HEX 81 EF D5 00 00 87 94 00
-        HEX 00 95 8A 00 00 BF CF 00
-        HEX 00 EA E5 C0 00 EA F5 E0
         HEX 00 00 00 00 00 82 D0 00
-        HEX 00 8A D4 00 00 8A FC 00
-        HEX 00 AB FF 00 00 AF CB 00
-        HEX 00 EF 89 00 00 EF FF 00
-        HEX 00 EA D5 00 81 95 AA 00
-        HEX 00 F2 D5 00 81 DA D5 E0
-        HEX 81 DA D5 E0 81 FA D5 E0
-        HEX 00 F2 D4 00 00 95 8A 00
-        HEX 00 BF DF 00 00 AF EF C0
-        HEX 00 AB EF C0 00 00 00 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 8B F4 00 00 AF FD 00
-        HEX 00 BC CF 00 00 B8 C7 00
-        HEX 00 BF FF 00 00 AA D5 00
-        HEX 80 95 AA 00 81 CA D4 E0
-        HEX 83 EA D5 F0 83 EA D5 F0
-        HEX 83 EA D5 F0 81 CA D4 E0
-        HEX 00 94 8A 80 00 BE 9F 80
-        HEX 00 BF BF 80 00 BF BF 80
+        HEX 00 8A D4 00 00 8A D6 00
+        HEX 00 AA DF 00 00 EA FD 00
+        HEX 81 EA F9 00 82 EA FF 00
+        HEX 82 AA D5 00 86 DD AA 00
+        HEX 8A E9 E5 00 8A EB B5 00
+        HEX 8A EB B5 00 87 EB F5 00
+        HEX 00 89 E4 00 00 94 AA 00
+        HEX 00 BE BF E0 00 EB BD B0
+        HEX 00 8A B5 00 00 82 B4 00
         HEX 00 00 00 00 00 82 D0 00
-        HEX 00 8A D4 00 00 8F D4 00
-        HEX 00 BF F5 00 00 B4 F5 00
-        HEX 00 A4 B5 C0 00 BF F5 C0
-        HEX 00 AA D5 C0 00 95 AA A0
-        HEX 00 AA D3 C0 81 EA D6 E0
-        HEX 81 EA D6 E0 81 EA D7 E0
-        HEX 00 8A D3 C0 00 94 AA 00
-        HEX 00 BE FF 00 00 FD FD 00
-        HEX 00 FD F5 00 00 00 00 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 9E D4 00 00 BF D5 00
-        HEX 00 9B F5 00 00 99 F5 E0
-        HEX 00 BF F5 90 00 AA D5 90
-        HEX 00 95 AA E0 00 AA B8 D0
-        HEX 00 AA EC D0 00 AA EC D0
-        HEX 00 AA FD E0 00 8A B8 00
-        HEX 00 94 AA 00 80 BC FF 00
-        HEX 80 E9 D5 C0 81 EB D5 C0
-        HEX 00 00 00 00 00 82 D0 00
-        HEX 00 8A D4 00 00 9A D4 00
-        HEX 00 BE D5 00 00 AF D5 C0
-        HEX 00 A7 D5 E0 00 BF D5 D0
-        HEX 00 AA D5 90 00 95 AE D8
-        HEX 00 A9 E5 D4 00 AB B5 D4
-        HEX 00 AB B5 D4 00 AB F5 F8
-        HEX 00 89 E4 00 00 81 A8 00
-        HEX 00 87 FC 00 00 8E D6 00
-        HEX 00 9E D6 00 00 82 D0 00
-        HEX 00 8A D4 00 00 9A D4 00
-        HEX 00 BE D5 00 00 AF D5 C0
-        HEX 00 A7 D5 E0 00 BF D5 D0
-        HEX 00 AA D5 90 00 95 AE D8
-        HEX 00 A9 E5 D4 00 AB B5 D4
-        HEX 00 AB B5 D4 00 AB F5 F8
-        HEX 00 89 E4 00 00 95 8A 00
-        HEX 81 FF 9F 00 83 AF B5 C0
-        HEX 00 AB 94 00 00 8B 90 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 9A D4 00 00 BE D5 00
-        HEX 00 AF D5 C0 00 A7 D5 E0
-        HEX 00 BF D5 D0 00 AA D5 90
-        HEX 00 95 AE D8 00 A9 E5 D4
-        HEX 00 AB B5 D4 00 AB B5 D4
-        HEX 00 AB F5 F8 00 89 E4 00
-        HEX 00 94 AA 00 81 FE BF 00
-        HEX 83 AC F5 C0 00 A9 D4 00
-        HEX 00 89 D0 00 00 82 D0 00
         HEX 00 8A D4 00 00 8A D6 00
         HEX 00 AA DF 00 00 EA FD 00
         HEX 81 EA F9 00 82 EA FF 00
@@ -17594,9 +17670,18 @@ SCREEN_ROW_ADDR_HI2:
         HEX 8A E9 E5 00 8A EB B5 00
         HEX 8A EB B5 00 87 EB F5 00
         HEX 00 89 E4 00 00 85 A0 00
-        HEX 00 8F E0 00 00 9A F0 00
-        HEX 00 82 D8 00 00 00 D8 00
-        HEX 00 00 98 00 00 82 D0 00
+        HEX 00 8F F8 00 00 9A DC 00
+        HEX 00 9A DE 00 00 82 D0 00
+        HEX 00 8A D4 00 00 8A D6 00
+        HEX 00 AA DF 00 00 EA FD 00
+        HEX 81 EA F9 00 82 EA FF 00
+        HEX 82 AA D5 00 86 DD AA 00
+        HEX 8A E9 E5 00 8A EB B5 00
+        HEX 8A EB B5 00 87 EB F5 00
+        HEX 00 89 E4 00 00 95 8A 00
+        HEX 00 BF 9F E0 00 EB CD B0
+        HEX 00 8A E5 00 00 82 E4 00
+        HEX 00 00 00 00 00 82 D0 00
         HEX 00 8A D4 00 00 8A DE 00
         HEX 00 AA FF 00 00 AB F6 00
         HEX 81 EB E6 00 82 AB FF 00
@@ -17604,39 +17689,37 @@ SCREEN_ROW_ADDR_HI2:
         HEX 82 C7 95 00 82 CD D5 00
         HEX 82 CD D5 00 81 EF D5 00
         HEX 00 87 94 00 00 95 8A 00
-        HEX 00 BF 9E 00 00 EB D7 00
-        HEX 00 8A E5 C0 00 82 E5 C0
-        HEX 00 00 E1 C0 00 82 D0 00
-        HEX 00 8A D4 00 00 8A FC 00
-        HEX 00 AB FF 00 00 AF 9B 00
-        HEX 00 EE 99 00 00 EF FF 00
-        HEX 00 EA D5 00 81 95 AA 00
-        HEX 00 F2 D5 00 81 DA D5 E0
-        HEX 81 DA D5 E0 81 FA D5 E0
-        HEX 00 F2 D4 00 00 95 8A 00
-        HEX 00 BF DF 00 00 AF DF 00
-        HEX 00 8B EF C0 00 8B EF C0
-        HEX 00 87 CF 00 00 82 D0 00
+        HEX 00 BF CF 00 00 EA E5 C0
+        HEX 00 EA F5 E0 00 00 00 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8A FC 00 00 AB FF 00
+        HEX 00 AF CB 00 00 EF 89 00
+        HEX 00 EF FF 00 00 EA D5 00
+        HEX 81 95 AA 00 00 F2 D5 00
+        HEX 81 DA D5 E0 81 DA D5 E0
+        HEX 81 FA D5 E0 00 F2 D4 00
+        HEX 00 95 8A 00 00 BF DF 00
+        HEX 00 AF EF C0 00 AB EF C0
+        HEX 00 00 00 00 00 82 D0 00
         HEX 00 8A D4 00 00 8B F4 00
         HEX 00 AF FD 00 00 BC CF 00
         HEX 00 B8 C7 00 00 BF FF 00
-        HEX 00 AA D5 00 00 95 AA 00
+        HEX 00 AA D5 00 80 95 AA 00
         HEX 81 CA D4 E0 83 EA D5 F0
         HEX 83 EA D5 F0 83 EA D5 F0
-        HEX 81 CA D4 E0 00 92 D2 00
-        HEX 00 BF BF 00 00 BF BF 00
-        HEX 00 BF BF 00 00 BF BF 00
-        HEX 00 9E 9E 00 00 82 D0 00
-        HEX 00 8A D4 00 00 8F D4 00
-        HEX 00 BF F5 00 00 B6 BD 00
-        HEX 00 A6 9D C0 00 BF FD C0
-        HEX 00 AA D5 C0 00 95 AA A0
-        HEX 00 AA D3 C0 81 EA D6 E0
-        HEX 81 EA D6 E0 81 EA D7 E0
-        HEX 00 8A D3 C0 00 94 AA 00
-        HEX 00 BE FF 00 00 BE FD 00
-        HEX 00 FD F4 00 00 FD F4 00
-        HEX 00 BC F8 00 00 82 D0 00
+        HEX 81 CA D4 E0 00 94 8A 80
+        HEX 00 BE 9F 80 00 BF BF 80
+        HEX 00 BF BF 80 00 00 00 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8F D4 00 00 BF F5 00
+        HEX 00 B4 F5 00 00 A4 B5 C0
+        HEX 00 BF F5 C0 00 AA D5 C0
+        HEX 00 95 AA A0 00 AA D3 C0
+        HEX 81 EA D6 E0 81 EA D6 E0
+        HEX 81 EA D7 E0 00 8A D3 C0
+        HEX 00 94 AA 00 00 BE FF 00
+        HEX 00 FD FD 00 00 FD F5 00
+        HEX 00 00 00 00 00 82 D0 00
         HEX 00 8A D4 00 00 9E D4 00
         HEX 00 BF D5 00 00 9B F5 00
         HEX 00 99 F5 E0 00 BF F5 90
@@ -17644,60 +17727,148 @@ SCREEN_ROW_ADDR_HI2:
         HEX 00 AA B8 D0 00 AA EC D0
         HEX 00 AA EC D0 00 AA FD E0
         HEX 00 8A B8 00 00 94 AA 00
-        HEX 00 9E BF 00 00 BA F5 C0
-        HEX 00 E9 D4 00 00 E9 D0 00
-        HEX 00 E1 C0 00 00 82 D0 00
+        HEX 80 BC FF 00 80 E9 D5 C0
+        HEX 81 EB D5 C0 00 00 00 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 9A D4 00 00 BE D5 00
+        HEX 00 AF D5 C0 00 A7 D5 E0
+        HEX 00 BF D5 D0 00 AA D5 90
+        HEX 00 95 AE D8 00 A9 E5 D4
+        HEX 00 AB B5 D4 00 AB B5 D4
+        HEX 00 AB F5 F8 00 89 E4 00
+        HEX 00 81 A8 00 00 87 FC 00
+        HEX 00 8E D6 00 00 9E D6 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 9A D4 00 00 BE D5 00
+        HEX 00 AF D5 C0 00 A7 D5 E0
+        HEX 00 BF D5 D0 00 AA D5 90
+        HEX 00 95 AE D8 00 A9 E5 D4
+        HEX 00 AB B5 D4 00 AB B5 D4
+        HEX 00 AB F5 F8 00 89 E4 00
+        HEX 00 95 8A 00 81 FF 9F 00
+        HEX 83 AF B5 C0 00 AB 94 00
+        HEX 00 8B 90 00 00 82 D0 00
         HEX 00 8A D4 00 00 9A D4 00
         HEX 00 BE D5 00 00 AF D5 C0
         HEX 00 A7 D5 E0 00 BF D5 D0
         HEX 00 AA D5 90 00 95 AE D8
         HEX 00 A9 E5 D4 00 AB B5 D4
         HEX 00 AB B5 D4 00 AB F5 F8
-        HEX 00 89 E4 00 00 81 A8 00
-        HEX 00 81 FC 00 00 83 D6 00
-        HEX 00 86 D0 00 00 86 C0 00
-        HEX 00 86 00 00 7F 55 70 00
-        HEX 00 00 01 75 2A 55 38 00
-        HEX 00 00 03 55 2A 55 38 00
-        HEX 00 00 03 55 2A 55 38 00
-        HEX 00 00 03 55 2A 55 70 00
-        HEX 00 00 01 75 7E 57 40 00
-        HEX 00 00 07 55 2A 55 60 00
-        HEX 00 00 0E 55 2A 55 60 00
-        HEX 00 00 0E 55 2A 55 60 00
-        HEX 00 00 0E 55 2A 57 40 00
-        HEX 00 00 07 55 7A 5E 00 00
-        HEX 00 00 1E 57 2A 57 00 00
-        HEX 00 00 3A 55 2A 57 00 00
-        HEX 00 00 3A 55 2A 57 00 00
-        HEX 00 00 3A 55 2A 5E 00 00
-        HEX 00 00 1E 55 6A 78 00 00
-        HEX 00 00 7A 5F 2A 5C 00 00
-        HEX 00 01 6A 55 2A 5C 00 00
-        HEX 00 01 6A 55 2A 5C 00 00
-        HEX 00 01 6A 55 2A 78 00 00
-        HEX 00 00 7A 55 7F 2B 60 00
-        HEX 00 00 03 6A 55 2A 70 00
-        HEX 00 00 07 2A 55 2A 70 00
-        HEX 00 00 07 2A 55 2A 70 00
-        HEX 00 00 07 2A 55 2B 60 00
-        HEX 00 00 03 6A 7D 2F 00 00
-        HEX 00 00 0F 2B 55 2B 40 00
-        HEX 00 00 1D 2A 55 2B 40 00
-        HEX 00 00 1D 2A 55 2B 40 00
-        HEX 00 00 1D 2A 55 2F 00 00
-        HEX 00 00 0F 2A 75 3C 00 00
-        HEX 00 00 3D 2F 55 2E 00 00
-        HEX 00 00 75 2A 55 2E 00 00
-        HEX 00 00 75 2A 55 2E 00 00
-        HEX 00 00 75 2A 55 3C 00 00
-        HEX 00 00 3D 2A 00 00 00 8A
-        HEX 00 8A 00 8A 00 00 00 A8
-        HEX 00 A8 00 A8 00 00 81 A0
-        HEX 81 A0 81 A0 00 00 85 00
-        HEX 85 00 85 00 00 00 00 94
-        HEX 00 94 00 94
-@
+        HEX 00 89 E4 00 00 94 AA 00
+        HEX 81 FE BF 00 83 AC F5 C0
+        HEX 00 A9 D4 00 00 89 D0 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8A D6 00 00 AA DF 00
+        HEX 00 EA FD 00 81 EA F9 00
+        HEX 82 EA FF 00 82 AA D5 00
+        HEX 86 DD AA 00 8A E9 E5 00
+        HEX 8A EB B5 00 8A EB B5 00
+        HEX 87 EB F5 00 00 89 E4 00
+        HEX 00 85 A0 00 00 8F E0 00
+        HEX 00 9A F0 00 00 82 D8 00
+        HEX 00 00 D8 00 00 00 98 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8A DE 00 00 AA FF 00
+        HEX 00 AB F6 00 81 EB E6 00
+        HEX 82 AB FF 00 82 AA D5 00
+        HEX 81 D5 AA 00 82 C7 95 00
+        HEX 82 CD D5 00 82 CD D5 00
+        HEX 81 EF D5 00 00 87 94 00
+        HEX 00 95 8A 00 00 BF 9E 00
+        HEX 00 EB D7 00 00 8A E5 C0
+        HEX 00 82 E5 C0 00 00 E1 C0
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8A FC 00 00 AB FF 00
+        HEX 00 AF 9B 00 00 EE 99 00
+        HEX 00 EF FF 00 00 EA D5 00
+        HEX 81 95 AA 00 00 F2 D5 00
+        HEX 81 DA D5 E0 81 DA D5 E0
+        HEX 81 FA D5 E0 00 F2 D4 00
+        HEX 00 95 8A 00 00 BF DF 00
+        HEX 00 AF DF 00 00 8B EF C0
+        HEX 00 8B EF C0 00 87 CF 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8B F4 00 00 AF FD 00
+        HEX 00 BC CF 00 00 B8 C7 00
+        HEX 00 BF FF 00 00 AA D5 00
+        HEX 00 95 AA 00 81 CA D4 E0
+        HEX 83 EA D5 F0 83 EA D5 F0
+        HEX 83 EA D5 F0 81 CA D4 E0
+        HEX 00 92 D2 00 00 BF BF 00
+        HEX 00 BF BF 00 00 BF BF 00
+        HEX 00 BF BF 00 00 9E 9E 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8F D4 00 00 BF F5 00
+        HEX 00 B6 BD 00 00 A6 9D C0
+        HEX 00 BF FD C0 00 AA D5 C0
+        HEX 00 95 AA A0 00 AA D3 C0
+        HEX 81 EA D6 E0 81 EA D6 E0
+        HEX 81 EA D7 E0 00 8A D3 C0
+        HEX 00 94 AA 00 00 BE FF 00
+        HEX 00 BE FD 00 00 FD F4 00
+        HEX 00 FD F4 00 00 BC F8 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 9E D4 00 00 BF D5 00
+        HEX 00 9B F5 00 00 99 F5 E0
+        HEX 00 BF F5 90 00 AA D5 90
+        HEX 00 95 AA E0 00 AA B8 D0
+        HEX 00 AA EC D0 00 AA EC D0
+        HEX 00 AA FD E0 00 8A B8 00
+        HEX 00 94 AA 00 00 9E BF 00
+        HEX 00 BA F5 C0 00 E9 D4 00
+        HEX 00 E9 D0 00 00 E1 C0 00
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 9A D4 00 00 BE D5 00
+        HEX 00 AF D5 C0 00 A7 D5 E0
+        HEX 00 BF D5 D0 00 AA D5 90
+        HEX 00 95 AE D8 00 A9 E5 D4
+        HEX 00 AB B5 D4 00 AB B5 D4
+        HEX 00 AB F5 F8 00 89 E4 00
+        HEX 00 81 A8 00 00 81 FC 00
+        HEX 00 83 D6 00 00 86 D0 00
+        HEX 00 86 C0 00 00 86 00 00
+        HEX 7F 55 70 00 00 00 01 75
+        HEX 2A 55 38 00 00 00 03 55
+        HEX 2A 55 38 00 00 00 03 55
+        HEX 2A 55 38 00 00 00 03 55
+        HEX 2A 55 70 00 00 00 01 75
+        HEX 7E 57 40 00 00 00 07 55
+        HEX 2A 55 60 00 00 00 0E 55
+        HEX 2A 55 60 00 00 00 0E 55
+        HEX 2A 55 60 00 00 00 0E 55
+        HEX 2A 57 40 00 00 00 07 55
+        HEX 7A 5E 00 00 00 00 1E 57
+        HEX 2A 57 00 00 00 00 3A 55
+        HEX 2A 57 00 00 00 00 3A 55
+        HEX 2A 57 00 00 00 00 3A 55
+        HEX 2A 5E 00 00 00 00 1E 55
+        HEX 6A 78 00 00 00 00 7A 5F
+        HEX 2A 5C 00 00 00 01 6A 55
+        HEX 2A 5C 00 00 00 01 6A 55
+        HEX 2A 5C 00 00 00 01 6A 55
+        HEX 2A 78 00 00 00 00 7A 55
+        HEX 7F 2B 60 00 00 00 03 6A
+        HEX 55 2A 70 00 00 00 07 2A
+        HEX 55 2A 70 00 00 00 07 2A
+        HEX 55 2A 70 00 00 00 07 2A
+        HEX 55 2B 60 00 00 00 03 6A
+        HEX 7D 2F 00 00 00 00 0F 2B
+        HEX 55 2B 40 00 00 00 1D 2A
+        HEX 55 2B 40 00 00 00 1D 2A
+        HEX 55 2B 40 00 00 00 1D 2A
+        HEX 55 2F 00 00 00 00 0F 2A
+        HEX 75 3C 00 00 00 00 3D 2F
+        HEX 55 2E 00 00 00 00 75 2A
+        HEX 55 2E 00 00 00 00 75 2A
+        HEX 55 2E 00 00 00 00 75 2A
+        HEX 55 3C 00 00 00 00 3D 2A
+        HEX 00 00 00 8A 00 8A 00 8A
+        HEX 00 00 00 A8 00 A8 00 A8
+        HEX 00 00 81 A0 81 A0 81 A0
+        HEX 00 00 85 00 85 00 85 00
+        HEX 00 00 00 94 00 94 00 94
+@ %def SPRITE_PIXEL_DATA
+
 
 
 
@@ -17986,8 +18157,12 @@ SCREEN_ROW_ADDR_HI2:
 <<screen row addr lo>>
 ; --- ORG $7440: Screen row address high bytes (page 2) ---
 <<screen row addr hi2>>
-; --- ORG $7500: Sprite data and other tables ---
-<<screen data tables>>
+; --- ORG $7500: Sprite pointer tables (LO half) ---
+<<sprite pointer tables lo>>
+; --- ORG $7600: Sprite pointer tables (HI half) ---
+<<sprite pointer tables hi>>
+; --- ORG $7700: Sprite pixel data ---
+<<sprite pixel data>>
 @
 
 @ \chapter{Level 1 swappable data}
@@ -18010,7 +18185,7 @@ hold real bytes; every non-level page stays at [[$00]]:
   attract entry code (already documented in \texttt{drol.bin}:
   [[LIFE_LOST_HANDLER]] [[$7208]], [[ATTRACT_LOOP]] [[$7263]],
   [[START_ATTRACT]] [[$72A3]]; earlier pages hold enemy-AI data).
-\item [[$7500]]--[[$7AFF]] (6 pages) --- screen-row lookup tables and  % TODO-SYM: $7500 $7AFF
+\item [[$7500]]--[[$7AFF]] (6 pages) --- screen-row lookup tables and
   sprite sub-sections consumed by the draw routines.
 \item [[$8C00]]--[[$BDFF]] (50 pages, \emph{not} present in  % TODO-SYM: $8C00 $BDFF
   \texttt{drol.bin}) --- the bulk of the level-1 content: per-level
@@ -18021,7 +18196,7 @@ hold real bytes; every non-level page stays at [[$00]]:
 \end{itemize}
 
 All of the shared pages ([[$0200]], [[$1300]]--[[$18FF]], [[$6700]]--[[$72FF]],  % TODO-SYM: $1300 $18FF $6700 $72FF
-[[$7500]]--[[$7AFF]]) match \texttt{drol.bin} byte-for-byte because  % TODO-SYM: $7500 $7AFF
+[[$7500]]--[[$7AFF]]) match \texttt{drol.bin} byte-for-byte because
 \texttt{drol.bin} is itself a snapshot taken after the loader has
 deposited the level-1 pages into their run-time addresses.  The
 only pages unique to \texttt{level1.bin} are [[$8C00]]--[[$BDFF]], the  % TODO-SYM: $8C00 $BDFF

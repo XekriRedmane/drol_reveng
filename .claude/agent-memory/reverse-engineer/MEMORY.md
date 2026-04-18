@@ -39,3 +39,4 @@
 - [Drol INPUT_DISPATCH symbol cleanup](drol-input-dispatch-cleanup.md) — shared ZP EQUs ZP_ASC_FLOOR/ZP_DSC_FLOOR/ZP_DSC_DIR/ZP_ENT_RESCUED/ENTITY_HIT_Y live in drol-input-defines
 - [Drol $5ED4-$5FFF dead twin of RWTS](drol-stage-dead-tail.md) — pre-release twin of $BED4-$BFFF; SM refs at $5F25/$5F2B mutate live $BF21 not self
 - [Drol ZP-symbol sweep candidates](drol-zp-symbol-sweep-candidates.md) — grep pattern + alias-selection rules for periodic raw-$XX -> ZP_SYMBOL style passes
+- [Drol sprite pointer tables](drol-sprite-pointer-tables.md) — $7500-$76FF split into 37 labeled LO/HI sub-tables + SPRITE_PIXEL_DATA at $7700-$8BFF

@@ -3114,9 +3114,9 @@ SCREEN_ROW_COPY:
         ; Clobbers: A, X, Y
 
 ; --- Conditional page flip ---
-        LDA $00
+        LDA ZP_PAGE_FLAG
         BMI .skip_flip
-        JSR DISPLAY_PAGE_FLIP    ; Flip page if ZP ZP_PAGE_FLAG positive
+        JSR DISPLAY_PAGE_FLIP    ; Flip page if ZP_PAGE_FLAG is positive
 .skip_flip:
 
 ; --- Row loop ---
@@ -3657,7 +3657,7 @@ SMC_RENDER = *
         JSR DRAW_ENTITIES       ; Entity draw dispatcher
 
 ; --- Frame end ---
-        INC $FD                 ; Increment frame counter
+        INC ZP_FRAME_COUNTER    ; Increment frame counter
 SMC_ATTRACT = *
         NOP                     ; (JSR during attract mode)
         JSR POST_FRAME          ; Post-frame cleanup
@@ -5212,16 +5212,16 @@ ROW_COPY_CLICK:
         ;   whistle over the 192-row sweep.
         ;
         ; Modifies:
-        ;   ZP $5C (scratch)
+        ;   ZP_SAVE_X (scratch)
         ; Clobbers: A
 
-        STX $5C                 ; ZP $5C <- X (preserve row index)
+        STX ZP_SAVE_X           ; ZP_SAVE_X <- X (preserve row index)
         TXA
         LSR
         LSR                     ; A = X / 4  (pitch 0..$2F)
         LDX #$04                ; duration
         JSR SND_DELAY_UP
-        LDX $5C                 ; restore row index
+        LDX ZP_SAVE_X           ; restore row index
         RTS
 @ %def ROW_COPY_CLICK
 
@@ -5438,43 +5438,154 @@ within that block.  Its [[TEXT_STRIP_SRC]] [[EQU]] is declared in the
 [[<<clear page1 defines>>]] chunk alongside the other column-bound
 screen-clear constants.
 
-<<game data 02C6>>=
+<<lvl init sprite tail data>>=
 
         ORG $02C6
+LVL_INIT_SPRITE_TAIL_DATA:
         SUBROUTINE
-        ; Game data tables ($02C6-$03A7)
-        ; Raw data --- 226 bytes
-
+        ; Tail of LVL_INIT_SPRITE ($02B5-$02E1, 45 bytes); the first 5 bytes
+        ; at $02B5-$02B9 are emitted by the row-copy-data chunk.  The
+        ; 12-byte gap $02BA-$02C5 is dasm FF-fill (unreferenced by the
+        ; game; the source payload ends with 5 bytes of $00).
+        ;
+        ; Consumed by INIT_LEVEL_STATE which copies
+        ; LVL_INIT_SPRITE -> ZP_SPRITE_BLOCK ($88-$B4, 45 bytes).  The
+        ; zero tail at $02C6-$02D7 becomes ZP $99-$AA; the non-zero
+        ; bytes $02D8-$02E1 seed the live special / projectile state
+        ; ($AB-$B4) used by SPECIAL_TICK, COMPANION_UPDATE and the
+        ; entity-B/C draw paths.
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 01 5A 03 4D 00 00
-        HEX 01 FF 01 01 00 00 06 00
-        HEX 00 30 00 04 01 01 01 01
-        HEX 01 01 00 00 40 50 00 03
-        HEX 3B 63 00 00 00 30 C0 00
-        HEX FF 01 55 2A 55 2A 55 2A
+        HEX 01 FF 01 01
+@ %def LVL_INIT_SPRITE_TAIL_DATA
+
+<<lvl init input data>>=
+
+        ORG $02E2
+LVL_INIT_INPUT_DATA:
+        SUBROUTINE
+        ; LVL_INIT_INPUT ($02E2-$02FF, 30 bytes) copied by INIT_LEVEL_STATE
+        ; into ZP_INPUT_BLOCK ($01-$1E).  Contains the per-level seed for
+        ; the input/direction state: key code, ZP_LAST_DIR, ZP_JUMP_FLAG,
+        ; the sprite/walk counters, the BEAM/TRACER state slots, the
+        ; INTRO countdown ZP and the level-intro state flag at ZP $1E.
+        HEX 00 00 06 00 00 30 00 04
+        HEX 01 01 01 01 01 01 00 00
+        HEX 40 50 00 03 3B 63 00 00
+        HEX 00 30 C0 00 FF 01
+@ %def LVL_INIT_INPUT_DATA
+
+<<text strip src data>>=
+
+        ORG $0300
+TEXT_STRIP_SRC_DATA:
+        SUBROUTINE
+        ; TEXT_STRIP_SRC ($0300-$0327, 40 bytes): column-indexed $55/$2A
+        ; dither source consumed by CLEAR_PAGE1/CLEAR_PAGE2 (bottom
+        ; text-area repaint) and INTERLACE_RESTORE_P1/P2 (3-band playfield
+        ; repaint).  One byte per hi-res column; the alternating $55/$2A
+        ; pair produces a uniform gray dither when broadcast across rows.
+        ; Read-only data --- no STA in any shipped routine targets this
+        ; range.  See the "Playfield dither source" prose section above.
         HEX 55 2A 55 2A 55 2A 55 2A
         HEX 55 2A 55 2A 55 2A 55 2A
         HEX 55 2A 55 2A 55 2A 55 2A
         HEX 55 2A 55 2A 55 2A 55 2A
-        HEX 55 2A 20 21 21 21 21 21
-        HEX 21 20 20 20 21 21 90 19
-        HEX 8D 90 93 11 16 8D 95 98
-        HEX 0E 98 20 00 50 20 40 00
-        HEX 00 50 54 28 00 28 05 2A
-        HEX 02 05 0A 2A 15 02 00 01
-        HEX 15 01 6E DA 4A B8 26 94
-        HEX 02 6E DA 4A B8 26 94 02
-        HEX 6E DA 4A B8 26 94 00 00
-        HEX 01 01 02 02 03 00 00 01
-        HEX 01 02 02 03 00 00 01 01
-        HEX 02 02 51 51 51 51 51 51
-        HEX 51 79 79 79 79 79 79 79
-        HEX A1 A1 A1 A1 A1 A1 01 01
-        HEX FF FF 01 01 FF 01 01 FF
-        HEX FF 01 01 FF 01 FF 01 FF
-        HEX 01 FF
-@
+        HEX 55 2A 55 2A 55 2A 55 2A
+@ %def TEXT_STRIP_SRC_DATA
+
+<<hit bg tables data>>=
+
+        ORG $0328
+HIT_BG_HI_DATA:
+        SUBROUTINE
+        ; HIT_BG_HI ($0328-$0333, 12 bytes): per-slot high byte of the
+        ; hi-res page-1 background-save address for the 12-slot hit-entity
+        ; array.  Written by the per-slot save path (stores the page-1
+        ; address of a two-byte BG strip before a hit sprite overwrites
+        ; it); DRAW_ENTITIES phase~1 reads this plus HIT_BG_LO and
+        ; HIT_BG_BYTE0/BYTE1 to restore one slot's BG each frame.
+        ; High byte is bumped by $20 at draw time if ZP_PAGE_FLAG is
+        ; negative (page-2 target).
+        HEX 20 21 21 21 21 21 21 20
+        HEX 20 20 21 21
+
+        ORG $0334
+HIT_BG_LO_DATA:
+        ; HIT_BG_LO ($0334-$033F, 12 bytes): low byte of the background-
+        ; save address, paired with HIT_BG_HI.
+        HEX 90 19 8D 90 93 11 16 8D
+        HEX 95 98 0E 98
+
+        ORG $0340
+HIT_BG_BYTE1_DATA:
+        ; HIT_BG_BYTE1 ($0340-$034B, 12 bytes): saved pixel byte at
+        ; offset +1 of the BG strip.  DRAW_ENTITIES phase~1 restores
+        ; this byte via (ZP_DRAW_DEST_LO),Y=1.
+        HEX 20 00 50 20 40 00 00 50
+        HEX 54 28 00 28
+
+        ORG $034C
+HIT_BG_BYTE0_DATA:
+        ; HIT_BG_BYTE0 ($034C-$0357, 12 bytes): saved pixel byte at
+        ; offset +0 of the BG strip (restored via Y=0).
+        HEX 05 2A 02 05 0A 2A 15 02
+        HEX 00 01 15 01
+@ %def HIT_BG_HI_DATA HIT_BG_LO_DATA HIT_BG_BYTE1_DATA HIT_BG_BYTE0_DATA
+
+<<entity state tables data>>=
+
+        ORG $0358
+ENTITY_FLOOR_COL_DATA:
+        SUBROUTINE
+        ; Four parallel 20-slot entity state tables at $0358, $036C,
+        ; $0380, $0394 --- the per-slot state for the 20-slot rescue-
+        ; child / projectile-hazard entity list.  Each table is indexed
+        ; by slot Y (0..$13) and read both by RESCUE_UPDATE
+        ; (per-slot tick) and by DRAW_ENTITIES phase~5 (per-slot draw).
+        ; The PROJ_SPAWN and RESCUE_UPDATE spawn paths write these
+        ; slots when activating a new entity.
+        ;
+        ; ENTITY_FLOOR_COL ($0358-$036B, 20 bytes): world-X low byte.
+        ; The disk-image seed stores 3 copies of a 7-byte repeating
+        ; pattern $6E $DA $4A $B8 $26 $94 $02 --- the starting world-X
+        ; low bytes for the 7+7+6 rescue-child slots across floors 2-4
+        ; (paired with ENTITY_FLOOR_POS below).
+        HEX 6E DA 4A B8 26 94 02 6E
+        HEX DA 4A B8 26 94 02 6E DA
+        HEX 4A B8 26 94
+
+        ORG $036C
+ENTITY_XOFF_IDX_DATA:
+        ; ENTITY_XOFF_IDX ($036C-$037F, 20 bytes): per-slot perspective
+        ; X-offset index; combined with ENTITY_FLOOR_COL by
+        ; DRAW_ENTITIES phase~5 as "ADC PERSPECTIVE_XOFF_BYTE,X" to
+        ; select the byte-domain X-offset applied to the floor base row.
+        HEX 00 00 01 01 02 02 03 00
+        HEX 00 01 01 02 02 03 00 00
+        HEX 01 01 02 02
+
+        ORG $0380
+ENTITY_FLOOR_POS_DATA:
+        ; ENTITY_FLOOR_POS ($0380-$0393, 20 bytes): per-slot floor-row
+        ; index.  Indexed into FLOOR_TO_ROW by DRAW_ENTITIES phase~5 to
+        ; derive the hi-res row for the sprite blit.  The three plateaus
+        ; $51 / $79 / $A1 correspond to floors 2, 3, and 4 respectively.
+        HEX 51 51 51 51 51 51 51 79
+        HEX 79 79 79 79 79 79 A1 A1
+        HEX A1 A1 A1 A1
+
+        ORG $0394
+RESCUE_DIR_DATA:
+        ; RESCUE_DIR ($0394-$03A7, 20 bytes): per-slot walk direction
+        ; ($01 right, $FF left).  RESCUE_UPDATE's tick body adds this
+        ; to ENTITY_FLOOR_COL each step; the disk-image seed alternates
+        ; left/right to give each floor a mix of walker facings.
+        HEX 01 01 FF FF 01 01 FF 01
+        HEX 01 FF FF 01 01 FF 01 FF
+        HEX 01 FF 01 FF
+@ %def ENTITY_FLOOR_COL_DATA ENTITY_XOFF_IDX_DATA ENTITY_FLOOR_POS_DATA RESCUE_DIR_DATA
 
 <<entity tables 03A8>>=
 
@@ -7168,7 +7279,7 @@ RESCUE_DRAW:
         ;   ENTITY_ACTIVE,Y (drift transition); RESCUE_COUNTDOWN,Y on hit.
         ;   ZP_ENEMY_FLAG,X (cleared on rescue/enemy mutual-kill).
         ;   ZP_PROJ_DIR/X/Y,X (projectile slot seeded on hostile-spawn).
-        ;   $AF (per-slot screen-X residue scratch).
+        ;   ZP_CLIP_X_LO (per-slot screen-X residue scratch).
         ; Clobbers: A, X, Y
 
         JSR RESCUE_DRAW_PERSPECTIVE_CACHE  ; precompute $0F/$10 once
@@ -7210,11 +7321,11 @@ RESCUE_DRAW:
         SEC
         LDA ENTITY_FLOOR_COL,Y
         SBC ZP_PERSP_OFFSET_LO
-        STA $AF                            ; screen-X residue
+        STA ZP_CLIP_X_LO                   ; screen-X residue
         LDA ENTITY_XOFF_IDX,Y
         SBC ZP_PERSP_OFFSET_HI
         BNE .skip_off_screen               ; high-byte != 0: off camera
-        LDA $AF
+        LDA ZP_CLIP_X_LO
         CMP #$9A                           ; clip right edge
         BCS .skip_off_screen
         TAX                                ; X = screen-X residue
@@ -7332,7 +7443,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         BMI .test_player_pickup            ; ran out of slots: try player
 
 .test_enemy_overlap:
-        LDA $AF                            ; entity screen-X
+        LDA ZP_CLIP_X_LO                   ; entity screen-X
         CMP ZP_ENEMY_COL,X
         BCC .next_enemy                    ; entity left of enemy: skip
         SEC
@@ -7341,11 +7452,11 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         BCS .next_enemy                    ; entity > enemy + 10: skip
         LDA ENTITY_FLOOR_POS,Y             ; entity row
         CLC
-        ADC $42                            ; + level Y-extent low
+        ADC ZP_HIT_Y_OFFSET                ; + level Y-extent low
         CMP ZP_ENEMY_Y,X
         BCS .next_enemy
         CLC
-        ADC $43                            ; + level Y-extent high
+        ADC ZP_HIT_Y_SPAN                  ; + level Y-extent high
         CMP ZP_ENEMY_Y,X
         BCC .next_enemy
 
@@ -7367,7 +7478,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
 
 ; --- Player pickup: centre-band X + row band ---
 .test_player_pickup:
-        LDA $AF                            ; entity screen-X
+        LDA ZP_CLIP_X_LO                   ; entity screen-X
         CMP #$40
         BCC .test_proj_spawn               ; X < $40: outside band
         CMP #$50
@@ -7411,7 +7522,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
         STA ZP_PROJ_DIR,X
         LDA ENTITY_FLOOR_POS,Y
         STA ZP_PROJ_Y,X                    ; ZP_PROJ_Y[X] = row
-        LDA $AF
+        LDA ZP_CLIP_X_LO
         STA ZP_PROJ_X,X                    ; ZP_PROJ_X[X] = screen-X
         LDX #$0A                           ; descending-click args
         LDA #$0D
@@ -10779,11 +10890,11 @@ STAGE_STACK:
         ;
         ; Modifies:
         ;   Hi-res page 1 ($2000-$3FFF), ZP $29/$2A, pitch scratch in
-        ;   $5C (via ROW_COPY_CLICK).
+        ;   ZP_SAVE_X (via ROW_COPY_CLICK).
         ; Clobbers: A, X, Y
 
 ; --- Conditional page flip ---
-        LDA $00                         ; ZP_PAGE_FLAG
+        LDA ZP_PAGE_FLAG
         BMI .skip_flip
         JSR DISPLAY_PAGE_FLIP
 
@@ -11652,7 +11763,7 @@ REFRESH_RIGHT_WALL:
 
 ; --- Shared tail: load sprite pointer, page-gate, call RESTORE+BLIT ---
 .shared_tail:
-        LDY $4C                         ; sprite-animation index
+        LDY ZP_SPRITE_XREF              ; sprite-animation index
         LDA WALL_SPR_HI,Y               ; WALL_SPR_HI[Y] -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
         LDA WALL_SPR_LO,Y               ; WALL_SPR_LO[Y] -> ZP_BLIT_SRC
@@ -11786,7 +11897,7 @@ REFRESH_LEFT_WALL:
 
 ; --- Shared tail: load sprite pointer, page-gate, call RESTORE+BLIT ---
 .shared_tail:
-        LDY $4C                         ; sprite-animation index
+        LDY ZP_SPRITE_XREF              ; sprite-animation index
         LDA WALL_L_SPR_HI,Y             ; WALL_L_SPR_HI[Y] -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
         LDA WALL_L_SPR_LO,Y             ; WALL_L_SPR_LO[Y] -> ZP_BLIT_SRC
@@ -12015,8 +12126,8 @@ REFRESH_PILLARS:
 
 ; --- Paint: save X, load sprite ptr, page-gate, JSR BLIT ---
 .paint:
-        STX $5C                         ; save loop index
-        LDY $4C                         ; sprite-animation index
+        STX ZP_DRAW_LOOP_IDX            ; save loop index
+        LDY ZP_SPRITE_XREF              ; sprite-animation index
         LDA PILLAR_SPR_HI,Y             ; PILLAR_SPR_HI[Y] -> ZP_BLIT_SRC+1
         STA ZP_BLIT_SRC+1
         LDA PILLAR_SPR_LO,Y             ; PILLAR_SPR_LO[Y] -> ZP_BLIT_SRC
@@ -12025,7 +12136,7 @@ REFRESH_PILLARS:
         BMI .page2
         JSR INTERLACE_BLIT_P1
 .paint_resume:
-        LDX $5C                         ; restore loop index
+        LDX ZP_DRAW_LOOP_IDX            ; restore loop index
         JMP .next                       ; > $62F9
 .page2:
         JSR INTERLACE_BLIT_P2
@@ -13001,7 +13112,7 @@ DRAW_PLAYER:
         STA ZP_SPRITE_W                 ; Width = 0+1 byte
         LDA #$06
         STA ZP_SPRITE_H                 ; Height = 6 rows
-        LDY $FD                         ; Frame counter
+        LDY ZP_FRAME_COUNTER            ; Frame counter
         LDA PLAYER_STATIC_LO,Y          ; Pseudo-random low from own code
         STA SMC_DS_SRC_LO
         LDA PLAYER_STATIC_HI,Y          ; Pseudo-random high ...
@@ -13911,9 +14022,9 @@ FLOOR_ENEMY_DRAW:
         STA SMC_DS_SRC_LO
         LDA FLOOR_ENEMY_SPR_S3_HI,Y
         STA SMC_DS_SRC_HI
-        STX $5C                         ; Save X across JSR
+        STX ZP_SAVE_X                   ; Save X across JSR
         JSR DRAW_SPRITE
-        LDX $5C                         ; Restore X
+        LDX ZP_SAVE_X                   ; Restore X
         JMP .next_slot
 .not_s3:
         CPX #$02
@@ -13922,9 +14033,9 @@ FLOOR_ENEMY_DRAW:
         STA SMC_DS_SRC_LO
         LDA FLOOR_ENEMY_SPR_S2_HI,Y
         STA SMC_DS_SRC_HI
-        STX $5C
+        STX ZP_SAVE_X
         JSR DRAW_SPRITE
-        LDX $5C
+        LDX ZP_SAVE_X
         JMP .next_slot
 .not_s2:
         CPX #$01
@@ -13933,18 +14044,18 @@ FLOOR_ENEMY_DRAW:
         STA SMC_DS_SRC_LO
         LDA FLOOR_ENEMY_SPR_S1_HI,Y
         STA SMC_DS_SRC_HI
-        STX $5C
+        STX ZP_SAVE_X
         JSR DRAW_SPRITE
-        LDX $5C
+        LDX ZP_SAVE_X
         JMP .next_slot
 .slot0:
         LDA FLOOR_ENEMY_SPR_S0_LO,Y     ; Slot 0 frame source
         STA SMC_DS_SRC_LO
         LDA FLOOR_ENEMY_SPR_S0_HI,Y
         STA SMC_DS_SRC_HI
-        STX $5C
+        STX ZP_SAVE_X
         JSR DRAW_SPRITE
-        LDX $5C
+        LDX ZP_SAVE_X
         JMP .next_slot
 @ %def FLOOR_ENEMY_DRAW
 
@@ -14272,7 +14383,7 @@ DRAW_ENTITIES:
         TAX
         LDA FLOOR_SCREEN_COL,Y          ; Screen column
         STA ZP_SPRITE_X
-        LDA $FD                         ; Frame counter
+        LDA ZP_FRAME_COUNTER            ; Frame counter
         AND #$04                        ; Bit 2 = animation phase
         BEQ .player_frameA
         LDA PLAYER_GRID_SPR_B_LO,X
@@ -14310,7 +14421,7 @@ DRAW_ENTITIES:
         LDA FLOOR_BASE_ROW,X            ; Base floor row
         LDX ZP_SPECIAL_Y                ; X-offset index
         CLC
-        ADC $B9,X                       ; + per-entity vertical offset
+        ADC PERSPECTIVE_XOFF_BYTE,X     ; + per-entity vertical offset
         SEC
         SBC #$08                        ; - 8
         TAX
@@ -14322,7 +14433,7 @@ DRAW_ENTITIES:
         STA ZP_SPRITE_H
         LDA FLOOR_SPRITE_IDX,X
         TAX
-        LDA $FD
+        LDA ZP_FRAME_COUNTER
         AND #$04
         BEQ .special_frameA
         LDA SPECIAL_GRID_SPR_B_LO,X
@@ -14357,7 +14468,7 @@ DRAW_ENTITIES:
         TAX
         PLA
         CLC
-        ADC $B9,X                       ; + offset
+        ADC PERSPECTIVE_XOFF_BYTE,X     ; + offset
         SEC
         SBC #$05                        ; - 5
         TAY
@@ -14398,7 +14509,7 @@ DRAW_ENTITIES:
         TAX
         PLA
         CLC
-        ADC $B9,X
+        ADC PERSPECTIVE_XOFF_BYTE,X
         SEC
         SBC #$05
         TAX
@@ -14554,64 +14665,72 @@ LEVEL_INTRO_TICK:
         ; animation, tone pulses, wait-for-start, and activation.
         ;
         ; Inputs:
-        ;   $1E                       --- state word
+        ;   ZP_HIT_FLAG               --- state word
         ;                               $FF = needs init, $00 = intro running,
         ;                               $01 = gameplay active (fast RTS).
         ;   ZP_INTRO_COUNTDOWN  --- countdown frames remaining.
         ;   ZP_INTRO_TIMEOUT    --- auto-start timeout.
         ;   ZP_INTRO_Y          --- saved intro sprite Y row.
-        ;   $FD                       --- frame counter (flicker / parity).
+        ;   ZP_FRAME_COUNTER          --- flicker / parity source.
         ;   ZP_LIVES_BCD        --- BCD lives counter (goes negative = game over).
         ;   ZP_PLAYER_COL       --- saved on init; software timer
         ;                               during wait phase.
-        ;   $02, $05, $0A..$0E, $1D, $8C --- game-state scratch cleared
+        ;   ZP_ACTION_DIR, ZP_JUMP_FLAG, ZP_FLOOR_MIRROR, ZP_ASC_FLOOR,
+        ;   ZP_PLAYER_FLOOR_CUR, ZP_DSC_DIR, ZP_HIT_GATE, ZP_ENT_RESCUED,
+        ;   ZP_EXTRA_LIVES        --- game-state scratch cleared
         ;                               or seeded on init/activation.
-        ;   $41                       --- entity-slot count (cleared on wait).
-        ;   $83,X ($84 with X=1)      --- per-level initial Y column.
+        ;   ZP_HIT_MAX                --- entity-slot count (cleared on wait).
+        ;   FLOOR_THRESH[1]           --- per-level initial Y column.
         ;   ZP_INPUT_1 / ZP_INPUT_2 --- handler pointers
         ;                               whose MSB can trigger activation.
-        ;   LEVEL_DATA_BASE,$18       --- tone amplitude for countdown step.
+        ;   LEVEL_DATA_BASE,ZP_INTRO_COUNTDOWN
+        ;                             --- tone amplitude for countdown step.
         ;   SPRITE_TABLE_LO+1 /
         ;   SPRITE_TABLE_HI+1         --- "ready" prompt sprite (id 1).
         ;
         ; Behavior:
-        ;   $1E > 0: RTS (fast path during gameplay).
-        ;   $1E < 0: one-shot init --- disable input / movement / render
-        ;     SMC slots; clear state; save $06 into ZP_INTRO_Y; point
-        ;     DRAW_PLAYER at ZP_INTRO_Y (SMC_SR_YSRC); set
-        ;     ZP_INTRO_COUNTDOWN <- #$12, ZP_INTRO_TIMEOUT <- #$40; $1E=0.
-        ;     Falls through into the tick phase.
+        ;   ZP_HIT_FLAG > 0: RTS (fast path during gameplay).
+        ;   ZP_HIT_FLAG < 0: one-shot init --- disable input / movement
+        ;     / render SMC slots; clear state; save $06 into ZP_INTRO_Y;
+        ;     point DRAW_PLAYER at ZP_INTRO_Y (SMC_SR_YSRC); set
+        ;     ZP_INTRO_COUNTDOWN <- #$12, ZP_INTRO_TIMEOUT <- #$40;
+        ;     ZP_HIT_FLAG <- #$00.  Falls through into the tick phase.
         ;   Tick phase (while ZP_INTRO_COUNTDOWN > 0): on odd frames
         ;     decrement the counter, decrement SMC_SR_HEIGHT and bump
-        ;     ZP_INTRO_Y (unless $02 suppresses).  Patch the sprite
-        ;     mask SMC to AND #<FD|$80> for flicker, draw the sprite
-        ;     via DRAW_PLAYER, restore BIT opcode, then pulse
-        ;     SFX_TONE with the level-data byte at LEVEL_DATA_BASE,$18.
+        ;     ZP_INTRO_Y (unless ZP_ACTION_DIR suppresses).  Patch the
+        ;     sprite mask SMC to AND #<ZP_FRAME_COUNTER|$80> for flicker,
+        ;     draw the sprite via DRAW_PLAYER, restore BIT opcode, then
+        ;     pulse SFX_TONE with the level-data byte at
+        ;     LEVEL_DATA_BASE,ZP_INTRO_COUNTDOWN.
         ;   Wait phase (ZP_INTRO_COUNTDOWN == 0): software timer in
-        ;     $06 BCD-decrements ZP_LIVES_BCD when it wraps.  If
-        ;     ZP_LIVES_BCD goes negative, RTS (game-over path).
-        ;     Otherwise clear entity-active table ENTITY_HIT_STATE..$8D+$41,
-        ;     poll keyboard / input-handler MSBs / timeout; on trigger
-        ;     activate (set $1E=1, restore main-loop JSR slots, reset
-        ;     SMC_SR_YSRC <- #$06, SMC_SR_HEIGHT <- #$13).  Otherwise draw the
-        ;     "ready" prompt sprite (sprite-table id 1) at a row
-        ;     that dips by 2 on every other frame once $19 >= $F0.
+        ;     ZP_PLAYER_COL BCD-decrements ZP_LIVES_BCD when it wraps.
+        ;     If ZP_LIVES_BCD goes negative, RTS (game-over path).
+        ;     Otherwise clear entity-active table ENTITY_HIT_STATE[X]
+        ;     for X in 0..ZP_HIT_MAX, poll keyboard / input-handler MSBs
+        ;     / timeout; on trigger activate (ZP_HIT_FLAG <- #$01, restore
+        ;     main-loop JSR slots, SMC_SR_YSRC <- #$06,
+        ;     SMC_SR_HEIGHT <- #$13).  Otherwise draw the "ready" prompt
+        ;     sprite (sprite-table id 1) at a row that dips by 2 on
+        ;     every other frame once ZP_INTRO_TIMEOUT >= $F0.
         ;
         ; Modifies:
-        ;   $1E, $17, $18, $19, $02, $04, $05, $06, $0A, $0B, $0C,
-        ;   $0D, $0E, $1D, $8C, $8D..$8D+$41 (entity-active table),
-        ;   ZP_LIVES_BCD ($5E, BCD decrement),
-        ;   SMC slots in MAIN_LOOP: SMC_INPUT, SMC_ASCEND
-        ;, SMC_DESCEND, SMC_MOVE_LEFT,
+        ;   ZP_HIT_FLAG, ZP_INTRO_Y, ZP_INTRO_COUNTDOWN, ZP_INTRO_TIMEOUT,
+        ;   ZP_ACTION_DIR, ZP_MOVE_DIR, ZP_JUMP_FLAG, ZP_PLAYER_COL,
+        ;   ZP_FLOOR_MIRROR, ZP_ASC_FLOOR, ZP_PLAYER_FLOOR_CUR, ZP_DSC_DIR,
+        ;   ZP_HIT_GATE, ZP_ENT_RESCUED, ZP_EXTRA_LIVES,
+        ;   ENTITY_HIT_STATE[0..ZP_HIT_MAX] (entity-active table),
+        ;   ZP_LIVES_BCD (BCD decrement),
+        ;   SMC slots in MAIN_LOOP: SMC_INPUT, SMC_ASCEND,
+        ;   SMC_DESCEND, SMC_MOVE_LEFT,
         ;   SMC_MOVE_RIGHT, SMC_RENDER,
         ;   SMC_SR_HEIGHT, SMC_SR_YSRC,
         ;   SMC_SPRITE_MASK_OP, SMC_SPRITE_MASK_ARG,
         ;   SPRITE_PTR_LO, SPRITE_PTR_HI,
-        ;   sprite-draw params ZP_SPRITE_W/H/Y/X, $5B, $5D, $56, $57.
+        ;   sprite-draw params ZP_SPRITE_W/H/Y/X.
         ; Clobbers: A, X, Y
 
 ; --- Fast path: gameplay active ---
-        LDA $1E                         ; State word
+        LDA ZP_HIT_FLAG                 ; State word
         BMI .init                       ;   $FF = needs init
         BEQ .tick                       ;   $00 = intro running
         RTS                             ;   else (> 0) gameplay --- return
@@ -14619,7 +14738,7 @@ LEVEL_INTRO_TICK:
 ; --- One-shot initialisation ---
 .init:
         LDA #$FF
-        STA $0E                         ; Arm state byte
+        STA ZP_HIT_GATE                 ; Arm state byte
         LDA #$2C                        ; BIT opcode
         STA SMC_INPUT                   ; Disable input dispatch slot
         STA SMC_ASCEND                  ; Disable ascend slot
@@ -14632,13 +14751,13 @@ LEVEL_INTRO_TICK:
         LDA #$17
         STA SMC_SR_YSRC                 ; Re-point DRAW_PLAYER at ZP_INTRO_Y
         LDA #$00
-        STA $05                         ; Clear scratch
-        STA $1E                         ; State $00 = intro running
+        STA ZP_JUMP_FLAG                ; Clear scratch
+        STA ZP_HIT_FLAG                 ; State $00 = intro running
         STA ZP_MOVE_DIR                 ; Clear player horizontal move direction
-        STA $0C                         ; Clear scratch
+        STA ZP_PLAYER_FLOOR_CUR         ; Clear scratch
         LDA #$D0
         STA ZP_PLAYER_COL               ; Seed player column
-        STA $8C                         ; Seed paired state byte
+        STA ZP_EXTRA_LIVES              ; Seed paired state byte
         LDA #$40
         STA ZP_INTRO_TIMEOUT            ; $40 frames before auto-start
         LDA #$12
@@ -14649,12 +14768,12 @@ LEVEL_INTRO_TICK:
 .tick:
         LDX ZP_INTRO_COUNTDOWN
         BEQ .wait                       ; Countdown done --- wait-for-start
-        LDA $FD
+        LDA ZP_FRAME_COUNTER
         AND #$01
         BEQ .flicker_draw               ; Even frame: only draw
         DEX
         STX ZP_INTRO_COUNTDOWN          ; Odd frame: decrement counter
-        LDA $02                         ; Suppress row bump?
+        LDA ZP_ACTION_DIR               ; Suppress row bump?
         BNE .flicker_draw
         DEC SMC_SR_HEIGHT               ; Shrink DRAW_PLAYER sprite height
         INC ZP_INTRO_Y                  ;   and nudge Y down one row
@@ -14662,7 +14781,7 @@ LEVEL_INTRO_TICK:
 ; --- Draw flickering intro sprite via DRAW_PLAYER ---
         LDA #$29                        ; AND #imm opcode
         STA SMC_SPRITE_MASK_OP          ;   patched into DRAW_SPRITE BIT slot
-        LDA $FD
+        LDA ZP_FRAME_COUNTER
         ORA #$80                        ; Force bit 7 of flicker mask
         STA SMC_SPRITE_MASK_ARG
         JSR DRAW_PLAYER                 ; Draw the intro sprite
@@ -14698,23 +14817,23 @@ LEVEL_INTRO_TICK:
 
 .wait_input:
         LDX #$01
-        STX $0E
-        STX $0A
-        LDA $83,X                       ; $84 --- per-level intro Y seed
+        STX ZP_HIT_GATE
+        STX ZP_FLOOR_MIRROR
+        LDA FLOOR_THRESH,X              ; FLOOR_THRESH[1] = $84: per-level intro Y seed
         STA ZP_INTRO_Y
         LDA #$00
-        STA $02                         ; Clear action flag
+        STA ZP_ACTION_DIR               ; Clear action flag
         LDA #$FF
-        STA $1D
-        LDX $41                         ; Entity-slot count
+        STA ZP_ENT_RESCUED
+        LDX ZP_HIT_MAX                  ; Entity-slot count
 .clear_entities:
-        STA $8D,X                       ; Mark slot inactive
+        STA ENTITY_HIT_STATE,X          ; Mark slot inactive
         DEX
         BPL .clear_entities
         LDA #$06
-        STA $03
+        STA ZP_PLAYER_STANCE
         LDA #$00
-        STA $01
+        STA ZP_LAST_DIR
         LDA KEYBOARD
         BMI .activate                   ; Key pressed --- start game
         LDY #$00
@@ -14729,7 +14848,7 @@ LEVEL_INTRO_TICK:
         LDA ZP_INTRO_TIMEOUT
         CMP #$F0
         BCC .prompt_draw
-        LDA $FD
+        LDA ZP_FRAME_COUNTER
         AND #$01
         BEQ .prompt_draw
         LDA ZP_INTRO_Y
@@ -14763,13 +14882,13 @@ LEVEL_INTRO_TICK:
 .activate:
         LDA ZP_INTRO_Y
         STA ZP_PLAYER_COL               ; Restore player column
-        LDA $0A
-        STA $09
-        STA $0C
-        STA $0B                         ; Seed $09, $0B, $0C from ZP_PLAYER_FLOOR
+        LDA ZP_FLOOR_MIRROR
+        STA ZP_BEAM_SEED_FLOOR
+        STA ZP_DSC_FLOOR
+        STA ZP_ASC_FLOOR                ; Seed floor-mirror, ascent, descent from ZP_FLOOR_MIRROR
         LDA #$01
-        STA $1E                         ; State = gameplay active
-        STA $0D
+        STA ZP_HIT_FLAG                 ; State = gameplay active
+        STA ZP_DSC_DIR
 RESUME_GAMEPLAY_SMC:
         ; Sub-entry: re-patch MAIN_LOOP's SMC slots to enable input
         ; dispatch and sprite rendering.  Called via [[JMP]] from
@@ -15340,7 +15459,7 @@ SPECIAL_DRAW:
         CMP ZP_SPECIAL_ROW
         BCC .dispatch_body              ; row > player_col+$12
         LDA #$FF
-        STA $1E                         ; Hit flag = $FF
+        STA ZP_HIT_FLAG                 ; Hit flag = $FF
 .dispatch_body:
         JMP SPECIAL_BODY_STEP1          ; SMC: operand bytes rewritten
 SMC_SPECIAL_BODY_LO = *-2               ;   by handlers+ to walk
@@ -17619,8 +17738,16 @@ SCREEN_ROW_ADDR_HI2:
 <<row copy click dead>>
 ; --- ORG $0200: Initial data tables on page 2 ---
 <<row copy data>>
-; --- ORG $02C6: Game data tables ---
-<<game data 02C6>>
+; --- ORG $02C6: LVL_INIT_SPRITE tail ---
+<<lvl init sprite tail data>>
+; --- ORG $02E2: LVL_INIT_INPUT (30-byte input block) ---
+<<lvl init input data>>
+; --- ORG $0300: TEXT_STRIP_SRC (column dither source) ---
+<<text strip src data>>
+; --- ORG $0328: Hit-entity BG-save tables (HIT_BG_HI/LO/BYTE1/BYTE0) ---
+<<hit bg tables data>>
+; --- ORG $0358: Rescue/entity state tables (FLOOR_COL/XOFF_IDX/FLOOR_POS/RESCUE_DIR) ---
+<<entity state tables data>>
 ; --- ORG $03A8: Entity state tables (active/anim/floor/countdown) ---
 <<entity tables 03A8>>
 ; --- ORG $03F8: Floor Y-coordinate table (disk-zero, FIRST_BOOT writes) ---

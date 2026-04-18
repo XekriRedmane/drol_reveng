@@ -38,3 +38,4 @@
 - [Drol RWTS dead residue](drol-rwts-dead-residue.md) — $BEFD JMP $1255 is padding; $BF4F JMP $28A0 is dead delegation whose $A0 $28 bytes form LDY #$28 at SCROLL_UP
 - [Drol INPUT_DISPATCH symbol cleanup](drol-input-dispatch-cleanup.md) — shared ZP EQUs ZP_ASC_FLOOR/ZP_DSC_FLOOR/ZP_DSC_DIR/ZP_ENT_RESCUED/ENTITY_HIT_Y live in drol-input-defines
 - [Drol $5ED4-$5FFF dead twin of RWTS](drol-stage-dead-tail.md) — pre-release twin of $BED4-$BFFF; SM refs at $5F25/$5F2B mutate live $BF21 not self
+- [Drol ZP-symbol sweep candidates](drol-zp-symbol-sweep-candidates.md) — grep pattern + alias-selection rules for periodic raw-$XX -> ZP_SYMBOL style passes

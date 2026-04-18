@@ -3,6 +3,7 @@
 - [Drol BCD score at $D1/$D2/$D3](drol-score-zp.md) — ZP_SCORE_HI/MID/LO; not "entity state"
 - [Drol difficulty tiers](drol-difficulty-tiers.md) — $31/$32/$33/$34/$35/$40 tier state set by DIFFICULTY_UPDATE ($719D)
 - [Drol beam subsystem](drol-beam-subsystem.md) — BEAM_UPDATE at $130A; $03FE/$03FF beam state, $0237/$023C tracer slots, $9B/$9F/$A3 enemies
+- [Drol BEAM_TARGET_TICK](drol-beam-target-tick.md) — $1230 idle/chase/attack state machine; attack flag is ORA #$F0, FLOOR_CEIL at $7E, ZP_BEAM_SEED_FLOOR at $09
 - [Drol entity-slot tick+draw pattern](drol-entity-slot-pattern.md) — 3 parallel enemy slots (A/B/C at $DC/$E0/$D4), all 6 tick+draw routines RE'd; A and B hit player, C hits floor-enemies
 - [Drol DRAW_PLAYER at $64DF](drol-draw-player.md) — main-loop player draw; NOT DRAW_ENTITIES phase-2 (which is perspective-grid sprite); gates on $02/$03, SMC patched by intro/complete
 - [Drol movement dispatch](drol-move-dispatch.md) — $04=ZP_MOVE_DIR (0/+/-); PLAYER_MOVE_TICK at $64CB routes to three tick handlers still inside game engine A HEX
@@ -17,3 +18,18 @@
 - [Level-1 extraction from drol.dsk](drol-level-data-extraction.md) — extract_level1.py replays loader phase-0 to produce reference/level1.bin for sprite art in $8C00-$BDFF
 - [Drol playfield-refresh routines](drol-playfield-refresh.md) — $61F0/$626A REFRESH_RIGHT_WALL/REFRESH_LEFT_WALL update HUD_LIVES_COL/HUD_SCORE_COL; $62E2 REFRESH_PILLARS is a no-op (slots never written)
 - [Drol floor-line refresh](drol-floor-lines.md) — $62CA REFRESH_FLOOR_LINES + FLOOR_LINES_P1/P2 ($08C8/$08DF) paint 4 reserved rows (67/107/147/187); animation table all-zero in all 4 shipped levels, effectively a per-frame spot-clean
+- [Drol level-state init blocks](drol-level-state-init.md) — LVL_INIT_HIT_Y/ENTITY/SPRITE/INPUT at $029A-$02FF copied by INIT_LEVEL_STATE ($11B8) into ZP
+- [Drol perspective-grid sprite-pointer tables](drol-perspective-grid-sprite-tables.md) — PLAYER/SPECIAL/COMPANION/ENTITY_GRID_SPR at $7542-$75DB / $7642-$76DB drive DRAW_ENTITIES phases 2-5
+- [Drol REFRESH_HIT_ENTITIES](drol-refresh-hit-entities.md) — $6321 redraws 12-slot hit-entity array ($66/$72/$8D,X); uses DRAW_SPRITE_OPAQUE not INTERLACE_BLIT; HIT_SPR_POS/NEG tables at $753B/$7507
+- [Drol HUD strip painter](drol-hud-strip-painter.md) — $08F6/$097A PAINT_HUD_STRIP_P1/P2 + $636C TEXT_ROW_DISPATCH paint 16×31 decoration at cols 12-27 rows 1-31 from HUD_STRIP_SRC=$A30D
+- [Drol screen-row-address tables](drol-screen-row-addr-tables.md) — $72C0/$7380/$7440 SCREEN_ROW_ADDR_HI/LO/HI2, 3×192-byte hi-res row-base tables; $72BC pad is 4 bytes of residue
+- [Drol row-copy click + dead variants](drol-row-copy-click.md) — $01B7 ROW_COPY_CLICK per-row wipe whistle; $01C4-$01EE is dead PRNG-variant code; SND_PITCH_TBL_A/B/C live in $0200-$02B6 data tables
+- [Drol TEXT_STRIP_SRC dither buffer](drol-text-strip-src.md) — 40-byte $0300-$0327 column-indexed $55/$2A dither source for CLEAR_PAGE1/2 and INTERLACE_RESTORE_P1/2
+- [Drol staging-buffers region](drol-stage-stack-region.md) — $5C00 STAGE_STACK is live SCREEN_ROW_COPY duplicate used as loader callback; rest of $5C00-$5FFF is dead install residue
+- [Drol floor-enemy subsystem](drol-floor-enemy-subsystem.md) — 4-slot $6683 FLOOR_ENEMY_ADVANCE + $673B FLOOR_ENEMY_DRAW; ZP $9B/$9F/$A3; advance now fully annotated; parallax +/- 5/7/9 by ZP_MOVE_DIR
+- [Drol jump-flag as spawn one-shot](drol-jump-flag-spawn.md) — ZP_JUMP_FLAG ($05) is BOTH jump key signal AND floor-enemy spawn gate; one spawn per jump press, gated by FLOOR_ENEMY_SPAWN_SCHED ($1CB8)
+- [Drol SND_DELAY helpers](drol-snd-delay-helpers.md) — $1091/$109E emit X speaker clicks via CMP (ZP_SFX_CLICK),Y with Y=0; pitch slides per iteration
+- [Drol movement action handlers](drol-movement-handlers.md) — DO_ASCEND/DESCEND/MOVE_LEFT/RIGHT at $6378-$64CA; four floor-idx mirrors $09/$0A/$0B/$0C; ZP_ENT_RESCUED $1D; DESC_LANDED_CLEAR tail interleaves DO_MOVE_RIGHT halves
+- [Drol player-tick handlers](drol-player-tick-handlers.md) — PLAYER_TICK_MOVE_LEFT/IDLE/MOVE_RIGHT at $614B/$6184/$619A + CLEAR_DRAW_PAGE $61E4; 7-step sub-frame pacing via ZP_SPRITE_XREF, motion at 4/7 frame-rate
+- [Drol floor-position lookup tables](drol-floor-position-tables.md) — FLOOR_TO_ROW/FLOOR_SPRITE_IDX/FLOOR_SCREEN_COL at $1D40/$1E00/$1F00; 697 bytes driving DRAW_ENTITIES perspective projection
+- [Drol perspective-grid lookup tables](drol-perspective-grid-data.md) — $188A-$1CED: FLOOR_BASE_ROW / PERSPECTIVE_XOFF_HI/LO / PROJ_FRAME_IDX / PROJ_SCREEN_COL / FLOOR_ENEMY_SPAWN_SCHED (7 sub-tables, 1124 bytes)

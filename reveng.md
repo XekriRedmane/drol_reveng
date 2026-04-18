@@ -372,6 +372,16 @@ then `python3 .claude/skills/assemble/verify.py <target>` for each of
 All targets must be byte-perfect. If any target diverges, roll back the
 offending edit and re-verify. Do not commit a red build.
 
+Then run the `/gen-pdf` skill (or equivalently the steps in
+`.claude/skills/gen-pdf/SKILL.md`: `mkdir -p output`, tangle, copy
+`noweb.sty` and `images/`, regenerate `font_data.tex` and
+`mob_font_data.tex`, then run `pdflatex main.tex` twice from `output/`).
+The PDF must build cleanly — `pdflatex` should finish without an error
+exit code. Undefined-reference and overfull-hbox warnings are
+acceptable, but LaTeX errors (missing chunk, bad `[[ ]]`, undefined
+control sequence) must be fixed before committing. Do not commit a PDF
+that fails to build.
+
 ### 3. Commit and push
 
 Once verification is green, stage the round's changes, commit with a

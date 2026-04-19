@@ -2005,9 +2005,16 @@ SCREEN_RESTORE:
         BNE .clear_page
         RTS
 
-; Data bytes (purpose unclear, possibly sprite data or flags).
+; RWTS_DEAD_PAD ($BEDE-$BEDF, 2 bytes): dead residue between
+; SCREEN_RESTORE's closing RTS and COPY_ROM_TO_LC's opening LDA.
+; Not read or executed in any shipped binary --- an earlier prose
+; comment speculated "sprite data or flags" but a byte-level search
+; of every shipped binary (boot1/loader/rwts/drol/level1) finds no
+; 3-byte opcode whose operand is $BEDE.  The bytes are preserved for
+; byte-exact matching against rwts.bin and have no runtime role.
+RWTS_DEAD_PAD:
         HEX 80 83
-@ %def SCREEN_PRE_RESTORE SCREEN_RESTORE
+@ %def SCREEN_PRE_RESTORE SCREEN_RESTORE RWTS_DEAD_PAD
 
 \section{Copy ROM to language card}
 
@@ -3972,23 +3979,49 @@ DISPLAY_UPDATE:
 \section{Score and status display}
 
 [[POST_FRAME]] runs after each game frame to draw the score and
-status digits on the screen. It extracts BCD nibbles from ZP~[[$D1]],
-[[$D2]], and~[[$D3]], and draws each digit at a specific column position. The
-level-state flag ([[$5E]]) is also drawn as two digits.
+status digits on the screen. It extracts BCD nibbles from
+[[ZP_SCORE_HI]], [[ZP_SCORE_MID]], and~[[ZP_SCORE_LO]], and draws each
+digit at a specific column position.  The BCD lives counter
+([[ZP_LIVES_BCD]]) is also drawn as two digits.
 
 Two helper sub-entries exist:
 \begin{itemize}
 \item [[DRAW_DIGIT_SHORT]] sets width/height/row to 1/6/[[$0C]]
   before falling through.
-\item [[DRAW_DIGIT]] looks up digit tile data from tables at
-  [[DIGIT_TILE_LO]] (low) and [[DIGIT_TILE_HI]] (high), stores it at
-  [[SMC_TILE_SRC_LO]]/[[SMC_TILE_SRC_HI]], and calls
-  [[DRAW_SPRITE_OPAQUE]].
+\item [[DRAW_DIGIT]] looks up a pointer from the 10-entry tables
+  [[DIGIT_TILE_LO]] / [[DIGIT_TILE_HI]] (indexed by the BCD nibble
+  0--9), patches [[SMC_TILE_SRC_LO]] / [[SMC_TILE_SRC_HI]] inside
+  [[DRAW_SPRITE_OPAQUE]], and calls the opaque blitter to
+  overwrite the HUD-strip dither pattern with the digit glyph.
 \end{itemize}
 
 The digit positions (column values stored in~[[ZP_SPRITE_X]]) are:
 2, 4, 6, 8, and~10 for the five nibbles of D1--D3; columns~6 and~4
 for the level-state digits.
+
+\paragraph{Digit tile data.}  All ten HUD digit glyphs live
+contiguously in the level-1 swappable bank at [[DIGIT_TILE_DATA]]
+([[$B4B1]]--[[$B528]], 120 bytes: ten 12-byte glyphs, each
+$2\times 6$ bytes matching [[ZP_SPRITE_W]]~=~[[$01]] /
+[[ZP_SPRITE_H]]~=~[[$06]]).  The pointer tables
+[[DIGIT_TILE_LO]] / [[DIGIT_TILE_HI]] sit one page below the main
+[[SPRITE_TABLE_LO]] / [[SPRITE_TABLE_HI]] pointer bank and
+coincidentally resolve to the same ten glyph addresses.  Each byte
+has its high bit set to select the blue/orange palette so the
+digits render in blue on the HUD strip's violet-and-white dither.
+Figure~\ref{fig:digit_tiles} shows the decoded glyph forms.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{images/digit_tiles.png}
+\caption{[[DIGIT_TILE_DATA]] ([[$B4B1]]--[[$B528]]), ten
+[[$02]]$\times$[[$06]] HUD digit glyphs blitted by
+[[POST_FRAME]] and [[DISPLAY_UPDATE]] via [[DRAW_SPRITE_OPAQUE]].
+On-pixels are rendered here in blue; the surrounding black is
+``transparent'' for the purposes of the figure but in the game it
+overwrites whatever dither was beneath (opaque blit).}
+\label{fig:digit_tiles}
+\end{figure}
 
 <<post frame>>=
 
@@ -3998,8 +4031,8 @@ POST_FRAME:
         ; Score and status display -- draws BCD digits each frame.
         ;
         ; Inputs:
-        ;   ZP_SCORE_HI/MID/LO ($D1/$D2/$D3) -- BCD score
-        ;   ZP_LIVES_BCD -- BCD lives counter drawn as two HUD digits
+        ;   ZP_SCORE_HI/MID/LO -- 3-byte BCD score (packed nibbles)
+        ;   ZP_LIVES_BCD       -- BCD lives counter drawn as two HUD digits
         ;
         ; Modifies:
         ;   Sprite parameters, SMC_TILE_SRC_LO/HI
@@ -11718,11 +11751,17 @@ STAGE_DEAD_LDR_TRACK:
 
 <<stage dead scroll defines>>=
 
-; --- Cross-target reference: SCREEN_ADDR_TBL is defined as a label in
-; rwts.asm at $BFC0.  Both stage-dead scroll-up/down twins read
-; through this live table even though they are dead code here, so we
-; introduce a local EQU for drol.asm's assembly pass.
+; --- Cross-target references: the stage-dead scroll twins mirror the
+; live RWTS routines that use ZP_RWTS_PTR / ZP_RWTS_PTR2 (defined in
+; rwts.asm) as destination/source pointer pairs, and they read from
+; the post-relocation SCREEN_ADDR_TBL (also in rwts.asm) plus the live
+; TEXT_STRIP_SRC (defined in drol.asm's clear-page1 defines chunk).
+; Introduce local ZP EQUs matching the rwts.asm names for symbolic
+; parity; TEXT_STRIP_SRC is visible here via the collection-chunk
+; ordering so no redefine is needed.
 SCREEN_ADDR_TBL = $BFC0         ; 32 pairs of hi-res page-2 row addresses
+ZP_RWTS_PTR     = $A0           ; 16-bit dest pointer (lo/hi at $A0/$A1)
+ZP_RWTS_PTR2    = $A2           ; 16-bit source pointer (lo/hi at $A2/$A3)
 @
 
 <<stage dead scroll up>>=
@@ -11745,26 +11784,26 @@ STAGE_DEAD_SCROLL_UP_PRE:
 STAGE_DEAD_SCROLL_UP = STAGE_DEAD_SCROLL_UP_PRE + 5
 .skip:
         LDA #$40
-        STY $A0
-        STA $A1
+        STY ZP_RWTS_PTR                 ; lo <- Y (0 via BEQ, $28 via SCROLL_UP)
+        STA ZP_RWTS_PTR+1               ; hi <- #$40 (buffer page = $40xx)
         LDX #$00
 .copy_line:
         LDA SCREEN_ADDR_TBL,X           ; post-relocation live table (not this chunk's local twin)
-        STA $A2
+        STA ZP_RWTS_PTR2
         LDA SCREEN_ADDR_TBL+1,X
-        STA $A3
+        STA ZP_RWTS_PTR2+1
         LDY #$27
 .copy_byte:
-        LDA ($A2),Y
-        STA ($A0),Y
+        LDA (ZP_RWTS_PTR2),Y            ; read from screen
+        STA (ZP_RWTS_PTR),Y              ; write to buffer
         DEY
         BPL .copy_byte
         CLC
-        LDA $A0
+        LDA ZP_RWTS_PTR
         ADC #$28
-        STA $A0
+        STA ZP_RWTS_PTR
         BCC .no_carry
-        INC $A1
+        INC ZP_RWTS_PTR+1
 .no_carry:
         INX
         INX
@@ -21101,22 +21140,45 @@ broken out of these blobs into labelled chunks the same way the
         HEX 7F 7F 7F 7F 78 7C 7E 7F
         HEX 7F 7F 7F 7F 7F 60 70 78
         HEX 7F 7F 7F 7F 7F 7F 00 40
-        HEX 60 82 D4 8A C5 8A C5 8A
-        HEX C5 8A C5 82 D4 82 D0 82
-        HEX D4 82 D0 82 D0 82 D0 8A
-        HEX D4 82 D4 8A C5 8A C0 82
-        HEX D4 00 95 8A D5 82 D4 8A
-        HEX C5 82 D0 8A C0 8A C5 82
-        HEX D4 8A C4 8A C5 8A C5 8A
-        HEX C5 8A D4 8A C0 8A D5 00
-        HEX 95 82 D5 8A C0 8A C5 82
-        HEX D4 82 D4 00 95 82 D5 8A
-        HEX 95 8A 95 82 D4 82 D4 8A
-        HEX C5 8A C0 8A D0 82 D0 82
-        HEX D0 82 D4 8A 95 82 D4 8A
-        HEX 95 8A 95 82 D4 82 D4 8A
-        HEX C5 8A C5 8A D4 8A C0 82
-        HEX D5 00 81 80 00 85 A0 00
+        HEX 60
+@
+
+<<digit tile data>>=
+
+        ORG $B4B1
+DIGIT_TILE_DATA:
+        ; 10 digit glyphs (0..9), 2 bytes per row x 6 rows = 12 bytes each.
+        ; Pixel format matches DRAW_SPRITE_OPAQUE with ZP_SPRITE_W = 1 and
+        ; ZP_SPRITE_H = 6: row-major, rightmost byte first within each row
+        ; (DEX loops leftward from ZP_SPRITE_X).  High bit set on most
+        ; bytes selects the blue/orange palette so the HUD digits render
+        ; in blue on the decorative strip.
+        HEX 82 D4 8A C5 8A C5    ; '0' ($B4B1) rows 0-2
+        HEX 8A C5 8A C5 82 D4    ; '0'         rows 3-5
+        HEX 82 D0 82 D4 82 D0    ; '1' ($B4BD) rows 0-2
+        HEX 82 D0 82 D0 8A D4    ; '1'         rows 3-5
+        HEX 82 D4 8A C5 8A C0    ; '2' ($B4C9) rows 0-2
+        HEX 82 D4 00 95 8A D5    ; '2'         rows 3-5
+        HEX 82 D4 8A C5 82 D0    ; '3' ($B4D5) rows 0-2
+        HEX 8A C0 8A C5 82 D4    ; '3'         rows 3-5
+        HEX 8A C4 8A C5 8A C5    ; '4' ($B4E1) rows 0-2
+        HEX 8A C5 8A D4 8A C0    ; '4'         rows 3-5
+        HEX 8A D5 00 95 82 D5    ; '5' ($B4ED) rows 0-2
+        HEX 8A C0 8A C5 82 D4    ; '5'         rows 3-5
+        HEX 82 D4 00 95 82 D5    ; '6' ($B4F9) rows 0-2
+        HEX 8A 95 8A 95 82 D4    ; '6'         rows 3-5
+        HEX 82 D4 8A C5 8A C0    ; '7' ($B505) rows 0-2
+        HEX 8A D0 82 D0 82 D0    ; '7'         rows 3-5
+        HEX 82 D4 8A 95 82 D4    ; '8' ($B511) rows 0-2
+        HEX 8A 95 8A 95 82 D4    ; '8'         rows 3-5
+        HEX 82 D4 8A C5 8A C5    ; '9' ($B51D) rows 0-2
+        HEX 8A D4 8A C0 82 D5    ; '9'         rows 3-5
+@ %def DIGIT_TILE_DATA
+
+<<level1 pages 8C-BD tail>>=
+
+        ORG $B529
+        HEX 00 81 80 00 85 A0 00
         HEX 96 E8 00 85 A0 00 00 00
         HEX 00 00 85 A8 00 80 95 AA
         HEX 00 80 D5 AA C0 80 D5 AA
@@ -21485,8 +21547,12 @@ MON_WAIT        = $FCA8         ; Monitor WAIT (delay loop, A = duration)
 ; --- $7500-$7AFF: screen-row tables and sprite fragments ---
 <<level1 pages 75-7A>>
 <<level1 gap 4>>
-; --- $8C00-$BDFF: level-only sprites + end-game handler ---
+; --- $8C00-$B4B0: level-only sprite pixel data (head) ---
 <<level1 pages 8C-BD>>
+; --- $B4B1-$B528: DIGIT_TILE_DATA (10 HUD digit glyphs) ---
+<<digit tile data>>
+; --- $B529-$BD9F: level-only sprite pixel data (tail) ---
+<<level1 pages 8C-BD tail>>
 ; --- $BDA0-$BDFF: end-of-game handler (GAME_OVER) ---
 <<level1 game over>>
 @

@@ -53,3 +53,4 @@
 - [Soft-switch symbol block](drol-soft-switch-symbols.md) — SW_CASSOUT ($C020) + SW_PAGE2 ($C055) added; ZP_DEAD_SLOT_46 covers GAME_RESTART's dead store
 - [PILLAR_SLOT_Y at ZP $60-$65](drol-pillar-slot-y.md) — 6-byte read-only ZP array of world-Y landmark positions consumed by REFRESH_PILLARS; never written at runtime
 - [$0274-$0299 dead-residue decomp](drol-page2-dead-residue.md) — 4 PAGE2_DEAD_* labels + 3 LVL_INIT_*_DATA chunks; span is all-zeros in level1.bin
+- [DIGIT_TILE_DATA at $B4B1](drol-digit-tile-data.md) — 10 HUD digit glyphs W=1 H=6 12 bytes each; pointer tables DIGIT_TILE_LO/HI are one 'page' below SPRITE_TABLE_LO/HI

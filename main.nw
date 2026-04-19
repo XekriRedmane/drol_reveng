@@ -19043,44 +19043,188 @@ page range.  As level-1 code and data are identified, they will be
 broken out of these blobs into labelled chunks the same way the
 \texttt{drol}-target chunks have been.
 
+\subsection{Page 02: shared data tables and LVL\_INIT seeds}
 
-<<level1 page 02>>=
+The [[$0200]]--[[$02FF]] page in \texttt{level1.bin} is byte-identical to
+the same page in \texttt{drol.bin} --- the loader's first-boot pass
+drops this content from track~1 and every subsequent level-swap phase
+leaves these 256 bytes untouched.  The \texttt{drol} target decomposes
+the page into 11 labelled sub-chunks (sound tables + wipe buffer +
+[[LVL_INIT_*]] seeds + dead pre-release records); the level~1 target
+mirrors that decomposition with [[L1_]]-prefixed labels so the
+byte-exact output matches without colliding with the authoritative
+\texttt{drol} symbols.  Consult [[<<row copy data>>]],
+[[<<page2 dead zeros>>]]..[[<<page2 dead records>>]] and
+[[<<lvl init hit y data>>]]..[[<<lvl init input data>>]] in the
+\texttt{drol} chapter for the per-field analysis; the level~1 chunks
+below carry the same byte sequences and are cross-referenced for
+anchor consistency.
+
+<<level1 row copy data>>=
 
         ORG $0200
-        ; Level-1 raw bytes $0200-$02FF (256 bytes).
+L1_LEVEL_INTRO_TONES:
+        ; $0200-$0212 (19 bytes): level-intro tone amplitudes indexed
+        ; by ZP_INTRO_COUNTDOWN.  Mirrors drol's LEVEL_DATA_BASE.
         HEX 20 19 05 09 02 04 10 1E
         HEX 1A 2A 04 05 09 02 04 10
-        HEX 1E 09 04 07 0C 10 13 15
+        HEX 1E 09 04
+L1_RESCUE_DRIFT_PITCH:
+        ; $0213-$0217 (5 bytes): RESCUE_DRIFT_PITCH drift-mode pitch.
+        HEX 07 0C 10 13 15
+L1_SND_PITCH_TBL_SPECIAL:
+        ; $0218-$0223 (12 bytes): ascending pitch for special-sprite
+        ; sfx; last 5 bytes double as SND_PITCH_TBL_SPECIAL_B.
         HEX 14 12 09 0E 10 13 16 15
-        HEX 17 1A 1C 1E 1E 1A 17 14
-        HEX 11 1A 0C 08 11 1C 16 0C
-        HEX 0F 10 12 14 0C 16 0E FF
-        HEX FF FF FF FF 00 00 00 00
-        HEX 00 1E 09 16 18 1B 0A 07
-        HEX 05 1E 1B 19 3E 57 2B 57
+        HEX 17 1A 1C 1E
+L1_SND_PITCH_TBL_C:
+        ; $0224-$022B (8 bytes): enemy-C click pitches; tail overlaps
+        ; SND_PITCH_TBL_A at $0229-$022B.
+        HEX 1E 1A 17 14 11 1A 0C 08
+L1_SND_PITCH_TBL_A_TAIL:
+        ; $022C-$0230 (5 bytes) completing SND_PITCH_TBL_A to 8 bytes.
+        HEX 11 1C 16 0C 0F
+L1_SND_PITCH_TBL_B:
+        ; $0231-$0236 (6 bytes): enemy-B click pitches.
+        HEX 10 12 14 0C 16 0E
+L1_TRACER_STATE:
+        ; $0237-$023B (5 slots, $FF=inactive).
+        HEX FF FF FF FF FF
+L1_TRACER_ROW:
+        ; $023C-$0240 (5 slots, $00).
+        HEX 00 00 00 00 00
+L1_BEAM_JINGLE:
+        ; $0241-$024B (11 bytes): post-hit jingle pitches read via
+        ; ZP_BEAM_SND_CTR after a successful beam hit.
+        HEX 1E 09 16 18 1B 0A 07 05
+        HEX 1E 1B 19
+L1_ROW_COPY_BUFFER:
+        ; $024C-$0273 (40 bytes): title-wipe pattern consumed by
+        ; SCREEN_ROW_COPY --- every screen row is overwritten with this
+        ; sequence during the title/restore wipe.
+        HEX 3E 57 2B 57
         HEX 6A 55 2A 75 2A 55 2A 55
         HEX 3A 55 2A 55 2A 55 2A 55
         HEX 2B 55 2A 55 2A 55 2A 5D
         HEX 2A 55 2A 55 2E 55 2A 57
-        HEX 6A 55 6B 7D 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 D4 82 D4 82 D4 82 D4
-        HEX 82 D4 82 2A 00 07 00 40
-        HEX 03 00 60 41 02 07 00 40
-        HEX 03 00 0A 0F 01 3C 00 A0
+        HEX 6A 55 6B 7D
+@ %def L1_LEVEL_INTRO_TONES L1_RESCUE_DRIFT_PITCH L1_SND_PITCH_TBL_SPECIAL
+@ %def L1_SND_PITCH_TBL_C L1_SND_PITCH_TBL_A_TAIL L1_SND_PITCH_TBL_B
+@ %def L1_TRACER_STATE L1_TRACER_ROW L1_BEAM_JINGLE L1_ROW_COPY_BUFFER
+
+<<level1 page2 dead zeros>>=
+
+        ORG $0274
+L1_PAGE2_DEAD_ZEROS:
+        ; 13 bytes of $00 ($0274-$0280).  Tail of the sector image
+        ; that ships on track 1; not read by any shipped routine and
+        ; overwritten to $00 by the first level-swap phase-0 reload.
+        DS 13,$00
+@ %def L1_PAGE2_DEAD_ZEROS
+
+<<level1 page2 dead dither>>=
+
+        ORG $0281
+L1_PAGE2_DEAD_DITHER:
+        ; 10 bytes of $D4/$82 hi-res stripe pattern ($0281-$028A).
+        ; Unused pre-release dither; overwritten to $00 on level swap.
+        HEX D4 82 D4 82 D4 82 D4 82
+        HEX D4 82
+@ %def L1_PAGE2_DEAD_DITHER
+
+<<level1 page2 dead sep>>=
+
+        ORG $028B
+L1_PAGE2_DEAD_SEP:
+        ; Single $2A separator byte between L1_PAGE2_DEAD_DITHER
+        ; and L1_PAGE2_DEAD_RECORDS.
+        HEX 2A
+@ %def L1_PAGE2_DEAD_SEP
+
+<<level1 page2 dead records>>=
+
+        ORG $028C
+L1_PAGE2_DEAD_RECORDS:
+        ; Two 7-byte pre-release entity-init records ($028C-$0299).
+        ; Second record is a 5-byte shifted copy of the first; no
+        ; runtime reference.
+        HEX 00 07 00 40 03 00 60
+        HEX 41 02 07 00 40 03 00
+@ %def L1_PAGE2_DEAD_RECORDS
+
+<<level1 lvl init hit y data>>=
+
+        ORG $029A
+L1_LVL_INIT_HIT_Y_DATA:
+        ; $029A-$029B (2 bytes): the Y-window pair copied into
+        ; ZP_HIT_Y_OFFSET/SPAN by INIT_LEVEL_STATE at level entry.
+        HEX 0A 0F
+@ %def L1_LVL_INIT_HIT_Y_DATA
+
+<<level1 lvl init entity data>>=
+
+        ORG $029C
+L1_LVL_INIT_ENTITY_DATA:
+        ; $029C-$02B4 (25 bytes): copied into ZP_ENTITY_BLOCK
+        ; ($D4-$EC) by INIT_LEVEL_STATE.  Seeds enemy A/B/C state +
+        ; attract-mode entity Y positions.
+        HEX 01 3C 00 A0
         HEX 00 88 CC EE 01 3E 00 A5
         HEX 01 5A 03 80 FF 11 14 16
-        HEX 18 6A 6A 6A 6A 01 01 01
-        HEX 01 00 FF FF FF FF FF FF
-        HEX FF FF FF FF FF FF 00 00
+        HEX 18 6A 6A 6A 6A
+@ %def L1_LVL_INIT_ENTITY_DATA
+
+<<level1 lvl init sprite head data>>=
+
+        ORG $02B5
+L1_LVL_INIT_SPRITE_HEAD:
+        ; $02B5-$02B9 (5 bytes): head of LVL_INIT_SPRITE; the 12-byte
+        ; $FF span at $02BA-$02C5 (ENTITY_HIT_STATE seed) and the
+        ; 28-byte tail at $02C6-$02E1 live in the following chunks.
+        HEX 01 01 01 01 00
+@ %def L1_LVL_INIT_SPRITE_HEAD
+
+<<level1 lvl init entity hit state data>>=
+
+        ORG $02BA
+L1_LVL_INIT_ENTITY_HIT_STATE:
+        ; $02BA-$02C5 (12 bytes of $FF): per-level seed for the 12-slot
+        ; ENTITY_HIT_STATE array at ZP $8D-$98.  INIT_LEVEL_STATE
+        ; copies LVL_INIT_SPRITE[$00..$2C] into ZP $88-$B4, so these
+        ; 12 bytes land at ZP_HIT_STATE[0..11] and seed every slot to
+        ; ``inactive.''
+        DS 12,$FF
+@ %def L1_LVL_INIT_ENTITY_HIT_STATE
+
+<<level1 lvl init sprite tail data>>=
+
+        ORG $02C6
+L1_LVL_INIT_SPRITE_TAIL_DATA:
+        ; $02C6-$02E1 (28 bytes): tail of LVL_INIT_SPRITE.  The zero
+        ; head at $02C6-$02D7 becomes ZP $99-$AA; the non-zero bytes
+        ; $02D8-$02E1 seed the live special / projectile state
+        ; ($AB-$B4) used by SPECIAL_TICK, COMPANION_UPDATE and the
+        ; entity-B/C draw paths.
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 01 5A 03 4D 00 00 01 FF
-        HEX 01 01 00 00 06 00 00 30
-        HEX 00 04 01 01 01 01 01 01
-        HEX 00 00 40 50 00 03 3B 63
-        HEX 00 00 00 30 C0 00 FF 01
-@
+        HEX 00 00 01 5A 03 4D 00 00
+        HEX 01 FF 01 01
+@ %def L1_LVL_INIT_SPRITE_TAIL_DATA
+
+<<level1 lvl init input data>>=
+
+        ORG $02E2
+L1_LVL_INIT_INPUT_DATA:
+        ; $02E2-$02FF (30 bytes) copied by INIT_LEVEL_STATE into
+        ; ZP_INPUT_BLOCK ($01-$1E).  Per-level seed for the
+        ; input/direction state: key code, ZP_LAST_DIR, ZP_JUMP_FLAG,
+        ; the sprite/walk counters, BEAM/TRACER state slots, the
+        ; INTRO countdown ZP and the level-intro state flag at ZP $1E.
+        HEX 00 00 06 00 00 30 00 04
+        HEX 01 01 01 01 01 01 00 00
+        HEX 40 50 00 03 3B 63 00 00
+        HEX 00 30 C0 00 FF 01
+@ %def L1_LVL_INIT_INPUT_DATA
 
 <<level1 pages 13-18>>=
 
@@ -21765,8 +21909,20 @@ MON_WAIT        = $FCA8         ; Monitor WAIT (delay loop, A = duration)
 <<level1 defines>>
 <<level1 game over defines>>
 <<level1 prologue>>
-; --- $0200: initial ZP-restore data page ---
-<<level1 page 02>>
+; --- $0200-$0273: sound tables + title-wipe row buffer ---
+<<level1 row copy data>>
+; --- $0274-$0299: pre-release dead residue (zeros / dither / records) ---
+<<level1 page2 dead zeros>>
+<<level1 page2 dead dither>>
+<<level1 page2 dead sep>>
+<<level1 page2 dead records>>
+; --- $029A-$02FF: LVL_INIT_* seeds consumed by INIT_LEVEL_STATE ---
+<<level1 lvl init hit y data>>
+<<level1 lvl init entity data>>
+<<level1 lvl init sprite head data>>
+<<level1 lvl init entity hit state data>>
+<<level1 lvl init sprite tail data>>
+<<level1 lvl init input data>>
 <<level1 gap 1>>
 ; --- $1300-$18FF: attract-mode animations and enemy/beam code ---
 <<level1 pages 13-18>>

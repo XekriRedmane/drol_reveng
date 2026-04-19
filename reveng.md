@@ -349,27 +349,39 @@ After the main RE work, pass over `main.nw` and apply the style rules in
   `[[SYMBOL]]` or `[[$XXXX]]` — never bare `\$XXXX`, never `[[\$XXXX]]`.
 - **TODO-SYM elimination.** Every round must try to clear as many existing
   `TODO-SYM` markers as possible — not just the ones this round introduced.
+  `TODO-SYM` flags any raw numeric literal that could become a symbol.
+  The number may be:
+  - an **address** (code, data, ZP slot, ROM entry),
+  - a **constant** (record-field offset, bitmask, state-value sentinel,
+    sprite id, score delta, threshold, timer seed, opcode byte), or
+  - any other magic literal that readers would want named.
+
   Grep `main.nw` for `TODO-SYM` and for each hit, decide:
-  - If a label/EQU now exists for that address, replace the raw
+  - If a label/EQU now exists for the value, replace the raw
     `[[$XXXX]]` / `[[$XXX]]` / `[[$XX]]` with `[[SYMBOL]]` and remove the
-    marker. The rule applies to addresses of any width — 2-digit
-    zero-page (`[[$5B]]`), 3-digit (`[[$1FF]]`), and 4-digit (`[[$629E]]`)
-    alike. Do not skip the 2-digit zero-page cases: they are often the
-    easiest to symbolize because a ZP EQU frequently exists already.
+    marker. The rule applies to literals of any width — 2-digit
+    (`[[$5B]]`, `[[$1C]]`), 3-digit (`[[$1FF]]`), and 4-digit (`[[$629E]]`)
+    alike. Do not skip the 2-digit cases: small hex values are commonly
+    zero-page addresses with existing ZP EQUs, record offsets with
+    existing offset EQUs, or state constants with existing symbolic names.
+  - If no symbol exists but the value is a meaningful constant
+    (frequently-referenced record offset, bitmask, state sentinel), that
+    round is a good opportunity to **introduce a new EQU** and then
+    symbol-replace. Prefer this to deferring indefinitely.
   - If the number is not actually needed to communicate the sentence's
-    point (e.g. the prose already says what the address is, or the
+    point (e.g. the prose already says what the value is, or the
     surrounding sentence refers to a region that's now a labeled chunk),
-    drop the address entirely and remove the marker.
-  - If the address is still unsymbolized and the number is load-bearing,
+    drop the literal entirely and remove the marker.
+  - If the value is still unsymbolized and the number is load-bearing,
     leave the marker in place — but document in the round summary why it
     couldn't be resolved this round. Uninvestigated `TODO-SYM`s are not
     acceptable; every marker must have been looked at.
 
-  Also do a second sweep for **unflagged raw-hex prose addresses** —
-  `[[$XX]]` / `[[$XXX]]` / `[[$XXXX]]` occurrences that lack a
-  `TODO-SYM` marker but where a symbol now exists. These are common
-  because earlier rounds introduced labels after the prose was written.
-  Symbol-replace them too.
+  Also do a second sweep for **unflagged raw-hex prose literals** —
+  `[[$XX]]` / `[[$XXX]]` / `[[$XXXX]]` occurrences (addresses or
+  constants) that lack a `TODO-SYM` marker but where a symbol now
+  exists. These are common because earlier rounds introduced labels
+  after the prose was written. Symbol-replace them too.
 
   The round summary must include a `TODO-SYM` count delta (before vs.
   after) so regressions are visible.

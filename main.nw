@@ -1627,6 +1627,36 @@ the loader itself; the game calls into it directly.
 
 <<rwts defines>>=
 
+; --- Zero-page scratch pointers ---
+; $A0/$A1 and $A2/$A3 serve as the two generic 16-bit scratch
+; pointer pairs used across the RWTS block.  Each routine reuses
+; them for its own purpose:
+;   RWTS_RELOAD:    INC $A0/$A1 bumps the SCROLL_UP buffer pointer.
+;   NIBBLE_READER:  $A0 is the nibble-combine scratch byte (NOT a
+;                   pointer); $A1 is the destination-page counter;
+;                   $A2/$A3 is the nibble-decode destination pointer.
+;   SCREEN_RESTORE: $A0/$A1 is the hi-res-line or screen-hole
+;                   destination pointer.
+;   COPY_ROM_TO_LC: $A0/$A1 is simultaneously ROM source and LC
+;                   destination (same address, different bank).
+;   SCROLL_UP/DN:   $A0/$A1 is the buffer pointer, $A2/$A3 is the
+;                   hi-res screen-row pointer.
+; Named generically so all the above contexts share the same symbol.
+; The $A0 byte is ALSO used as a non-pointer scratch in NIBBLE_READER
+; (nibble combiner), where the low-byte alias ZP_RWTS_SCRATCH is
+; preferred for clarity.
+ZP_RWTS_PTR     = $A0           ; 16-bit scratch pointer (lo/hi at $A0/$A1)
+ZP_RWTS_SCRATCH = $A0           ; Low-byte alias (nibble combine temp)
+ZP_RWTS_PAGECNT = $A1           ; High-byte alias (nibble page counter)
+ZP_RWTS_PTR2    = $A2           ; 16-bit scratch pointer #2 ($A2/$A3)
+
+; $CE/$CF, $DA/$DB, $E6/$E7 are the DIVIDE routine's operand words.
+; The dividend is shifted out as the quotient after 16 iterations,
+; and the remainder accumulates in $E6/$E7.
+ZP_DIV_DIVIDEND = $CE           ; 16-bit dividend (shifted -> quotient)
+ZP_DIV_DIVISOR  = $DA           ; 16-bit divisor
+ZP_DIV_REMAINDER = $E6          ; 16-bit remainder
+
 ; --- Loader addresses ---
 LOADER_ENTRY    = $5000
 ; STAGE_STACK lives at $5C00 in the game binary (real label).  The RWTS
@@ -1695,13 +1725,13 @@ RWTS_RELOAD:
         ;   calls LOADER_ENTRY, then jumps to SCREEN_RESTORE.
         ;
         ; Modifies:
-        ;   RWTS_ENTRY-$57FF (loader restored), $A0-$A1, screen buffer
+        ;   RWTS_ENTRY-$57FF (loader restored), ZP_RWTS_PTR, screen buffer
         ; Clobbers: A, X
         LDX LDR_SLOT
         LDA DISK_MOTOR_ON,X    ; Turn motor on
         JSR SCROLL_UP          ; Save screen content
-        INC $A0                ; Adjust buffer pointer
-        INC $A1
+        INC ZP_RWTS_PTR        ; Bump pointer lo past buffer header
+        INC ZP_RWTS_PTR+1      ; Bump pointer hi
         LDX LDR_SLOT
 
 ; Self-modifying loop: copy $D000-$D7FF to RWTS_ENTRY-$57FF (restore loader).
@@ -1729,9 +1759,9 @@ JMP_TO_RESTORE:
 \section{Sector data reader}
 
 An alternate sector data reader at [[$BE37]] reads odd/even nibble-encoded
-data directly into memory via the [[$A2]]/[[$A3]] pointer. It reads
+data directly into memory via the [[ZP_RWTS_PTR2]] pointer. It reads
 256-byte blocks in a loop, checking for a [[$D4]] marker between blocks,
-and repeats until a page counter at [[$A1]] reaches zero.  % TODO-SYM: $A1
+and repeats until a page counter at [[ZP_RWTS_PAGECNT]] reaches zero.
 
 Note: the entry at [[$BE37]] overlaps with the last byte of the [[JMP]]
 instruction at [[$BE35]]. The byte [[$BE]] at that position serves double duty  % TODO-SYM: $BE
@@ -1740,7 +1770,8 @@ as both the high byte of the JMP target and the LDX abs,Y opcode.
 <<nibble reader>>=
 
         ORG $BE38
-; Read odd/even nibble-encoded sector data into memory via ZP_UNPACK_DEST/ZP_ENEMY_Y, $A1 pages.
+; Read odd/even nibble-encoded sector data into memory via ZP_RWTS_PTR2,
+; ZP_RWTS_PAGECNT pages.
 ; $BE37 is the 3rd byte of the JMP above. When branched to, $BE serves
 ; as the LDX abs,Y opcode: LDX $C08C,Y.
 NIBBLE_READER = $BE37               ; Overlaps with 3rd byte of JMP above
@@ -1751,12 +1782,12 @@ NIBBLE_READER = $BE37               ; Overlaps with 3rd byte of JMP above
         DC.B $8C,$C0           ; ...continuation of LDX DISK_DATA,Y
         DC.B $10,$FB           ; BPL NIBBLE_READER
         ROL                    ; Shift odd nibble into position
-        STA $A0                ; Save partial
+        STA ZP_RWTS_SCRATCH    ; Save partial (low byte of ZP_RWTS_PTR, reused)
 .wait_even:
         LDA DISK_DATA,X        ; Wait for even nibble
         BPL .wait_even
-        AND $A0                ; Combine odd+even
-        STA ($A2),Y            ; Store decoded byte
+        AND ZP_RWTS_SCRATCH    ; Combine odd+even
+        STA (ZP_RWTS_PTR2),Y   ; Store decoded byte
         INY
         BNE NIBBLE_READER      ; Loop 256 times (branches to NIBBLE_READER)
 
@@ -1767,8 +1798,8 @@ NIBBLE_READER = $BE37               ; Overlaps with 3rd byte of JMP above
         BPL .wait_sync
         CMP #$D4               ; Sync byte between sectors
         BNE RWTS_RELOAD+$10    ; Mismatch: retry from page setup ($BE10)
-        INC $A3                ; Next destination page
-        DEC $A1                ; Decrement block count
+        INC ZP_RWTS_PTR2+1     ; Next destination page
+        DEC ZP_RWTS_PAGECNT    ; Decrement block count
         BNE NIBBLE_READER      ; More blocks: continue reading
         JMP SCREEN_PRE_RESTORE ; Done: restore screen
 @ %def NIBBLE_READER
@@ -1776,8 +1807,9 @@ NIBBLE_READER = $BE37               ; Overlaps with 3rd byte of JMP above
 \section{Applesoft and Monitor patches}
 
 Several jump vectors patch into Applesoft BASIC and Monitor ROM routines.
-These include a 16-bit division routine using [[$DA]]/[[$DB]] as divisor and  % TODO-SYM: $DB
-[[$CE]]/[[$CF]]/[[$E6]]/[[$E7]] as dividend/result.  % TODO-SYM: $CE $CF $E6 $E7
+These include a 16-bit division routine using [[ZP_DIV_DIVISOR]] (two bytes)
+as divisor and [[ZP_DIV_DIVIDEND]]/[[ZP_DIV_REMAINDER]] as
+dividend/result (each a 16-bit pair).
 
 <<applesoft patches>>=
 
@@ -1801,41 +1833,44 @@ DIVIDE:
         ; 16-bit unsigned division via repeated subtraction.
         ;
         ; Inputs:
-        ;   $DA/$DB -- divisor (16-bit)
-        ;   $CE/$CF -- dividend (16-bit, shifted out as quotient)
+        ;   ZP_DIV_DIVISOR   -- 16-bit divisor (lo/hi at $DA/$DB)
+        ;   ZP_DIV_DIVIDEND  -- 16-bit dividend (lo/hi at $CE/$CF);
+        ;                       shifted out and replaced with the quotient.
         ;
         ; Behavior:
         ;   Calls Applesoft GETNUM to parse parameters. If divisor is
         ;   zero, jumps to Applesoft division-by-zero error. Otherwise
-        ;   performs 16 iterations of shift-and-subtract division.
+        ;   performs 16 iterations of shift-and-subtract division,
+        ;   accumulating the remainder in ZP_DIV_REMAINDER.
         ;
         ; Outputs:
-        ;   $CE/$CF -- quotient, $E6/$E7 -- remainder
+        ;   ZP_DIV_DIVIDEND  -- quotient (16-bit)
+        ;   ZP_DIV_REMAINDER -- remainder (16-bit, lo/hi at $E6/$E7)
         ;
         ; Modifies:
-        ;   $CE, $CF, $E6, $E7
+        ;   ZP_DIV_DIVIDEND, ZP_DIV_REMAINDER
         ; Clobbers: A, Y
         JSR AS_GETNUM           ; Applesoft GETNUM
-        LDA $DA                 ; Divisor low
+        LDA ZP_DIV_DIVISOR      ; Divisor low
         BNE .do_div
-        LDA $DB                 ; Divisor high
+        LDA ZP_DIV_DIVISOR+1    ; Divisor high
         BNE .do_div
         JMP AS_DIV_ZERO_ERR     ; Division by zero error
 .do_div:
-        ASL $CE                 ; Shift dividend left
-        ROL $CF
-        ROL $E6
-        ROL $E7
-        LDA $E6
-        CMP $DA
-        LDA $E7
-        SBC $DB
-        BCC .no_sub
-        STA $E7
-        LDA $E6
-        SBC $DA
-        STA $E6
-        INC $CE                 ; Quotient bit
+        ASL ZP_DIV_DIVIDEND     ; Shift dividend left; MSB -> remainder via ROLs
+        ROL ZP_DIV_DIVIDEND+1
+        ROL ZP_DIV_REMAINDER
+        ROL ZP_DIV_REMAINDER+1
+        LDA ZP_DIV_REMAINDER
+        CMP ZP_DIV_DIVISOR      ; Trial subtract: remainder - divisor
+        LDA ZP_DIV_REMAINDER+1
+        SBC ZP_DIV_DIVISOR+1
+        BCC .no_sub             ; remainder < divisor -> skip subtract
+        STA ZP_DIV_REMAINDER+1  ; Commit subtract: remainder -= divisor
+        LDA ZP_DIV_REMAINDER
+        SBC ZP_DIV_DIVISOR
+        STA ZP_DIV_REMAINDER
+        INC ZP_DIV_DIVIDEND     ; Quotient bit into vacated dividend LSB
 .no_sub:
         DEY
         BNE .do_div
@@ -1878,20 +1913,20 @@ SCREEN_RESTORE:
         ;   across hi-res page 2 ($4000-$5FFF).
         ;
         ; Modifies:
-        ;   Hi-res page 2, $A0-$A3
+        ;   Hi-res page 2, ZP_RWTS_PTR
         ; Clobbers: A, X, Y
 ; Scroll screen back down, then clear hi-res lines.
         JSR SCROLL_DN
         LDX #$21                ; Start at line ZP_HIGH_SCORE_1
 .clear_lines:
         LDA GAME_LINE_TBL_LO,X  ; Line address table low
-        STA $A0
+        STA ZP_RWTS_PTR         ; ZP_RWTS_PTR <- line address
         LDA GAME_LINE_TBL_HI,X  ; Line address table high
-        STA $A1
+        STA ZP_RWTS_PTR+1
         LDY #$27                ; 40 bytes per line
         LDA #$00
 .clear_byte:
-        STA ($A0),Y
+        STA (ZP_RWTS_PTR),Y
         DEY
         BPL .clear_byte
         INX
@@ -1902,21 +1937,21 @@ SCREEN_RESTORE:
 ; group in hi-res memory: bytes $78-$7F and $F8-$FF of each page).
         LDA #$00
         LDY #$40
-        STA $A0                 ; Start
-        STY $A1
+        STA ZP_RWTS_PTR         ; ZP_RWTS_PTR <- $4000 (page-aligned)
+        STY ZP_RWTS_PTR+1
         LDX #$20                ; 32 pages ($4000-$5FFF)
 .clear_page:
         LDY #$78               ; Clear $78-$7F
 .clear_hole1:
-        STA ($A0),Y
+        STA (ZP_RWTS_PTR),Y
         INY
         BPL .clear_hole1
         LDY #$F8               ; Clear $F8-$FF
 .clear_hole2:
-        STA ($A0),Y
+        STA (ZP_RWTS_PTR),Y
         INY
         BMI .clear_hole2
-        INC $A1                 ; Next page
+        INC ZP_RWTS_PTR+1       ; Next page
         DEX
         BNE .clear_page
         RTS
@@ -1945,21 +1980,21 @@ COPY_ROM_TO_LC:
         ;   Write-protects LC on exit.
         ;
         ; Modifies:
-        ;   Language card RAM ($D000-$FFFF), $A0/$A1
+        ;   Language card RAM ($D000-$FFFF), ZP_RWTS_PTR
         ; Clobbers: A, Y
         LDA LC_BANK1_RWROM      ; Enable LC writes, read ROM
         LDA LC_BANK1_RWROM      ; (must read twice)
         LDY #$00
         LDA #$D0
-        STY $A0
-        STA $A1                 ; Pointer = $D000
+        STY ZP_RWTS_PTR         ; ZP_RWTS_PTR <- #$D000
+        STA ZP_RWTS_PTR+1       ; (pointer serves as both source and dest)
 .copy:
-        LDA ($A0),Y             ; Read from ROM
-        STA ($A0),Y             ; Write to LC RAM
+        LDA (ZP_RWTS_PTR),Y     ; Read from ROM
+        STA (ZP_RWTS_PTR),Y     ; Write to LC RAM (same address, different bank)
         INY
         BNE .copy
-        INC $A1
-        BNE .copy               ; Loop until $A1 wraps ($FF+1=$00)
+        INC ZP_RWTS_PTR+1
+        BNE .copy               ; Loop until pointer hi wraps ($FF+1=$00)
         BIT LC_BANK1_ROROM      ; Write-protect LC
         RTS
 
@@ -2095,13 +2130,13 @@ SCROLL_UP_PRE:
         ;   delegation JMP. The JMP's operand bytes ($A0 $28) are reused
         ;   as an LDY #$28 initializer at SCROLL_UP.
         ;
-        ;   At SCROLL_UP: LDY #$28 / LDA #$40 / STY $A0 / STA $A1 sets
-        ;   the destination pointer to $4028, then copies 32 lines of 40
-        ;   bytes each from hi-res page 2 (via SCREEN_ADDR_TBL) into the
-        ;   buffer.
+        ;   At SCROLL_UP: LDY #$28 / LDA #$40 / STY ZP_RWTS_PTR /
+        ;   STA ZP_RWTS_PTR+1 sets the destination pointer to #$4028,
+        ;   then copies 32 lines of 40 bytes each from hi-res page 2
+        ;   (via SCREEN_ADDR_TBL) into the buffer.
         ;
         ; Modifies:
-        ;   $4028-$44FF, $A0-$A3
+        ;   $4028-$44FF, ZP_RWTS_PTR, ZP_RWTS_PTR2
         ; Clobbers: A, X, Y
         TAY                     ; A -> Y so INY sets Z iff A was $FF
         INY
@@ -2113,26 +2148,26 @@ SCROLL_UP = SCROLL_UP_PRE + 5   ; Live entry: LDY #$28 / LDA #$40 / ...
 
 .skip:
         LDA #$40
-        STY $A0                 ; $A0 <- Y (0 via BEQ, $28 via SCROLL_UP)
-        STA $A1                 ; $A1 <- #$40 (buffer page = $40xx)
+        STY ZP_RWTS_PTR         ; lo <- Y (0 via BEQ, $28 via SCROLL_UP)
+        STA ZP_RWTS_PTR+1       ; hi <- #$40 (buffer page = $40xx)
         LDX #$00
 .copy_line:
         LDA SCREEN_ADDR_TBL,X  ; Line address low
-        STA $A2
+        STA ZP_RWTS_PTR2
         LDA SCREEN_ADDR_TBL+1,X ; Line address high
-        STA $A3
+        STA ZP_RWTS_PTR2+1
         LDY #$27                ; 40 bytes per line
 .copy_byte:
-        LDA ($A2),Y             ; Read from screen
-        STA ($A0),Y             ; Write to buffer
+        LDA (ZP_RWTS_PTR2),Y    ; Read from screen
+        STA (ZP_RWTS_PTR),Y     ; Write to buffer
         DEY
         BPL .copy_byte
         CLC
-        LDA $A0
+        LDA ZP_RWTS_PTR
         ADC #$28                ; Advance buffer by 40 bytes
-        STA $A0
+        STA ZP_RWTS_PTR
         BCC .no_carry
-        INC $A1
+        INC ZP_RWTS_PTR+1
 .no_carry:
         INX                     ; Next address pair
         INX
@@ -2157,30 +2192,30 @@ SCROLL_DN:
         ;   then fills the bottom 4 screen rows (188-191) from VECTOR_PAGE data.
         ;
         ; Modifies:
-        ;   Hi-res page 2, $A0-$A3
+        ;   Hi-res page 2, ZP_RWTS_PTR, ZP_RWTS_PTR2
         ; Clobbers: A, X, Y
         LDY #$00
         LDA #$45
-        STY $A0                 ; Source = $4500 (buffer after scroll data)
-        STA $A1
+        STY ZP_RWTS_PTR         ; Source = $4500 (buffer after scroll data)
+        STA ZP_RWTS_PTR+1
         LDX #$3E                ; Start from last line pair
 .copy_line:
         LDA SCREEN_ADDR_TBL,X
-        STA $A2
+        STA ZP_RWTS_PTR2
         LDA SCREEN_ADDR_TBL+1,X
-        STA $A3
+        STA ZP_RWTS_PTR2+1
         LDY #$27
 .copy_byte:
-        LDA ($A0),Y             ; Read from buffer
-        STA ($A2),Y             ; Write to screen
+        LDA (ZP_RWTS_PTR),Y     ; Read from buffer
+        STA (ZP_RWTS_PTR2),Y    ; Write to screen
         DEY
         BPL .copy_byte
         SEC
-        LDA $A0
+        LDA ZP_RWTS_PTR
         SBC #$28                ; Move buffer pointer back
-        STA $A0
+        STA ZP_RWTS_PTR
         BCS .no_borrow
-        DEC $A1
+        DEC ZP_RWTS_PTR+1
 .no_borrow:
         DEX
         DEX

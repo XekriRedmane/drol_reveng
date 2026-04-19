@@ -4853,8 +4853,9 @@ SMC_ATTRACT_RTS = $6827         ; Self-mod: attract-loop control slot
 ; --- Extra-life glyph sprite (level-1 swappable) ---
 ; 98-byte sprite (W=6 -> 7 bytes/row, H=14 rows) in the level-1
 ; swappable region.  LIFE_LOST_HANDLER draws one instance per
-; remaining extra life while ticking ZP_EXTRA_LIVES down.  Lives
-; immediately after ATTRACT_SPR[1] at $B665 (24 bytes: $B665+$18=$B67D).
+; remaining extra life while ticking ZP_EXTRA_LIVES down.  Defined
+; as a label in the level1 target as EXTRA_LIFE_SPR_DATA at the
+; same address.
 EXTRA_LIFE_SPR  = $B67D         ; Extra-life glyph (W=6, H=14)
 
 ; SMC_SR_YSRC / SMC_SR_HEIGHT are the operand bytes of
@@ -9307,15 +9308,17 @@ rendered at a smaller scale so it fits alongside the tiny
 stance-feet and walk-feet tables below it.  All four tables are
 indexed by [[PROJ_FRAME_IDX]] and share the same $X$ index for
 paired lo/hi access.  Sprite bytes live in the level-swappable
-region ([[$B6DF]]--[[$BA27]]) and were extracted from [[drol.dsk]] phase~0.
+region ([[SPRITE_TABLE_A_BODY_DATA]]..[[SPRITE_TABLE_B_DATA]]) and
+were extracted from [[drol.dsk]] phase~0.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.98\textwidth]{images/enemy_a_sprites.png}
-\caption{Enemy-A sprite family.  Row~1: [[SPRITE_TABLE_A_BODY]]
-([[$B6DF]]..).  Row~2: [[SPRITE_TABLE_A_FEET]] (stance feet,
-$[[$04]]\times[[$03]]$).  Row~3: [[SPRITE_TABLE_A_STEP1]] (walk phase~3,
-$[[$04]]\times[[$04]]$).  Row~4: [[SPRITE_TABLE_A_STEP2]] (walk phase~1,
+\caption{Enemy-A sprite family.  Row~1: [[SPRITE_TABLE_A_BODY_DATA]]
+(frame~0).  Row~2: [[SPRITE_TABLE_A_FEET_DATA]] (stance
+feet, $[[$04]]\times[[$03]]$).  Row~3: [[SPRITE_TABLE_A_STEP1_DATA]]
+(walk phase~3, $[[$04]]\times[[$04]]$).  Row~4:
+[[SPRITE_TABLE_A_STEP2_DATA]] (walk phase~1,
 $[[$04]]\times[[$04]]$).}
 \label{fig:enemy_a_sprites}
 \end{figure}
@@ -9869,8 +9872,9 @@ seven enemy-B body frames at the seven perspective depths.  The
 small drift-mode puff is part of
 Figure~\ref{fig:enemy_c_auxiliary} (the level-specific auxiliary
 set, shared with enemy-C and the special-sprite peek marker).  All
-enemy-B bytes live in the swappable region ([[$BA27]]--[[$BCF0]]) and
-were extracted from [[drol.dsk]] phase~0.
+enemy-B bytes live in the swappable region
+([[SPRITE_TABLE_B_DATA]]) and were extracted from [[drol.dsk]]
+phase~0.
 
 \begin{figure}[H]
 \centering
@@ -18756,8 +18760,11 @@ hold real bytes; every non-level page stays at [[$00]]:
 \item [[$8C00]]--[[$BDFF]] (50 pages, \emph{not} present in
   \texttt{drol.bin}) --- the bulk of the level-1 content: per-level
   sprite tables ([[ATTRACT_SPR_LO]] / [[ATTRACT_SPR2_LO]]
-  with pointers into [[$B500]]--[[$BC]]\textit{xx}), the ``Broderbund''
-  attribution strip at [[BRODERBUND_LOGO_SPR]], and the end-of-game
+  with pointers into the [[$B500]]--[[$BC]]\textit{xx} sprite-pixel
+  data labelled as [[ATTRACT_SPR_0_DATA]],
+  [[SPRITE_TABLE_A_BODY_DATA]], [[SPRITE_TABLE_B_DATA]], etc.), the
+  ``Broderbund'' attribution strip at [[BRODERBUND_LOGO_SPR_DATA]],
+  and the end-of-game
   handler [[GAME_OVER]].
 \end{itemize}
 
@@ -18802,9 +18809,10 @@ feed the attract-mode sprite draws:
   playfield.  Figure~\ref{fig:attract_spr2_renders} shows all four.
 \item [[ATTRACT_SPR_LO]]/[[ATTRACT_SPR_HI]] (2 entries used by
   [[ATTRACT_ANIM_4]]; additional entries are consumed by
-  unrelated callers).  Entries point at [[$B5FD]], [[$B665]].  [[$B5FD]] is a
-  [[$68]]-byte sprite (13 bytes/row $\times$ 8 rows; [[ATTRACT_ANIM_4]]
-  draws it with W=12,H=8).  [[$B665]] is [[$18]] bytes (3 bytes/row
+  unrelated callers).  Entries point at [[ATTRACT_SPR_0_DATA]],
+  [[ATTRACT_SPR_1_DATA]].  [[ATTRACT_SPR_0_DATA]] is a 104-byte
+  sprite (13 bytes/row $\times$ 8 rows; [[ATTRACT_ANIM_4]] draws it
+  with W=12,H=8).  [[ATTRACT_SPR_1_DATA]] is 24 bytes (3 bytes/row
   $\times$ 8 rows, W=2,H=8).
 \end{itemize}
 
@@ -18812,23 +18820,25 @@ A third consumer --- the extras-stash animation inside
 [[LIFE_LOST_HANDLER]] --- uses a hardcoded [[EXTRA_LIFE_SPR]] pointer
 with W=6,H=14 (98 bytes).  That sprite is the extra-life glyph the
 game-over sequence ticks once per remaining extra life; it lives
-directly after [[ATTRACT_SPR]][1] in the level-1 swappable region
-([[$B665]]+[[$18]] = [[EXTRA_LIFE_SPR]]).  Its static render
+directly after [[ATTRACT_SPR_1_DATA]] in the level-1 swappable region
+(the 24-byte [[ATTRACT_SPR_1_DATA]] ends at [[EXTRA_LIFE_SPR_DATA]]).
+Its static render
 (Figure~\ref{fig:extra_life_spr}) shows three vertical stripe
 columns that compose the DROL-style character silhouette.
 
 Rendered forms of the two [[ATTRACT_ANIM_4]] sprites (the only ones
 whose dimensions are derivable from static code without simulating the
 attract-mode ZP animation) are in Figure~\ref{fig:attract_spr_renders}.
-The [[$B5FD]] shape is drawn with width~13 bytes --- the wide ``double
-band'' graphic that flies across the attract screen; the [[$B665]] shape
-is a narrow 3-byte-wide creature sprite.
+The [[ATTRACT_SPR_0_DATA]] shape is drawn with width~13 bytes --- the
+wide ``double band'' graphic that flies across the attract screen;
+the [[ATTRACT_SPR_1_DATA]] shape is a narrow 3-byte-wide creature
+sprite.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.8\textwidth]{images/attract_spr_renders.png}
-\caption{Static render of [[ATTRACT_SPR]][0]=[[$B5FD]] (top) and
-[[ATTRACT_SPR]][1]=[[$B665]] (bottom), at W=12/H=8 and W=2/H=8
+\caption{Static render of [[ATTRACT_SPR_0_DATA]] (top) and
+[[ATTRACT_SPR_1_DATA]] (bottom), at W=12/H=8 and W=2/H=8
 respectively per [[ATTRACT_ANIM_4]]'s fixed dimensions.  Generated by
 [[.claude/scripts/render_attract_spr.py]].  Apple~II hi-res NTSC
 adjacency applies, so the colour of each on-bit depends on both the
@@ -21271,255 +21281,405 @@ ATTRACT_SPR2_3:
         HEX 8A D0 82 C0
 @ %def ATTRACT_SPR2_0 ATTRACT_SPR2_1 ATTRACT_SPR2_2 ATTRACT_SPR2_3
 
-<<level1 pages 8C-BD tail>>=
+\section{Tail sprite pixel data ([[$B5FD]]--[[$BD9F]])}
+
+The 1955-byte region between [[ATTRACT_SPR2_3]]'s end and
+[[GAME_OVER]] holds the level-1 swappable sprite
+art consumed by [[ATTRACT_ANIM_4]], [[LIFE_LOST_HANDLER]],
+[[ENEMY_A_DRAW]], [[ENEMY_B_DRAW]], and the attract attribution
+draw.  The boundaries fall out from the fixed sprite dimensions in
+the consuming routines and the pointer-table frame spacings:
+
+\begin{center}
+\begin{tabular}{lllll} \toprule
+Label & Span & Bytes & Shape & Consumer \\ \midrule
+[[ATTRACT_SPR_0_DATA]]       & [[$B5FD]]--[[$B664]] & 104  & W=12,H=8 (13x8)   & [[ATTRACT_ANIM_4]] entity 0 \\
+[[ATTRACT_SPR_1_DATA]]       & [[$B665]]--[[$B67C]] & 24   & W=2,H=8 (3x8)     & [[ATTRACT_ANIM_4]] entity 1 \\
+[[EXTRA_LIFE_SPR_DATA]]      & [[$B67D]]--[[$B6DE]] & 98   & W=6,H=14 (7x14)   & [[LIFE_LOST_HANDLER]] \\
+[[SPRITE_TABLE_A_BODY_DATA]] & [[$B6DF]]--[[$B8F2]] & 532  & 7 x 76            & [[ENEMY_A_DRAW]] body \\
+[[SPRITE_TABLE_A_STEP1_DATA]] & [[$B8F3]]--[[$B962]] & 112  & 7 x 16            & [[ENEMY_A_DRAW]] walk phase 3 \\
+[[SPRITE_TABLE_A_FEET_DATA]] & [[$B963]]--[[$B9B6]] & 84   & 7 x 12            & [[ENEMY_A_DRAW]] stance \\
+[[SPRITE_TABLE_A_STEP2_DATA]] & [[$B9B7]]--[[$BA26]] & 112  & 7 x 16            & [[ENEMY_A_DRAW]] walk phase 1 \\
+[[SPRITE_TABLE_B_DATA]]      & [[$BA27]]--[[$BCF0]] & 714  & 7 x 102           & [[ENEMY_B_DRAW]] body \\
+[[BRODERBUND_LOGO_SPR_DATA]] & [[$BCF1]]--[[$BD88]] & 152  & W=18,H=8 (19x8)   & [[ATTRACT_ANIM_4]] tail \\
+[[LEVEL1_TAIL_RESIDUE]]      & [[$BD89]]--[[$BD9F]] & 23   & ---               & unreferenced \\ \bottomrule
+\end{tabular}
+\end{center}
+
+The enemy-A and enemy-B sprite tables are indexed by
+[[PROJ_FRAME_IDX]] through the [[SPRITE_TABLE_A_BODY_LO]] /
+[[SPRITE_TABLE_B_LO]] (etc.) pointer tables in the low [[$B0]]
+region; those pointers resolve to the frame-0 addresses listed in
+each chunk's header comment.  The drol chapter already declares
+[[EXTRA_LIFE_SPR]] and [[BRODERBUND_LOGO_SPR]] as cross-target
+[[EQU]]s whose values match these data chunks' ORG addresses.
+
+The final 23-byte [[LEVEL1_TAIL_RESIDUE]] block has no pointer-table
+consumer that we've yet identified.  The bytes disassemble to a
+plausible but dangling code fragment ([[TSX]] / [[DEY]] / [[BNE]]),
+consistent with leftover sprite-table space from a pre-release
+build; if a live consumer is discovered in a later round, the
+residue will be renamed.
+
+<<level1 attract spr 0 data>>=
 
         ORG $B5FD
-        HEX 81 A8 85
-        HEX A8 D5 A0 D5 80 94 A8 D5
-        HEX 82 D0 85 AA 95 AC D5 B2
-        HEX D5 C0 96 AC D5 CA D4 85
-        HEX 8B 94 AC 81 B2 E5 C0 85
-        HEX AC 94 8A 96 80 8B 96 AC
-        HEX 95 B0 D5 C0 81 AC 96 8B
-        HEX 96 85 CB 96 AC 95 B2 D5
-        HEX C0 85 AC 96 8A D6 85 CB
-        HEX 96 AC 81 B2 E5 C0 95 AC
-        HEX 96 8A D6 85 AB 96 AC D5
-        HEX B2 D5 C0 96 AC D5 8A 96
-        HEX 85 AC 96 AC D5 B0 D5 C0
-        HEX 96 AC D5 CB 96 00 00 03
-        HEX 03 33 1F 00 33 33 03 33
-        HEX 33 00 3E 1F 00 18 00 00
-        HEX 0F 7C 00 00 00 50 00 00
-        HEX 00 00 00 00 54 00 00 00
-        HEX 00 00 00 54 00 00 00 00
-        HEX 00 00 54 00 00 00 00 00
-        HEX 00 55 20 00 2A 50 02 50
-        HEX 55 68 01 2B 50 0A 74 55
-        HEX 28 01 2A 50 0A 54 55 2A
-        HEX 05 2A 50 2A 15 54 2A 05
-        HEX 22 50 2A 55 54 2A 05 22
-        HEX 50 2A 55 55 2A 05 22 50
-        HEX 00 15 55 28 05 22 50 0A
-        HEX 54 55 28 05 22 50 2A 54
-        HEX 55 20 05 22 50 2A 50 00
-        HEX 80 81 C0 00 80 B3 E0 00
-        HEX 80 FB E0 00 80 FF E0 00
-        HEX 80 BB D0 00 81 AA D4 00
-        HEX 81 AA D4 00 85 AB F0 00
-        HEX 85 AE F8 00 85 AF B0 00
-        HEX 85 AF C0 00 85 AC 00 00
-        HEX 85 A5 98 00 95 A7 FE 00
-        HEX 95 A7 FE 00 85 95 9C 00
-        HEX 80 B6 00 00 80 D5 00 00
-        HEX 83 DD E0 80 80 86 80 80
-        HEX 81 CF 80 80 83 EF 80 80
-        HEX 83 FF 80 80 81 EE C0 80
-        HEX 85 AA D0 80 85 AA D0 80
-        HEX 95 AF C0 80 95 BB E0 80
-        HEX 95 BD C0 80 95 BE 80 80
-        HEX 95 B0 00 80 95 94 E0 80
-        HEX D5 9F F8 80 D5 9F F8 80
-        HEX 94 D4 F0 80 81 D8 00 80
-        HEX 82 D4 00 80 8E F7 80 80
-        HEX 80 98 80 80 86 BC 80 80
-        HEX 8F BC 80 80 8F FC 80 80
-        HEX 87 BA 80 80 95 AA C0 80
-        HEX 95 AA C0 80 D5 BE 80 80
-        HEX D5 EF 80 80 D5 F6 80 80
-        HEX D5 F8 80 80 D5 C0 00 80
-        HEX D4 D3 80 82 D4 FF E0 82
-        HEX D4 FF E0 80 D2 D3 C0 80
-        HEX 86 E0 00 80 8A D0 00 80
-        HEX BB DC 80 80 80 E0 80 80
-        HEX 99 F0 80 80 BD F0 80 80
-        HEX BF F0 80 80 9D E8 80 80
-        HEX D5 AA 80 80 D5 AA 80 82
-        HEX D5 F8 80 82 D7 BC 80 82
-        HEX D7 D8 80 82 D7 E0 80 82
-        HEX D6 80 00 82 D2 CC 80 8A
-        HEX D3 FF 80 8A D3 FF 80 82
-        HEX CA CE 80 80 9B 80 00 80
-        HEX AA C0 00 81 EE F0 80 80
-        HEX 80 83 80 80 80 E7 C0 80
-        HEX 81 F7 C0 80 81 FF C0 80
-        HEX 80 F7 A0 80 82 D5 A8 80
-        HEX 82 D5 A8 80 8A D7 E0 80
-        HEX 8A DD F0 80 8A DE E0 80
-        HEX 8A DF 80 80 8A D8 80 80
-        HEX 8A CA B0 80 AA CF FC 80
-        HEX AA CF FC 80 8A AA B8 80
-        HEX 80 EC 80 80 81 AA 80 80
-        HEX 87 BB C0 80 80 8C 80 80
-        HEX 83 9E 80 80 87 DE 80 80
-        HEX 87 FE 80 80 83 DD 80 80
-        HEX 8A D5 A0 80 8A D5 A0 80
-        HEX AA DF 80 80 AA F7 C0 80
-        HEX AA FB 80 80 AA FC 80 80
-        HEX AA E0 80 81 AA A9 C0 81
-        HEX AA BF F0 80 A9 BF F0 80
-        HEX 85 A9 E0 80 83 B0 80 80
-        HEX 85 A8 80 80 9D EE 80 80
-        HEX 80 B0 80 80 8C F8 80 80
-        HEX 9E F8 80 80 9F F8 80 80
-        HEX 8E F4 80 80 AA D5 80 80
-        HEX AA D5 80 81 AA FC 80 81
-        HEX AB DE 80 81 AB EC 80 81
-        HEX AB F0 80 81 AB 80 80 85
-        HEX A9 A6 80 85 A9 FF C0 81
-        HEX A5 FF C0 80 95 A7 80 80
-        HEX 8D C0 80 80 95 A0 80 80
-        HEX F7 B8 80 00 00 28 00 00
-        HEX 02 51 30 00 03 16 38 00
-        HEX 00 1F 00 00 01 20 00 00
-        HEX 0A 45 40 00 0C 59 60 00
-        HEX 00 7C 00 00 05 00 00 00
-        HEX 2A 16 00 00 32 67 00 00
-        HEX 03 70 00 00 14 00 00 01
-        HEX 28 58 00 01 4B 1C 00 00
-        HEX 0F 40 00 00 00 50 00 00
-        HEX 05 22 60 00 06 2C 70 00
-        HEX 00 3E 00 00 02 40 00 00
-        HEX 15 0B 00 00 19 33 40 00
-        HEX 01 78 00 00 0A 00 00 00
-        HEX 54 2C 00 00 65 4E 00 00
-        HEX 07 60 00 00 00 28 00 00
-        HEX 00 55 40 00 00 67 60 00
-        HEX 01 20 00 00 02 56 00 00
-        HEX 03 1F 00 00 05 00 00 00
-        HEX 0A 58 00 00 0C 7C 00 00
-        HEX 14 00 00 00 2A 60 00 00
-        HEX 33 70 00 00 00 50 00 00
-        HEX 01 2B 00 00 01 4F 40 00
-        HEX 02 40 00 00 05 2C 00 00
-        HEX 06 3E 00 00 0A 00 00 00
-        HEX 15 30 00 00 19 78 00 00
-        HEX 01 0A 00 00 02 45 30 00
-        HEX 03 15 78 00 00 18 00 00
-        HEX 04 28 00 00 0A 15 40 00
-        HEX 0C 57 60 00 00 60 00 00
-        HEX 11 20 00 00 28 56 00 00
-        HEX 32 5F 00 00 03 00 00 00
-        HEX 45 00 00 01 22 58 00 01
-        HEX 4A 7C 00 00 0C 00 00 00
-        HEX 02 14 00 00 05 0A 60 00
-        HEX 06 2B 70 00 00 30 00 00
-        HEX 08 50 00 00 14 2B 00 00
-        HEX 19 2F 40 00 01 40 00 00
-        HEX 22 40 00 00 51 2C 00 00
-        HEX 65 3E 00 00 06 00 00 00
-        HEX 00 80 EA D0 00 00 80 80
-        HEX EA D2 DC 00 80 F0 EA D0
-        HEX 00 00 81 F8 87 80 00 00
-        HEX 81 9A 82 80 00 00 85 FA
-        HEX C2 80 00 00 95 F2 C7 A0
-        HEX 00 00 95 AA D7 A8 00 00
-        HEX 95 8A D7 A8 00 00 90 AA
-        HEX D7 BA 00 00 85 AA D7 AA
-        HEX 00 00 80 82 D7 AA C0 00
-        HEX 00 80 D7 AA C0 00 00 80
-        HEX D0 A8 D0 00 00 81 D0 E8
-        HEX 94 00 00 83 F9 FC 80 00
-        HEX 00 83 C1 E0 00 00 00 83
-        HEX AA C0 00 00 80 83 AA CE
-        HEX D0 00 83 C3 AA C0 80 00
-        HEX 87 E0 9C 80 00 80 84 E8
-        HEX 88 80 00 80 97 EA 88 80
-        HEX 00 80 D7 CA 9D 80 00 80
-        HEX D5 AA DD A0 00 80 D4 AA
-        HEX DD A0 00 80 C1 AA DD E8
-        HEX 00 80 95 AA DD A8 80 80
-        HEX 80 8A DD AA 80 00 80 82
-        HEX DD AA 80 00 80 82 C1 A2
-        HEX C0 00 80 86 C3 A0 D0 00
-        HEX 80 8F E7 F0 80 00 80 8E
-        HEX 87 80 00 00 00 8D AA 80
-        HEX 00 00 80 8D AA A3 80 00
-        HEX 8E 8D AA 80 80 00 9F 80
-        HEX F0 80 00 80 93 A0 A0 80
-        HEX 00 80 DF A8 A0 80 00 82
-        HEX DE A8 F4 80 00 82 D5 AA
-        HEX F5 80 00 82 D1 AA F5 80
-        HEX 00 82 85 AA F7 A0 00 80
-        HEX D5 AA F5 A0 80 80 80 AA
-        HEX F5 A8 80 00 80 8A F5 A8
-        HEX 80 00 80 8A 85 8A 80 00
-        HEX 80 9A 8D 82 C0 00 80 BF
-        HEX 9F C0 80 00 80 B8 9C 80
-        HEX 00 00 00 B5 A8 80 00 00
-        HEX 80 B5 A9 8A 80 00 B8 B5
-        HEX A8 80 80 00 FC 83 C0 80
-        HEX 00 80 CD 81 80 80 00 82
-        HEX FD A1 80 80 00 8A F9 A3
-        HEX D0 80 00 8A D5 AB D4 80
-        HEX 00 8A C5 AB D4 80 00 88
-        HEX 95 AB DD 80 00 82 D5 AB
-        HEX D5 80 80 80 81 AB D5 A0
-        HEX 80 00 80 AB D5 A0 80 00
-        HEX 80 A8 94 A8 80 00 80 E8
-        HEX B4 8A 80 00 81 FC FE 80
-        HEX 80 00 81 E0 F0 80 00 00
-        HEX 00 81 D5 A0 00 00 80 81
-        HEX D5 A5 CB 00 81 E1 D5 A0
-        HEX 80 00 83 F0 8E 80 80 00
-        HEX 82 B4 84 80 00 00 8B F5
-        HEX 84 00 00 00 AB E5 8E C0
-        HEX 00 00 AA D5 AE D0 00 00
-        HEX AA 95 AE D0 00 00 A0 D5
-        HEX AE F4 00 00 8A D5 AE D4
-        HEX 00 00 80 85 AE D5 00 00
-        HEX 00 81 AE D5 80 00 00 81
-        HEX A0 D1 A0 00 00 83 A1 D0
-        HEX A8 00 00 87 F3 F8 80 00
-        HEX 00 87 83 C0 00 00 00 86
-        HEX D5 00 00 00 80 86 D5 9D
-        HEX 88 00 87 86 D5 80 80 00
-        HEX 8F C0 B8 80 00 00 89 D0
-        HEX 90 00 00 80 AF D4 90 80
-        HEX 00 81 AF 94 BA 80 00 81
-        HEX AA D5 BA C0 00 81 A8 D5
-        HEX BA C0 00 81 82 D5 BB D0
-        HEX 00 80 AA D5 BA D0 00 80
-        HEX 80 95 BA D4 80 00 00 85
-        HEX BA D4 80 00 00 85 82 C5
-        HEX 80 00 00 8D 86 C1 A0 00
-        HEX 00 9F CF E0 80 00 00 9C
-        HEX 8E 80 00 00 00 9A D4 80
-        HEX 00 00 80 9A D4 C4 A8 00
-        HEX 9C 9A D4 80 80 00 BE 81
-        HEX E0 80 80 80 A6 C0 C0 80
-        HEX 80 81 BE D0 C0 80 00 85
-        HEX BC D1 E8 80 00 85 AA D5
-        HEX EA 80 00 85 A2 D5 EA 80
-        HEX 00 84 8A D5 EE C0 00 81
-        HEX AA D5 EA C0 80 80 80 D5
-        HEX EA D0 80 80 80 95 EA D5
-        HEX 80 00 80 94 8A 94 80 00
-        HEX 80 B4 9A 80 80 00 80 FE
-        HEX BF 80 80 00 80 F0 B8 80
-        HEX 00 18 00 00 01 40 00 30
-        HEX 00 00 3C 03 00 0C 00 3C
-        HEX 3C 3C 30 3E 18 00 00 01
-        HEX 40 00 30 00 00 66 07 40
-        HEX 1E 00 66 66 66 38 7F 1F
-        HEX 0F 19 4F 5E 1E 3E 0E 3C
-        HEX 66 1B 30 6D 40 60 66 66
-        HEX 30 67 19 59 59 59 47 33
-        HEX 33 23 0E 3E 0F 66 3F 00
-        HEX 38 3C 7C 30 7B 19 59 59
-        HEX 59 43 3F 33 33 06 66 07
-        HEX 4F 1E 00 60 66 60 30 7B
-        HEX 19 59 59 59 43 03 33 33
-        HEX 06 66 00 36 60 00 60 66
-        HEX 60 30 67 19 59 59 59 43
-        HEX 33 33 31 06 66 00 1F 40
-        HEX 00 66 66 66 30 7F 0F 19
-        HEX 4F 0F 03 1E 1E 1C 06 3E
-        HEX 00 0F 00 00 3C 3C 3C 78
-        HEX 3E BA 88 D0 FA AE F8 05
-        HEX A0 04 B1 48 20 5A BE 28
-        HEX D0 11 A4 47 10 0D A0 12
-@
+ATTRACT_SPR_0_DATA:
+        ; ATTRACT_SPR[0] (104 bytes).  W=12, H=8 -> 13 bytes/row x 8
+        ; rows.  Pointed to by ATTRACT_SPR_LO/HI[0] ($B006/$B086) and
+        ; drawn by ATTRACT_ANIM_4 with fixed W/H.  See Figure
+        ; attract_spr_renders (top).
+        HEX 81 A8 85 A8 D5 A0 D5 80
+        HEX 94 A8 D5 82 D0 85 AA 95
+        HEX AC D5 B2 D5 C0 96 AC D5
+        HEX CA D4 85 8B 94 AC 81 B2
+        HEX E5 C0 85 AC 94 8A 96 80
+        HEX 8B 96 AC 95 B0 D5 C0 81
+        HEX AC 96 8B 96 85 CB 96 AC
+        HEX 95 B2 D5 C0 85 AC 96 8A
+        HEX D6 85 CB 96 AC 81 B2 E5
+        HEX C0 95 AC 96 8A D6 85 AB
+        HEX 96 AC D5 B2 D5 C0 96 AC
+        HEX D5 8A 96 85 AC 96 AC D5
+        HEX B0 D5 C0 96 AC D5 CB 96
+@ %def ATTRACT_SPR_0_DATA
+
+<<level1 attract spr 1 data>>=
+
+        ORG $B665
+ATTRACT_SPR_1_DATA:
+        ; ATTRACT_SPR[1] (24 bytes).  W=2, H=8 -> 3 bytes/row x 8
+        ; rows.  Pointed to by ATTRACT_SPR_LO/HI[1] ($B006/$B086) and
+        ; drawn by ATTRACT_ANIM_4 as the narrow creature companion to
+        ; ATTRACT_SPR_0_DATA.  See Figure attract_spr_renders (bottom).
+        HEX 00 00 03 03 33 1F 00 33
+        HEX 33 03 33 33 00 3E 1F 00
+        HEX 18 00 00 0F 7C 00 00 00
+@ %def ATTRACT_SPR_1_DATA
+
+<<level1 extra life spr data>>=
+
+        ORG $B67D
+EXTRA_LIFE_SPR_DATA:
+        ; EXTRA_LIFE_SPR (98 bytes).  W=6, H=14 -> 7 bytes/row x 14
+        ; rows.  Drawn once per remaining extra life by the
+        ; LIFE_LOST_HANDLER countdown animation; the drol chapter's
+        ; EXTRA_LIFE_SPR EQU (at $B67D) targets this data.  Lives
+        ; immediately after ATTRACT_SPR_1_DATA (24 bytes).
+        HEX 50 00 00 00 00 00 00 54
+        HEX 00 00 00 00 00 00 54 00
+        HEX 00 00 00 00 00 54 00 00
+        HEX 00 00 00 00 55 20 00 2A
+        HEX 50 02 50 55 68 01 2B 50
+        HEX 0A 74 55 28 01 2A 50 0A
+        HEX 54 55 2A 05 2A 50 2A 15
+        HEX 54 2A 05 22 50 2A 55 54
+        HEX 2A 05 22 50 2A 55 55 2A
+        HEX 05 22 50 00 15 55 28 05
+        HEX 22 50 0A 54 55 28 05 22
+        HEX 50 2A 54 55 20 05 22 50
+        HEX 2A 50
+@ %def EXTRA_LIFE_SPR_DATA
+
+<<level1 sprite table a body data>>=
+
+        ORG $B6DF
+SPRITE_TABLE_A_BODY_DATA:
+        ; Enemy-A body sprite pixel data.  7 consecutive frames of 76
+        ; bytes (4 bytes/row x 19 rows) indexed by PROJ_FRAME_IDX via
+        ; the SPRITE_TABLE_A_BODY_LO/HI pointer table at $B009/$B089.
+        ; Frames: [0]=$B6DF [1]=$B72B [2]=$B777 [3]=$B7C3 [4]=$B80F
+        ;         [5]=$B85B [6]=$B8A7.  Consumed by ENEMY_A_DRAW.  See
+        ; Figure enemy_a_sprites (row 1).
+        HEX 00 80 81 C0 00 80 B3 E0
+        HEX 00 80 FB E0 00 80 FF E0
+        HEX 00 80 BB D0 00 81 AA D4
+        HEX 00 81 AA D4 00 85 AB F0
+        HEX 00 85 AE F8 00 85 AF B0
+        HEX 00 85 AF C0 00 85 AC 00
+        HEX 00 85 A5 98 00 95 A7 FE
+        HEX 00 95 A7 FE 00 85 95 9C
+        HEX 00 80 B6 00 00 80 D5 00
+        HEX 00 83 DD E0 80 80 86 80
+        HEX 80 81 CF 80 80 83 EF 80
+        HEX 80 83 FF 80 80 81 EE C0
+        HEX 80 85 AA D0 80 85 AA D0
+        HEX 80 95 AF C0 80 95 BB E0
+        HEX 80 95 BD C0 80 95 BE 80
+        HEX 80 95 B0 00 80 95 94 E0
+        HEX 80 D5 9F F8 80 D5 9F F8
+        HEX 80 94 D4 F0 80 81 D8 00
+        HEX 80 82 D4 00 80 8E F7 80
+        HEX 80 80 98 80 80 86 BC 80
+        HEX 80 8F BC 80 80 8F FC 80
+        HEX 80 87 BA 80 80 95 AA C0
+        HEX 80 95 AA C0 80 D5 BE 80
+        HEX 80 D5 EF 80 80 D5 F6 80
+        HEX 80 D5 F8 80 80 D5 C0 00
+        HEX 80 D4 D3 80 82 D4 FF E0
+        HEX 82 D4 FF E0 80 D2 D3 C0
+        HEX 80 86 E0 00 80 8A D0 00
+        HEX 80 BB DC 80 80 80 E0 80
+        HEX 80 99 F0 80 80 BD F0 80
+        HEX 80 BF F0 80 80 9D E8 80
+        HEX 80 D5 AA 80 80 D5 AA 80
+        HEX 82 D5 F8 80 82 D7 BC 80
+        HEX 82 D7 D8 80 82 D7 E0 80
+        HEX 82 D6 80 00 82 D2 CC 80
+        HEX 8A D3 FF 80 8A D3 FF 80
+        HEX 82 CA CE 80 80 9B 80 00
+        HEX 80 AA C0 00 81 EE F0 80
+        HEX 80 80 83 80 80 80 E7 C0
+        HEX 80 81 F7 C0 80 81 FF C0
+        HEX 80 80 F7 A0 80 82 D5 A8
+        HEX 80 82 D5 A8 80 8A D7 E0
+        HEX 80 8A DD F0 80 8A DE E0
+        HEX 80 8A DF 80 80 8A D8 80
+        HEX 80 8A CA B0 80 AA CF FC
+        HEX 80 AA CF FC 80 8A AA B8
+        HEX 80 80 EC 80 80 81 AA 80
+        HEX 80 87 BB C0 80 80 8C 80
+        HEX 80 83 9E 80 80 87 DE 80
+        HEX 80 87 FE 80 80 83 DD 80
+        HEX 80 8A D5 A0 80 8A D5 A0
+        HEX 80 AA DF 80 80 AA F7 C0
+        HEX 80 AA FB 80 80 AA FC 80
+        HEX 80 AA E0 80 81 AA A9 C0
+        HEX 81 AA BF F0 80 A9 BF F0
+        HEX 80 85 A9 E0 80 83 B0 80
+        HEX 80 85 A8 80 80 9D EE 80
+        HEX 80 80 B0 80 80 8C F8 80
+        HEX 80 9E F8 80 80 9F F8 80
+        HEX 80 8E F4 80 80 AA D5 80
+        HEX 80 AA D5 80 81 AA FC 80
+        HEX 81 AB DE 80 81 AB EC 80
+        HEX 81 AB F0 80 81 AB 80 80
+        HEX 85 A9 A6 80 85 A9 FF C0
+        HEX 81 A5 FF C0 80 95 A7 80
+        HEX 80 8D C0 80 80 95 A0 80
+        HEX 80 F7 B8 80
+@ %def SPRITE_TABLE_A_BODY_DATA
+
+<<level1 sprite table a step1 data>>=
+
+        ORG $B8F3
+SPRITE_TABLE_A_STEP1_DATA:
+        ; Enemy-A walk-variant-1 feet pixel data.  7 consecutive frames
+        ; of 16 bytes (4 bytes/row x 4 rows) selected by
+        ; ZP_ENEMY_A_LEG_PHASE == 3; indexed via
+        ; SPRITE_TABLE_A_STEP1_LO/HI at $B010/$B090.  Frames:
+        ; [0]=$B8F3 [1]=$B903 [2]=$B913 [3]=$B923 [4]=$B933
+        ; [5]=$B943 [6]=$B953.  Consumed by ENEMY_A_DRAW.
+        HEX 00 00 28 00 00 02 51 30
+        HEX 00 03 16 38 00 00 1F 00
+        HEX 00 01 20 00 00 0A 45 40
+        HEX 00 0C 59 60 00 00 7C 00
+        HEX 00 05 00 00 00 2A 16 00
+        HEX 00 32 67 00 00 03 70 00
+        HEX 00 14 00 00 01 28 58 00
+        HEX 01 4B 1C 00 00 0F 40 00
+        HEX 00 00 50 00 00 05 22 60
+        HEX 00 06 2C 70 00 00 3E 00
+        HEX 00 02 40 00 00 15 0B 00
+        HEX 00 19 33 40 00 01 78 00
+        HEX 00 0A 00 00 00 54 2C 00
+        HEX 00 65 4E 00 00 07 60 00
+@ %def SPRITE_TABLE_A_STEP1_DATA
+
+<<level1 sprite table a feet data>>=
+
+        ORG $B963
+SPRITE_TABLE_A_FEET_DATA:
+        ; Enemy-A stance feet pixel data.  7 consecutive frames of 12
+        ; bytes (4 bytes/row x 3 rows) drawn in drift / walk-phase
+        ; 0/2 (the non-animating stance).  Indexed via
+        ; SPRITE_TABLE_A_FEET_LO/HI at $B017/$B097.  Frames:
+        ; [0]=$B963 [1]=$B96F [2]=$B97B [3]=$B987 [4]=$B993
+        ; [5]=$B99F [6]=$B9AB.
+        HEX 00 00 28 00 00 00 55 40
+        HEX 00 00 67 60 00 01 20 00
+        HEX 00 02 56 00 00 03 1F 00
+        HEX 00 05 00 00 00 0A 58 00
+        HEX 00 0C 7C 00 00 14 00 00
+        HEX 00 2A 60 00 00 33 70 00
+        HEX 00 00 50 00 00 01 2B 00
+        HEX 00 01 4F 40 00 02 40 00
+        HEX 00 05 2C 00 00 06 3E 00
+        HEX 00 0A 00 00 00 15 30 00
+        HEX 00 19 78 00
+@ %def SPRITE_TABLE_A_FEET_DATA
+
+<<level1 sprite table a step2 data>>=
+
+        ORG $B9B7
+SPRITE_TABLE_A_STEP2_DATA:
+        ; Enemy-A walk-variant-2 feet pixel data.  7 consecutive frames
+        ; of 16 bytes (4 bytes/row x 4 rows) selected by
+        ; ZP_ENEMY_A_LEG_PHASE == 1; indexed via
+        ; SPRITE_TABLE_A_STEP2_LO/HI at $B01E/$B09E.  Frames:
+        ; [0]=$B9B7 [1]=$B9C7 [2]=$B9D7 [3]=$B9E7 [4]=$B9F7
+        ; [5]=$BA07 [6]=$BA17.
+        HEX 00 01 0A 00 00 02 45 30
+        HEX 00 03 15 78 00 00 18 00
+        HEX 00 04 28 00 00 0A 15 40
+        HEX 00 0C 57 60 00 00 60 00
+        HEX 00 11 20 00 00 28 56 00
+        HEX 00 32 5F 00 00 03 00 00
+        HEX 00 45 00 00 01 22 58 00
+        HEX 01 4A 7C 00 00 0C 00 00
+        HEX 00 02 14 00 00 05 0A 60
+        HEX 00 06 2B 70 00 00 30 00
+        HEX 00 08 50 00 00 14 2B 00
+        HEX 00 19 2F 40 00 01 40 00
+        HEX 00 22 40 00 00 51 2C 00
+        HEX 00 65 3E 00 00 06 00 00
+@ %def SPRITE_TABLE_A_STEP2_DATA
+
+<<level1 sprite table b data>>=
+
+        ORG $BA27
+SPRITE_TABLE_B_DATA:
+        ; Enemy-B body sprite pixel data.  7 consecutive frames of 102
+        ; bytes (6 bytes/row x 17 rows) indexed by PROJ_FRAME_IDX via
+        ; the SPRITE_TABLE_B_LO/HI pointer table at $B025/$B0A5.
+        ; Frames: [0]=$BA27 [1]=$BA8D [2]=$BAF3 [3]=$BB59 [4]=$BBBF
+        ;         [5]=$BC25 [6]=$BC8B.  Consumed by ENEMY_B_DRAW.
+        ; See Figure enemy_b_sprites.
+        HEX 00 00 80 EA D0 00 00 80
+        HEX 80 EA D2 DC 00 80 F0 EA
+        HEX D0 00 00 81 F8 87 80 00
+        HEX 00 81 9A 82 80 00 00 85
+        HEX FA C2 80 00 00 95 F2 C7
+        HEX A0 00 00 95 AA D7 A8 00
+        HEX 00 95 8A D7 A8 00 00 90
+        HEX AA D7 BA 00 00 85 AA D7
+        HEX AA 00 00 80 82 D7 AA C0
+        HEX 00 00 80 D7 AA C0 00 00
+        HEX 80 D0 A8 D0 00 00 81 D0
+        HEX E8 94 00 00 83 F9 FC 80
+        HEX 00 00 83 C1 E0 00 00 00
+        HEX 83 AA C0 00 00 80 83 AA
+        HEX CE D0 00 83 C3 AA C0 80
+        HEX 00 87 E0 9C 80 00 80 84
+        HEX E8 88 80 00 80 97 EA 88
+        HEX 80 00 80 D7 CA 9D 80 00
+        HEX 80 D5 AA DD A0 00 80 D4
+        HEX AA DD A0 00 80 C1 AA DD
+        HEX E8 00 80 95 AA DD A8 80
+        HEX 80 80 8A DD AA 80 00 80
+        HEX 82 DD AA 80 00 80 82 C1
+        HEX A2 C0 00 80 86 C3 A0 D0
+        HEX 00 80 8F E7 F0 80 00 80
+        HEX 8E 87 80 00 00 00 8D AA
+        HEX 80 00 00 80 8D AA A3 80
+        HEX 00 8E 8D AA 80 80 00 9F
+        HEX 80 F0 80 00 80 93 A0 A0
+        HEX 80 00 80 DF A8 A0 80 00
+        HEX 82 DE A8 F4 80 00 82 D5
+        HEX AA F5 80 00 82 D1 AA F5
+        HEX 80 00 82 85 AA F7 A0 00
+        HEX 80 D5 AA F5 A0 80 80 80
+        HEX AA F5 A8 80 00 80 8A F5
+        HEX A8 80 00 80 8A 85 8A 80
+        HEX 00 80 9A 8D 82 C0 00 80
+        HEX BF 9F C0 80 00 80 B8 9C
+        HEX 80 00 00 00 B5 A8 80 00
+        HEX 00 80 B5 A9 8A 80 00 B8
+        HEX B5 A8 80 80 00 FC 83 C0
+        HEX 80 00 80 CD 81 80 80 00
+        HEX 82 FD A1 80 80 00 8A F9
+        HEX A3 D0 80 00 8A D5 AB D4
+        HEX 80 00 8A C5 AB D4 80 00
+        HEX 88 95 AB DD 80 00 82 D5
+        HEX AB D5 80 80 80 81 AB D5
+        HEX A0 80 00 80 AB D5 A0 80
+        HEX 00 80 A8 94 A8 80 00 80
+        HEX E8 B4 8A 80 00 81 FC FE
+        HEX 80 80 00 81 E0 F0 80 00
+        HEX 00 00 81 D5 A0 00 00 80
+        HEX 81 D5 A5 CB 00 81 E1 D5
+        HEX A0 80 00 83 F0 8E 80 80
+        HEX 00 82 B4 84 80 00 00 8B
+        HEX F5 84 00 00 00 AB E5 8E
+        HEX C0 00 00 AA D5 AE D0 00
+        HEX 00 AA 95 AE D0 00 00 A0
+        HEX D5 AE F4 00 00 8A D5 AE
+        HEX D4 00 00 80 85 AE D5 00
+        HEX 00 00 81 AE D5 80 00 00
+        HEX 81 A0 D1 A0 00 00 83 A1
+        HEX D0 A8 00 00 87 F3 F8 80
+        HEX 00 00 87 83 C0 00 00 00
+        HEX 86 D5 00 00 00 80 86 D5
+        HEX 9D 88 00 87 86 D5 80 80
+        HEX 00 8F C0 B8 80 00 00 89
+        HEX D0 90 00 00 80 AF D4 90
+        HEX 80 00 81 AF 94 BA 80 00
+        HEX 81 AA D5 BA C0 00 81 A8
+        HEX D5 BA C0 00 81 82 D5 BB
+        HEX D0 00 80 AA D5 BA D0 00
+        HEX 80 80 95 BA D4 80 00 00
+        HEX 85 BA D4 80 00 00 85 82
+        HEX C5 80 00 00 8D 86 C1 A0
+        HEX 00 00 9F CF E0 80 00 00
+        HEX 9C 8E 80 00 00 00 9A D4
+        HEX 80 00 00 80 9A D4 C4 A8
+        HEX 00 9C 9A D4 80 80 00 BE
+        HEX 81 E0 80 80 80 A6 C0 C0
+        HEX 80 80 81 BE D0 C0 80 00
+        HEX 85 BC D1 E8 80 00 85 AA
+        HEX D5 EA 80 00 85 A2 D5 EA
+        HEX 80 00 84 8A D5 EE C0 00
+        HEX 81 AA D5 EA C0 80 80 80
+        HEX D5 EA D0 80 80 80 95 EA
+        HEX D5 80 00 80 94 8A 94 80
+        HEX 00 80 B4 9A 80 80 00 80
+        HEX FE BF 80 80 00 80 F0 B8
+        HEX 80 00
+@ %def SPRITE_TABLE_B_DATA
+
+<<level1 broderbund logo spr data>>=
+
+        ORG $BCF1
+BRODERBUND_LOGO_SPR_DATA:
+        ; BRODERBUND_LOGO_SPR (152 bytes).  W=18, H=8 -> 19 bytes/row
+        ; x 8 rows.  ATTRACT_ANIM_4 draws this fixed "(c) 1983
+        ; Broderbund" attribution strip at col $1D, row $A5 after its
+        ; 2-entity draw loop.  The drol chapter's BRODERBUND_LOGO_SPR
+        ; EQU (at $BCF1) targets this data.  See Figure drol_logo.
+        HEX 18 00 00 01 40 00 30 00
+        HEX 00 3C 03 00 0C 00 3C 3C
+        HEX 3C 30 3E 18 00 00 01 40
+        HEX 00 30 00 00 66 07 40 1E
+        HEX 00 66 66 66 38 7F 1F 0F
+        HEX 19 4F 5E 1E 3E 0E 3C 66
+        HEX 1B 30 6D 40 60 66 66 30
+        HEX 67 19 59 59 59 47 33 33
+        HEX 23 0E 3E 0F 66 3F 00 38
+        HEX 3C 7C 30 7B 19 59 59 59
+        HEX 43 3F 33 33 06 66 07 4F
+        HEX 1E 00 60 66 60 30 7B 19
+        HEX 59 59 59 43 03 33 33 06
+        HEX 66 00 36 60 00 60 66 60
+        HEX 30 67 19 59 59 59 43 33
+        HEX 33 31 06 66 00 1F 40 00
+        HEX 66 66 66 30 7F 0F 19 4F
+        HEX 0F 03 1E 1E 1C 06 3E 00
+        HEX 0F 00 00 3C 3C 3C 78 3E
+@ %def BRODERBUND_LOGO_SPR_DATA
+
+<<level1 tail residue>>=
+
+        ORG $BD89
+LEVEL1_TAIL_RESIDUE:
+        ; 23 bytes of unreferenced tail data between
+        ; BRODERBUND_LOGO_SPR_DATA's end ($BD89) and GAME_OVER at
+        ; $BDA0.  Likely leftover sprite-table padding from an earlier
+        ; build; no pointer table indexes into this range, and no
+        ; draw routine references it.  Preserved byte-for-byte.
+        HEX BA 88 D0 FA AE F8 05 A0
+        HEX 04 B1 48 20 5A BE 28 D0
+        HEX 11 A4 47 10 0D A0 12
+@ %def LEVEL1_TAIL_RESIDUE
 
 \section{Assembly}
 
@@ -21625,8 +21785,26 @@ MON_WAIT        = $FCA8         ; Monitor WAIT (delay loop, A = duration)
 <<level1 beam ready sprites>>
 ; --- $B571-$B5FC: ATTRACT_SPR2_0..3 (attract-mode title sprites) ---
 <<level1 attract spr2>>
-; --- $B5FD-$BD9F: level-only sprite pixel data (tail) ---
-<<level1 pages 8C-BD tail>>
+; --- $B5FD-$B664: ATTRACT_SPR[0] (attract-mode large silhouette) ---
+<<level1 attract spr 0 data>>
+; --- $B665-$B67C: ATTRACT_SPR[1] (attract-mode narrow companion) ---
+<<level1 attract spr 1 data>>
+; --- $B67D-$B6DE: EXTRA_LIFE_SPR (life-lost countdown glyph) ---
+<<level1 extra life spr data>>
+; --- $B6DF-$B8F2: SPRITE_TABLE_A_BODY data (7 enemy-A body frames) ---
+<<level1 sprite table a body data>>
+; --- $B8F3-$B962: SPRITE_TABLE_A_STEP1 data (7 enemy-A walk-1 feet) ---
+<<level1 sprite table a step1 data>>
+; --- $B963-$B9B6: SPRITE_TABLE_A_FEET data (7 enemy-A stance feet) ---
+<<level1 sprite table a feet data>>
+; --- $B9B7-$BA26: SPRITE_TABLE_A_STEP2 data (7 enemy-A walk-2 feet) ---
+<<level1 sprite table a step2 data>>
+; --- $BA27-$BCF0: SPRITE_TABLE_B data (7 enemy-B body frames) ---
+<<level1 sprite table b data>>
+; --- $BCF1-$BD88: BRODERBUND_LOGO_SPR data (attract attribution strip) ---
+<<level1 broderbund logo spr data>>
+; --- $BD89-$BD9F: tail residue before GAME_OVER ---
+<<level1 tail residue>>
 ; --- $BDA0-$BDFF: end-of-game handler (GAME_OVER) ---
 <<level1 game over>>
 @

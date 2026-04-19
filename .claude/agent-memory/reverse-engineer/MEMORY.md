@@ -55,3 +55,4 @@
 - [$0274-$0299 dead-residue decomp](drol-page2-dead-residue.md) — 4 PAGE2_DEAD_* labels + 3 LVL_INIT_*_DATA chunks; span is all-zeros in level1.bin
 - [DIGIT_TILE_DATA at $B4B1](drol-digit-tile-data.md) — 10 HUD digit glyphs W=1 H=6 12 bytes each; pointer tables DIGIT_TILE_LO/HI are one 'page' below SPRITE_TABLE_LO/HI
 - [ATTRACT_SPR2 + UI sprite data-labels](drol-attract-spr2-labels.md) — $B529 BEAM_SPR_DATA, $B535 READY_PROMPT_SPR, $B571..$B5FC ATTRACT_SPR2_0..3 (consumed by ATTRACT_ANIM_2)
+- [Level-1 tail sprite decomposition](drol-level1-tail-sprite-decomposition.md) — $B5FD-$BD9F split into 10 labeled sprite-data sub-chunks (ATTRACT_SPR_0/1_DATA, EXTRA_LIFE_SPR_DATA, SPRITE_TABLE_A/B_*_DATA, BRODERBUND_LOGO_SPR_DATA, residue)

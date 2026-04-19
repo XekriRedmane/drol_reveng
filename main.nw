@@ -1399,7 +1399,7 @@ FIRST_BOOT:
 
 \section{Empty page and zero-page image}
 
-[[UNUSED_PAGE]] at [[$5600]] is 256 bytes of padding between the
+[[UNUSED_PAGE]] is 256 bytes of padding between the
 loader code at [[$5500]] and the on-disk zero-page image at [[$5700]].
 Nothing in any shipped binary references any address in this page;
 it exists because the sector layout reserves one full page for the
@@ -2100,7 +2100,7 @@ Two screen scroll routines save and restore hi-res screen content during
 disk loads. SCROLL\_UP copies 32 hi-res lines to a buffer starting at
 [[$4028]] (hi-res page~2, skipping the leftmost 40 bytes). SCROLL\_DN
 copies from the buffer back to the screen, then fills the bottom 4 text
-lines from [[$0300]] data.
+lines from [[BOTTOM_ROW_DATA]].
 
 SCROLL\_UP has two entry points: a preamble at [[SCROLL_UP_PRE]] that would
 delegate to a game scroll handler if A != [[#$FF]] on entry, and the main
@@ -2278,7 +2278,7 @@ at [[GAME_INIT]].
 
 \section{HUD/frame unpacker}
 
-[[GAME_INIT]] unpacks a data stream from [[$4100]] into hi-res
+[[GAME_INIT]] unpacks a data stream from [[HUD_FRAME_DATA]] into hi-res
 page~1 ([[HGR1_BASE]]--[[$3FFF]]), drawing the static HUD and playfield frame
 (score panels, lives/level indicators, and wall/floor borders --- \emph{not}
 the DROL logo, which is drawn later). The stream consists
@@ -2298,7 +2298,8 @@ the page looks like immediately after [[GAME_INIT]] returns, assuming
 a cleared framebuffer: the static score/hiscore HUD, the player-lives
 and level indicators, and the purple wall/floor frame of the playfield.
 The DROL logo and any other foreground content are drawn later by the
-attract-mode sprite routines ([[ATTRACT_ANIM_1..4]] at [[$17A6]]/[[$17E1]]/[[$1813]]/[[$1844]])
+attract-mode sprite routines
+[[ATTRACT_ANIM_1]]/[[ATTRACT_ANIM_2]]/[[ATTRACT_ANIM_3]]/[[ATTRACT_ANIM_4]]
 which composite sprite pointer tables into hi-res page~2 for the
 animated title sequence.
 
@@ -2763,8 +2764,7 @@ constant.  The body replicates [[CLEAR_PAGE2]]'s interlace tail,
 of [[INTERLACE_BLIT_P1]], all at the same offsets.
 \end{enumerate}
 
-The mechanism is incidental: the page table ([[PAGE_TABLE]] at
-[[$5400]]) maps track~2 sector~15 to destination page [[$47]], and track~1
+The mechanism is incidental: the page table ([[PAGE_TABLE]]) maps track~2 sector~15 to destination page [[$47]], and track~1
 sector~3 to destination page [[$05]].  These two disk sectors happen
 to contain identical bytes (the build artefact of some earlier
 editing pass or a deliberate sector-level duplicate).  Because
@@ -2830,7 +2830,7 @@ SECTOR_RESIDUE_47XX:
 
 \section{Input dispatcher}
 
-[[INPUT_DISPATCH]] at [[$6000]] handles keyboard and joystick input during
+[[INPUT_DISPATCH]] handles keyboard and joystick input during
 gameplay. If [[ZP_INPUT_MODE]] is negative, it delegates to
 [[JOYSTICK_HANDLER]]. Otherwise it reads the keyboard and processes
 five keys:
@@ -3086,9 +3086,9 @@ INPUT_DO_DESCEND:
 
 \section{Meta-key handler}
 
-[[INPUT_PROCESS]] at [[$6109]] handles non-movement keys during gameplay:
+[[INPUT_PROCESS]] handles non-movement keys during gameplay:
 ESC pauses, Ctrl-R restarts, Ctrl-S toggles sound. Unrecognized keys
-fall through to [[KEY_HANDLER_EXT]] at [[$0194]], which handles
+fall through to [[KEY_HANDLER_EXT]], which handles
 Ctrl-J (joystick mode), Ctrl-K (keyboard mode), and Ctrl-V (speaker click).
 
 <<input process defines>>=
@@ -3164,7 +3164,7 @@ INPUT_PROCESS:
 
 \section{Pause handler}
 
-[[PAUSE_HANDLER]] at [[$0E51]] clears the keyboard strobe, then waits in a
+[[PAUSE_HANDLER]] clears the keyboard strobe, then waits in a
 tight loop until a new key is pressed. Used by the ESC key to pause the game.
 
 <<pause handler>>=
@@ -3470,7 +3470,7 @@ HAZARD_CHECK:
 
 \section{Joystick input handler}
 
-[[JOYSTICK_HANDLER]] at [[$012B]] reads the Apple~II game-port buttons and
+[[JOYSTICK_HANDLER]] reads the Apple~II game-port buttons and
 paddles. The input dispatcher jumps here when joystick mode is active
 ([[$48]] negative).
 
@@ -3617,7 +3617,7 @@ JOYSTICK_HANDLER:
 
 \section{Extended key handler}
 
-[[KEY_HANDLER_EXT]] at [[$0194]] handles Ctrl-J (switch to joystick mode),
+[[KEY_HANDLER_EXT]] handles Ctrl-J (switch to joystick mode),
 Ctrl-K (switch to keyboard mode), and Ctrl-V (click the speaker). Any
 other key just clears the strobe and returns.
 
@@ -3815,7 +3815,7 @@ SMC_PAGE_SWITCH = *+1
 
 \section{Pseudo-random number generator}
 
-[[PRNG]] at [[$6674]] generates an 8-bit pseudo-random value using a
+[[PRNG]] generates an 8-bit pseudo-random value using a
 two-byte state in ZP~[[$1F]] and~[[$5F]]. The algorithm shifts [[$1F]] right one
 bit, rotates the result into [[$5F]], XORs with the old [[$1F]], then swaps
 the two state bytes. The result is returned in~A.
@@ -3910,7 +3910,7 @@ DISPLAY_UPDATE:
 
 \section{Score and status display}
 
-[[POST_FRAME]] at [[$10CF]] runs after each game frame to draw the score and
+[[POST_FRAME]] runs after each game frame to draw the score and
 status digits on the screen. It extracts BCD nibbles from ZP~[[$D1]],
 [[$D2]], and~[[$D3]], and draws each digit at a specific column position. The
 level-state flag ([[$5E]]) is also drawn as two digits.
@@ -4050,18 +4050,28 @@ DRAW_DIGIT:
 
 \section{High score check}
 
-[[LEVEL_TRANSITION]] at [[$116C]] is called during the level-complete
+[[LEVEL_TRANSITION]] is called during the level-complete
 sequence. It performs a 3-byte BCD comparison of the current score
-([[$D1]]/[[$D2]]/[[$D3]]) against the stored high score ([[$20]]/[[$21]]/[[$22]]). If the
-current score does not exceed the high score, it returns immediately.
+([[ZP_SCORE_HI]]/[[ZP_SCORE_MID]]/[[ZP_SCORE_LO]]) against the stored
+high score ([[ZP_HIGH_SCORE_0]]/[[ZP_HIGH_SCORE_1]]/[[ZP_HIGH_SCORE_2]]).
+If the current score does not exceed the high score, it returns
+immediately.
 
 When a new high score is detected, it copies the current score into the
-high-score slots, then copies six rows of the score display area from
-hi-res page~1 to page~2 (rows~[[$0C]]--[[$11]]). The source address comes from
-[[SCREEN_ROW_ADDR_LO]]/[[SCREEN_ROW_ADDR_HI]] offset by~1 (skipping
-the first byte of each row), and the destination uses a second high-byte
-table at [[SCREEN_ROW_ADDR_HI2]] (page~2 addresses). This makes the high-score area
-visible on both display pages.
+high-score slots, then mirrors the six-row score-digit strip across the
+HUD on both hi-res pages (rows~[[$0C]]--[[$11]]).  For each row [[X]]
+in that range the routine stages three 16-bit scratch pointers in
+zero~page: [[ZP_HISCORE_SRC]] (read pointer, page~1 row+[[$01]]; the
+left HUD digit strip at columns~1--10), [[ZP_HISCORE_DST1]] (write
+pointer, page~1 row+[[$1E]]; the right HUD strip at columns~30--39 on
+page~1) and [[ZP_HISCORE_DST2]] (write pointer, page~2 row+[[$1E]];
+the right HUD strip on page~2).  The inner loop reads ten bytes from
+[[ZP_HISCORE_SRC]] and stores them to both destinations, so the new
+high score is visible in the right HUD strip regardless of which
+display page the attract/game loop is showing.  The row-low byte comes
+from [[SCREEN_ROW_ADDR_LO]] (shared between pages~1 and~2); the row-hi
+bytes come from [[SCREEN_ROW_ADDR_HI]] (page~1) and
+[[SCREEN_ROW_ADDR_HI2]] (page~2).
 
 <<level transition defines>>=
 
@@ -4069,6 +4079,16 @@ visible on both display pages.
 ZP_HIGH_SCORE_0 = $20           ; High score byte 0 (highest BCD digits)
 ZP_HIGH_SCORE_1 = $21           ; High score byte 1
 ZP_HIGH_SCORE_2 = $22           ; High score byte 2
+
+; --- Zero-page (high-score mirror pointers) ---
+; Three 16-bit scratch pointer pairs used only by LEVEL_TRANSITION's
+; hi-res row-copy inner loop.  SRC reads from the left HUD digit strip
+; on page 1 (col $01-$0A); DST1 / DST2 write to the right HUD strip
+; (col $1E-$27) on page 1 and page 2 respectively.  No other routine
+; touches $23-$28.
+ZP_HISCORE_SRC  = $23           ; SRC  pointer lo/hi: page 1 row + $01
+ZP_HISCORE_DST1 = $25           ; DST1 pointer lo/hi: page 1 row + $1E
+ZP_HISCORE_DST2 = $27           ; DST2 pointer lo/hi: page 2 row + $1E
 @
 
 <<level transition>>=
@@ -4076,14 +4096,20 @@ ZP_HIGH_SCORE_2 = $22           ; High score byte 2
         ORG $116C
 LEVEL_TRANSITION:
         SUBROUTINE
-        ; High score check -- updates high score and copies display rows.
+        ; High score check -- if current > stored high, update the
+        ; stored high score and mirror six rows of the score-digit strip
+        ; into both pages' right HUD areas.
         ;
         ; Inputs:
-        ;   ZP_SCORE_HI/MID/LO ($D1/$D2/$D3) -- current score (BCD)
-        ;   ZP_HIGH_SCORE_0/1/2 ($20/$21/$22) -- stored high score (BCD)
+        ;   ZP_SCORE_HI/MID/LO        -- current score (BCD).
+        ;   ZP_HIGH_SCORE_0/1/2       -- stored high score (BCD).
+        ;   SCREEN_ROW_ADDR_LO/HI/HI2 -- row-base tables (pages 1/2).
         ;
         ; Modifies:
-        ;   $20-$22 (if new high score), hi-res page 2 rows
+        ;   ZP_HIGH_SCORE_0/1/2 (on new high),
+        ;   ZP_HISCORE_SRC/DST1/DST2 (scratch pointer pairs),
+        ;   hi-res page-1 and page-2 right HUD strip (rows $0C..$11,
+        ;   cols $1E..$27).
         ; Clobbers: A, X, Y
 
 ; --- BCD comparison: high score >= current score? ---
@@ -4108,31 +4134,35 @@ LEVEL_TRANSITION:
         LDA ZP_SCORE_LO
         STA ZP_HIGH_SCORE_2
 
-; --- Copy score display rows from page 1 to page 2 ---
-        LDX #$0C                  ; Start at row ZP_PLAYER_FLOOR_CUR
+; --- Mirror the score-digit strip into the HUD, rows $0C..$11 ---
+; Reads page 1 row+$01..+$0A (the left HUD digit strip) and writes it
+; to row+$1E..+$27 on BOTH page 1 (DST1) and page 2 (DST2).  The page-1
+; and page-2 DSTs share a common row-low byte via SCREEN_ROW_ADDR_LO;
+; only the high byte differs.
+        LDX #$0C                        ; top HUD row (first of six)
 .copy_row:
-        LDA SCREEN_ROW_ADDR_HI,X ; Page 1 row address high
-        STA $24                   ; Dest pointer A high
-        STA $26                   ; Dest pointer B high
-        LDA SCREEN_ROW_ADDR_HI2,X ; Page 2 row address high
-        STA $28                   ; Source pointer high
-        LDA SCREEN_ROW_ADDR_LO,X ; Row address low
+        LDA SCREEN_ROW_ADDR_HI,X        ; page-1 row hi
+        STA ZP_HISCORE_SRC+1            ; SRC  page-1 hi
+        STA ZP_HISCORE_DST1+1           ; DST1 page-1 hi
+        LDA SCREEN_ROW_ADDR_HI2,X       ; page-2 row hi
+        STA ZP_HISCORE_DST2+1           ; DST2 page-2 hi
+        LDA SCREEN_ROW_ADDR_LO,X        ; row lo (shared by pages 1/2)
         CLC
-        ADC #$01                  ; Skip first byte of row
-        STA $23                   ; Dest pointer A low
+        ADC #$01                        ; +$01 = left-strip column 1
+        STA ZP_HISCORE_SRC              ; SRC  lo = row + $01
         CLC
-        ADC #$1D                  ; Offset to second half
-        STA $25                   ; Dest pointer B low
-        STA $27                   ; Source pointer low
-        LDY #$09                  ; Copy 10 bytes per row
+        ADC #$1D                        ; +$1E = right-strip column $1E
+        STA ZP_HISCORE_DST1             ; DST1 lo = row + $1E (page 1)
+        STA ZP_HISCORE_DST2             ; DST2 lo = row + $1E (page 2)
+        LDY #$09                        ; 10 bytes per row (Y = 9..0)
 .copy_byte:
-        LDA ($23),Y               ; Read from page 1
-        STA ($25),Y               ; Write to page 2 (half A)
-        STA ($27),Y               ; Write to page 2 (half B)
+        LDA (ZP_HISCORE_SRC),Y          ; read page-1 digit byte
+        STA (ZP_HISCORE_DST1),Y         ; mirror into page-1 HUD
+        STA (ZP_HISCORE_DST2),Y         ; mirror into page-2 HUD
         DEY
         BPL .copy_byte
         INX
-        CPX #$12                  ; Rows $0C through ZP_COMPANION_COL
+        CPX #$12                        ; rows $0C..$11 inclusive
         BNE .copy_row
         RTS
 @ %def LEVEL_TRANSITION
@@ -4285,7 +4315,7 @@ INIT_LEVEL_STATE:
 
 \section{Score add}
 
-[[SCORE_ADD]] at [[$121A]] adds a BCD value to the 3-byte score. The
+[[SCORE_ADD]] adds a BCD value to the 3-byte score. The
 addend's low byte is in ZP~[[$1A]] and high byte in ZP~[[$1B]]; these are added
 to [[$D3]] and [[$D2]] respectively, with carry propagating into [[$D1]]. All
 arithmetic is performed in BCD mode.
@@ -4328,10 +4358,10 @@ SCORE_ADD:
 
 \section{Game start initialization}
 
-[[GAME_START_INIT]] at [[$13A4]] is called on the attract-to-game
+[[GAME_START_INIT]] is called on the attract-to-game
 transition and on in-game restart paths.  It resets the BCD-score
 triple, BCD lives counter, HUD column bounds, and other top-of-game
-state, then tail-calls [[RESUME_GAMEPLAY_SMC]] at [[$6AA7]] to re-arm the
+state, then tail-calls [[RESUME_GAMEPLAY_SMC]] to re-arm the
 three main-loop SMC slots ([[SMC_SR_YSRC]], [[SMC_INPUT]],
 [[SMC_RENDER]], [[SMC_SR_HEIGHT]]) so the engine starts running the
 input and draw subsystems.
@@ -5073,7 +5103,7 @@ fixed sprite is not the game title at all --- it is the
 \textbf{\textcopyright 1983 Broderbund} attribution strip shown during
 the attract sequence.
 The title-screen ``DROL'' logo is drawn by a different routine via
-the [[ATTRACT_SPR2]] / [[ATTRACT_SPR]] tables at [[$B002]]/[[$B006]] whose
+the [[ATTRACT_SPR2_LO]] / [[ATTRACT_SPR_LO]] pointer tables whose
 sprite widths and heights come from the runtime ZP slots
 [[$E5]]..[[$ED]] and [[$F1]]..[[$F6]], so those cannot be rendered without
 simulating the attract-mode animation state.
@@ -5175,9 +5205,9 @@ The attract loop at [[ATTRACT_LOOP]] calls the main game loop's
 attract entry point ([[JSR ATTRACT_ENTRY]]), which runs the game's rendering and
 animation subsystems without input handling. After each frame, it polls
 the joystick buttons and keyboard. When input is detected, it patches
-the main loop for game mode, enters the [[START_GAME_FROM_ATTRACT]]
-sub-entry (at [[$7299]]), calls [[GAME_START_INIT]] and jumps to
-[[MAIN_LOOP]].
+the main loop for game mode, enters the
+[[START_GAME_FROM_ATTRACT]] sub-entry, calls [[GAME_START_INIT]]
+and jumps to [[MAIN_LOOP]].
 
 <<attract loop>>=
 
@@ -5284,7 +5314,7 @@ properly annotated assembly as analysis progresses.
 
 \section{Title-wipe per-row speaker click}
 
-[[ROW_COPY_CLICK]] at [[$01B7]] is the per-row audio hook for the
+[[ROW_COPY_CLICK]] is the per-row audio hook for the
 title-wipe effect ([[SCREEN_ROW_COPY]]). The parent routine sweeps
 X over all 192 hi-res rows; for each row it calls [[ROW_COPY_CLICK]]
 after writing the 40-byte pattern, which emits a single speaker click
@@ -5293,9 +5323,7 @@ via [[SND_DELAY_UP]] with pitch proportional to the current row index
 ``zipper'' whistle that accompanies Drol's screen-fill transitions.
 
 The 13-byte routine occupies [[$01B7]]--[[$01C3]]. The next 41 bytes
-([[$01C4]]--[[$01EE]]) are \emph{dead code}: a standalone [[RTS]] at
-[[$01C4]] followed by two orphan routines ([[ROW_COPY_CLICK_RANDOM]] at
-[[$01C5]] and [[ROW_COPY_CLICK_GATE]] at [[$01E9]]) that nothing in
+([[$01C4]]--[[$01EE]]) are \emph{dead code}: a standalone [[RTS]] followed by two orphan routines ([[ROW_COPY_CLICK_RANDOM]] and [[ROW_COPY_CLICK_GATE]]) that nothing in
 [[boot1.bin]], [[loader.bin]], [[rwts.bin]], or [[drol.bin]] ever
 branches or jumps to. They appear to be an earlier, richer version of
 the wipe-click hook that also used PRNG-driven extra SFX; the final
@@ -5307,7 +5335,7 @@ After the code, [[$0200]]--[[$02B6]] holds a collection of initial data
 tables (music sequences, the [[ROW_COPY_BUFFER]] wipe pattern, and
 several small arrays that other subsystems read from). Those sub-regions
 are not fully dissected here --- the main artefact of interest is the
-40-byte [[ROW_COPY_BUFFER]] at [[$024C]]--[[$0273]].
+40-byte [[ROW_COPY_BUFFER]].
 
 <<row copy click>>=
 
@@ -5447,8 +5475,16 @@ each table's semantic role):
   pitch table.
 \item [[ROW_COPY_BUFFER]] ([[$024C]]) --- 40 bytes, title/restore
   wipe pattern consumed by [[SCREEN_ROW_COPY]].
-\item [[$0274]]--[[$02B6]] --- miscellaneous initial seeds for
+\item [[$0274]]--[[$02B4]] --- miscellaneous initial seeds for
   further subsystems; not yet decomposed into labelled sub-tables.
+  The sub-range [[$029A]]--[[$02B4]] inside this span is consumed by
+  [[INIT_LEVEL_STATE]] as [[LVL_INIT_HIT_Y]] and the [[LVL_INIT_ENTITY]]
+  block.
+\item [[LVL_INIT_ENTITY_HIT_STATE]] ([[$02BA]]) --- 12 bytes of [[$FF]]
+  forming the [[LVL_INIT_SPRITE]]\([[$05]]..[[$10]]\) seed for the
+  12-slot [[ENTITY_HIT_STATE]] array at ZP [[$8D]]--[[$98]].
+  Seeds every hit-entity slot to [[$FF]] (``inactive'') on every level
+  restart.
 \end{itemize}
 
 <<row copy data>>=
@@ -5491,17 +5527,31 @@ each table's semantic role):
         HEX 2B 55 2A 55 2A 55 2A 5D
         HEX 2A 55 2A 55 2E 55 2A 57
         HEX 6A 55 6B 7D
-        ; --- $0274-$02B6: remaining initial data (awaiting per-consumer RE).
+        ; --- $0274-$0299: miscellaneous initial data (not yet per-consumer RE'd).
+        ;     Not copied to ZP by INIT_LEVEL_STATE (which starts reading at $029A).
         HEX 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 D4 82 D4 82 D4 82 D4
         HEX 82 D4 82 2A 00 07 00 40
         HEX 03 00 60 41 02 07 00 40
-        HEX 03 00 0A 0F 01 3C 00 A0
+        HEX 03 00
+        ; --- LVL_INIT_HIT_Y ($029A-$029B, 2 bytes): Y-window pair copied
+        ;     into ZP_HIT_Y_OFFSET/ZP_HIT_Y_SPAN by INIT_LEVEL_STATE.
+        HEX 0A 0F
+        ; --- LVL_INIT_ENTITY ($029C-$02B4, 25 bytes): copied into
+        ;     ZP_ENTITY_BLOCK ($D4-$EC) by INIT_LEVEL_STATE.  Seeds the
+        ;     three enemy slots (A/B/C state+pos+row) and attract-mode
+        ;     entity Y positions at ZP $E9-$EC.
+        HEX 01 3C 00 A0
         HEX 00 88 CC EE 01 3E 00 A5
         HEX 01 5A 03 80 FF 11 14 16
-        HEX 18 6A 6A 6A 6A 01 01 01
-        HEX 01 00
+        HEX 18 6A 6A 6A 6A
+        ; --- LVL_INIT_SPRITE head ($02B5-$02B9, 5 bytes): first 5 bytes
+        ;     of the 45-byte block copied into ZP_SPRITE_BLOCK ($88-$B4).
+        ;     The 12-byte $FF span at $02BA-$02C5 (ENTITY_HIT_STATE seed)
+        ;     is emitted by LVL_INIT_ENTITY_HIT_STATE, and the 28-byte
+        ;     tail at $02C6-$02E1 is emitted by LVL_INIT_SPRITE_TAIL_DATA.
+        HEX 01 01 01 01 00
 @
 
 \section{Playfield dither source}
@@ -5552,19 +5602,42 @@ within that block.  Its [[TEXT_STRIP_SRC]] [[EQU]] is declared in the
 [[<<clear page1 defines>>]] chunk alongside the other column-bound
 screen-clear constants.
 
+<<lvl init entity hit state data>>=
+
+        ORG $02BA
+LVL_INIT_ENTITY_HIT_STATE:
+        SUBROUTINE
+        ; LVL_INIT_SPRITE[$05..$10] ($02BA-$02C5, 12 bytes of $FF) ---
+        ; the per-level seed for the 12-slot ENTITY_HIT_STATE array at
+        ; ZP $8D-$98.  INIT_LEVEL_STATE copies LVL_INIT_SPRITE[$00..$2C]
+        ; into ZP $88-$B4, so these 12 bytes land at ZP_HIT_STATE[0..11]
+        ; and seed every slot to $FF ("inactive").  The array is then
+        ; reactivated slot-by-slot by runtime spawns.
+        ;
+        ; Earlier prose described this span as "dasm FF-fill" and
+        ; "unreferenced"; that was wrong.  The bytes are genuine
+        ; LVL_INIT_SPRITE payload that seeds the hit-entity
+        ; active-flag array at cold start and on every level restart.
+        DS 12,$FF
+@ %def LVL_INIT_ENTITY_HIT_STATE
+
 <<lvl init sprite tail data>>=
 
         ORG $02C6
 LVL_INIT_SPRITE_TAIL_DATA:
         SUBROUTINE
-        ; Tail of LVL_INIT_SPRITE ($02B5-$02E1, 45 bytes); the first 5 bytes
-        ; at $02B5-$02B9 are emitted by the row-copy-data chunk.  The
-        ; 12-byte gap $02BA-$02C5 is dasm FF-fill (unreferenced by the
-        ; game; the source payload ends with 5 bytes of $00).
+        ; Tail of LVL_INIT_SPRITE ($02C6-$02E1, 28 bytes); the rest of
+        ; the 45-byte block is split into three pieces:
+        ;   $02B5-$02B9 (5 bytes of ZP_SPRITE_BLOCK head) --- emitted
+        ;     by the row-copy-data chunk.
+        ;   $02BA-$02C5 (12 bytes of $FF, ENTITY_HIT_STATE seed) ---
+        ;     emitted by LVL_INIT_ENTITY_HIT_STATE.
+        ;   $02C6-$02E1 (28 bytes, this chunk) --- ZP_ENEMY_FLAG tail
+        ;     and live special / projectile state.
         ;
         ; Consumed by INIT_LEVEL_STATE which copies
         ; LVL_INIT_SPRITE -> ZP_SPRITE_BLOCK ($88-$B4, 45 bytes).  The
-        ; zero tail at $02C6-$02D7 becomes ZP $99-$AA; the non-zero
+        ; zero head at $02C6-$02D7 becomes ZP $99-$AA; the non-zero
         ; bytes $02D8-$02E1 seed the live special / projectile state
         ; ($AB-$B4) used by SPECIAL_TICK, COMPANION_UPDATE and the
         ; entity-B/C draw paths.
@@ -5970,8 +6043,7 @@ CLEAR_PAGE2_TEXT_ENTRY:
 
 \section{Perspective-floor sprite blitter}
 
-[[INTERLACE_BLIT_P1]] at [[$054E]] and [[INTERLACE_BLIT_P2]] at
-[[$070B]] are the streaming-source twin of [[INTERLACE_FILL_P1]] and
+[[INTERLACE_BLIT_P1]] and [[INTERLACE_BLIT_P2]] are the streaming-source twin of [[INTERLACE_FILL_P1]] and
 [[INTERLACE_FILL_P2]]: where the FILL helpers broadcast a single byte
 ([[A]]) across all 105 interlaced rows of a column, the BLIT helpers
 pull one source byte per relative-row from [[(ZP_BLIT_SRC),Y]] and
@@ -6031,19 +6103,15 @@ the same shape:
 
 The four callers are:
 \begin{itemize}
-\item [[REFRESH_RIGHT_WALL]] at [[$61F0]] --- right-edge
-      playfield wall (shared tail at [[$624C]], [[INTERLACE_BLIT]]
-      at [[$625F]] for page~1).
-\item [[REFRESH_LEFT_WALL]] at [[$626A]] --- left-edge playfield
-      wall (shared tail at [[$62AC]], [[INTERLACE_BLIT]] at
-      [[$62C6]] for page~2 --- the task-named site).
-\item [[REFRESH_FLOOR_LINES]] at [[$62CA]] --- four-row floor
+\item [[REFRESH_RIGHT_WALL]] --- right-edge
+      playfield wall (shared tail at [[$624C]], [[INTERLACE_BLIT]] for page~1).
+\item [[REFRESH_LEFT_WALL]] --- left-edge playfield
+      wall (shared tail at [[$62AC]], [[INTERLACE_BLIT]] for page~2 --- the task-named site).
+\item [[REFRESH_FLOOR_LINES]] --- four-row floor
       painter (no shared tail; tail-calls
-      [[FLOOR_LINES_P1]]/[[FLOOR_LINES_P2]] at
-      [[$08C8]]/[[$08DF]] instead of [[INTERLACE_BLIT]]).
-\item [[REFRESH_PILLARS]] at [[$62E2]] --- six-slot landmark
-      pillar loop (shared tail at [[$62FD]], [[INTERLACE_BLIT]] at
-      [[$6317]] for page~2).
+      [[FLOOR_LINES_P1]]/[[FLOOR_LINES_P2]] instead of [[INTERLACE_BLIT]]).
+\item [[REFRESH_PILLARS]] --- six-slot landmark
+      pillar loop (shared tail at [[$62FD]], [[INTERLACE_BLIT]] for page~2).
 \end{itemize}
 
 The selectors pick [[INTERLACE_BLIT_P1]] when [[ZP_PAGE_FLAG]] is
@@ -6617,8 +6685,8 @@ FLOOR_LINES_P2:
 
 \section{Top-center HUD strip painter}
 
-[[PAINT_HUD_STRIP_P1]] at [[$08F6]] and its page-2 twin
-[[PAINT_HUD_STRIP_P2]] at [[$097A]] paint the 16-column wide, 31-row
+[[PAINT_HUD_STRIP_P1]] and its page-2 twin
+[[PAINT_HUD_STRIP_P2]] paint the 16-column wide, 31-row
 tall ``HUD-strip'' decoration centered above the playfield, at hi-res
 columns [[$0C]]..[[$1B]] (columns~12--27, the middle 16 of 40) and rows
 1--31.  Each routine reads 112 source bytes from [[HUD_STRIP_SRC]]
@@ -6642,9 +6710,9 @@ right-to-left; Y runs monotonically from [[$00]] to [[$6F]] across the
 outer loop and is \emph{not} reset per column.  The two routines are a
 strict twin pair: byte-for-byte identical except that the page-2 variant
 rebases every [[STA]] destination from [[$2xxx]] to [[$4xxx]]
-(high byte $+$[[\$20]]).
+(high byte $+$[[$20]]).
 
-The pair is dispatched from [[TEXT_ROW_DISPATCH]] at [[$636C]]: every
+The pair is dispatched from [[TEXT_ROW_DISPATCH]]: every
 per-frame tick selects page~1 or page~2 based on [[ZP_PAGE_FLAG]].  The
 source at [[HUD_STRIP_SRC]] is per-level (loaded from the swappable
 track-5+ data set), so the top HUD decoration changes when the level
@@ -7255,7 +7323,7 @@ completes.  The screen-column [[ZP_SPRITE_X]] is sourced from
 
 \paragraph{Drift sound.}  The drift-state click (4 frames during the
 [[$04]]-step countdown after a hit) reads its pitch from
-[[RESCUE_DRIFT_PITCH]] at [[$0213]] indexed by the current
+[[RESCUE_DRIFT_PITCH]] indexed by the current
 [[RESCUE_COUNTDOWN]] (1..4) --- four descending-tone frames make the
 ``pop'' sound when the child is collected.  The flicker mask byte
 loaded into [[SMC_SPRITE_MASK_ARG]] is sourced from
@@ -7649,7 +7717,7 @@ RESCUE_DRAW_PERSPECTIVE_CACHE:
 
 \label{sec:scroll_edge}
 
-The two routines at [[$0F37]] and [[$0F5D]] paint a decorative
+The two routines [[SCROLL_EDGE_L]] and [[SCROLL_EDGE_R]] paint a decorative
 3-column-wide vertical stripe into the topmost perspective band of the
 playfield (hi-res rows 35--66, the region above the first floor line at
 row~67).  They are called in sequence from [[MAIN_LOOP]] immediately
@@ -7658,10 +7726,10 @@ stripe only when the player's world-Y coordinate [[ZP_PLAYER_Y]] is
 within a narrow range that places the pillar on-screen; otherwise the
 routine exits immediately without touching the framebuffer.
 
-\paragraph{Two mirrored instances.}  [[SCROLL_EDGE_L]] at [[$0F37]]
+\paragraph{Two mirrored instances.}  [[SCROLL_EDGE_L]]
 paints when [[ZP_PLAYER_Y]] $\le$ [[$10]] (player has walked toward the
 left-edge of the world), placing the stripe at column [[$10]] $-$ [[ZP_PLAYER_Y]]
-(0..[[$10]]).  [[SCROLL_EDGE_R]] at [[$0F5D]] paints when
+(0..[[$10]]).  [[SCROLL_EDGE_R]] paints when
 [[ZP_PLAYER_Y]] $\in$ [[$C4]]..[[$EE]] (player has walked toward the
 right edge), placing the stripe at column [[$EE]] $-$ [[ZP_PLAYER_Y]]
 (0..[[$2A]]).  The [[CMP #$2B]] / [[BCS]] guard in [[SCROLL_EDGE_R]]
@@ -8131,7 +8199,7 @@ SND_DELAY_UP:
 
 \section{Beam subsystem: target controller}
 
-[[BEAM_TARGET_TICK]] at [[$1230]] is the state machine for the player's
+[[BEAM_TARGET_TICK]] is the state machine for the player's
 laser-beam subsystem.  Together with [[BEAM_TARGET_DRAW]] and
 [[BEAM_UPDATE]] it implements a vertical beam that descends between
 floors, telegraphs its target, and sprays short-lived horizontal
@@ -8292,7 +8360,7 @@ BEAM_TARGET_TICK:
 
 \section{Beam subsystem: target draw and collision}
 
-[[BEAM_TARGET_DRAW]] at [[$1297]] renders a short vertical sprite trail
+[[BEAM_TARGET_DRAW]] renders a short vertical sprite trail
 between [[BEAM_Y]] and the current target floor's Y, then checks the
 four tracked enemies for collision with that trail.
 
@@ -8315,7 +8383,7 @@ four tracked enemies for collision with that trail.
   awards [[$0100]]~BCD points via [[SCORE_ADD]].
 \end{enumerate}
 
-The ZP symbols [[ZP_ENEMY_FLAG]]/[[ZP_ENEMY_COL]]/[[ZP_ENEMY_Y]]/[[$A7]]/[[$AB]] introduced here
+The ZP symbols [[ZP_ENEMY_FLAG]]/[[ZP_ENEMY_COL]]/[[ZP_ENEMY_Y]] introduced here
 are four-slot
 parallel tables for enemies tracked by the beam.  These overlap the
 ESC-key location at [[$9B]] (renamed here from [[KEY_ESC]] for the
@@ -8323,9 +8391,9 @@ purposes of this subsystem; the ESC-key alias only aliases [[$9B]] when
 the input dispatcher polls it).
 
 \paragraph{Beam sprite and ready-prompt.}  [[BEAM_SPR]] is sprite
-id~0 of the general [[SPRITE_TABLE]] family at
-[[$B000]]/[[$B080]] (the main 128-entry sprite pointer table shared by
-attract, enemy-B, and UI draws).  Adjacent id~1 at [[$B535]] is the
+id~0 of the general [[SPRITE_TABLE_LO]] / [[SPRITE_TABLE_HI]] family
+(the main 128-entry sprite pointer table shared by attract, enemy-B,
+and UI draws).  The adjacent id~1 entry is the
 ``ready'' prompt sprite drawn at the top of each level intro by
 [[LEVEL_INTRO_TICK]].  Both live in the swappable level-data region
 and are shown in Figure~\ref{fig:sprite_table_ui} --- the beam's
@@ -8465,7 +8533,7 @@ BEAM_TARGET_DRAW:
 
 \section{Beam subsystem: per-frame update}
 
-[[BEAM_UPDATE]] at [[$130A]] is the main-loop entry for the player's
+[[BEAM_UPDATE]] is the main-loop entry for the player's
 laser-beam subsystem.  It is called unconditionally from
 [[MAIN_LOOP]] but returns immediately whenever the difficulty gate
 [[ZP_PROJ_GATE]] ($32) is negative~--- i.e.\ at the minimum and
@@ -8503,7 +8571,7 @@ draw is suppressed whenever the column would overlap the HUD.
 (These column bounds are seeded by [[GAME_START_INIT]] and updated
 by the HUD layout code inside [[REFRESH_RIGHT_WALL]] as the lives count changes.)
 
-[[BEAM_TRACER_SPAWN]] at [[$1376]] scans the same five slots for the
+[[BEAM_TRACER_SPAWN]] scans the same five slots for the
 first inactive one.  On every other frame ([[ZP_FRAME_COUNTER]] bit 0
 set), when the beam is chasing ([[BEAM_STATE]] nonzero) and the
 current [[BEAM_Y]] is strictly less than the per-level threshold
@@ -8788,8 +8856,8 @@ Rearm then:
   companion.
 \end{enumerate}
 
-Initial on-disk state seeds [[ZP_ENEMY_A_POS]] at [[$003E]] (right at the
-rearm threshold) and [[ZP_ENEMY_A_ROW]] at [[$A5]], so the first frame
+Initial on-disk state seeds [[ZP_ENEMY_A_POS]] (right at the
+rearm threshold) and [[ZP_ENEMY_A_ROW]], so the first frame
 after [[INIT_LEVEL_STATE]] immediately reloads the counter and arms
 enemy-C.
 
@@ -8908,7 +8976,7 @@ ENEMY_A_ADVANCE:
 
 \section{Enemy-A draw and player-collision}
 
-[[ENEMY_A_DRAW]] at [[$1423]] is the draw+hit routine for the enemy-A
+[[ENEMY_A_DRAW]] is the draw+hit routine for the enemy-A
 slot --- the third and final member of the entity-draw triplet that
 mirrors [[ENEMY_B_DRAW]] (enemy-B) and [[ENEMY_C_DRAW]] (enemy-C).
 Called from [[MAIN_LOOP]] every frame after [[ENEMY_A_ADVANCE]] has
@@ -8966,8 +9034,8 @@ animation} on the steady path.  The overall layout is:
 
 \paragraph{Why four sprite-table bases?}  Enemy-A is rendered as a
 humanoid figure with distinct head/body and feet components.  The
-four bases used ([[$09]], [[$10]], [[$17]], [[$1E]] in the 128-entry
-[[SPRITE_TABLE_LO]]/[[SPRITE_TABLE_HI]] at [[$B000]]/[[$B080]]) correspond
+four bases used ([[$09]], [[$10]], [[$17]], [[$1E]] into the 128-entry
+[[SPRITE_TABLE_LO]] / [[SPRITE_TABLE_HI]] pointer pair) correspond
 to four sprite families all indexed by [[PROJ_FRAME_IDX]]:
 \begin{center}
 \begin{tabular}{ll}
@@ -9585,8 +9653,8 @@ drift-tail which patches [[SMC_DS_SRC_LO]] /
 draws a [[$02]]$\times$[[$06]] sprite.  The pointer is therefore
 \emph{level-specific}: each level's data contributes its own
 enemy-B drift-puff sprite.  This is different from the steady-mode
-draw which reads from the persistent [[SPRITE_TABLE_LO]] / [[SPRITE_TABLE_HI]]
-tables at [[$B000]].
+draw which reads from the persistent
+[[SPRITE_TABLE_LO]] / [[SPRITE_TABLE_HI]] pointer pair.
 
 \paragraph{Sprite art.}  Figure~\ref{fig:enemy_b_sprites} shows the
 seven enemy-B body frames at the seven perspective depths.  The
@@ -9804,7 +9872,7 @@ ENEMY_B_DRAW:
 
 \section{Enemy-C advance timer}
 
-[[ENEMY_C_ADVANCE]] at [[$1646]] is the per-frame tick for the
+[[ENEMY_C_ADVANCE]] is the per-frame tick for the
 ``ground-companion'' enemy slot in the contiguous entity block
 [[ZP_ENTITY_BLOCK]].  It is the third member of the
 [[ENEMY_A_ADVANCE]]/[[ENEMY_B_ADVANCE]] family --- structurally
@@ -9866,7 +9934,7 @@ so X $\in \{1,2,3\}$ with X~=~1 selected~$2/4$ of the time and X~=~2
 or 3 each~$1/4$ of the time.  The row is then $[[$84]],X - $[[$0A]].  Slots
 [[$83]]--[[$87]] are also used by [[LEVEL_INTRO_TICK]] (per-level intro Y
 seed at [[$84]]) and by [[BEAM_TARGET_DRAW]] (per-floor Y threshold
-[[FLOOR_THRESH]] at [[$83]]): enemy-C reuses three of these scenery-anchor
+[[FLOOR_THRESH]]): enemy-C reuses three of these scenery-anchor
 Y rows as spawn-row choices.
 
 \paragraph{Cross-references.}  [[ZP_ADVANCE_RATE]] is shared with
@@ -10011,7 +10079,7 @@ ENEMY_C_ADVANCE:
 
 \section{Enemy-C draw and enemy-slot collision}
 
-[[ENEMY_C_DRAW]] at [[$16AC]] is the draw+hit routine for the enemy-C
+[[ENEMY_C_DRAW]] is the draw+hit routine for the enemy-C
 slot --- the third member of the sprite-draw family alongside
 [[ENEMY_A_DRAW]] (enemy-A) and [[ENEMY_B_DRAW]] (enemy-B).
 Called from [[MAIN_LOOP]] immediately after [[ENEMY_C_ADVANCE]] has
@@ -10397,9 +10465,10 @@ every plateau: indices [[$05]]--[[$0B]] map to row [[$00]], [[$0C]]--[[$12]]
 to [[$02]], ..., indices [[$F0]]--[[$F6]] to [[$46]], and the trailing
 four indices [[$FC]]--[[$FF]] to [[$48]] (the bottom-most reachable
 floor).  The first 12 indices ([[$00]]--[[$0B]]) are all [[$00]];
-the five bytes [[$188A]]--[[$188E]] before the table ([[FLOOR_BASE_ROW_PAD]])
-are unreferenced pre-pad --- [[FLOOR_BASE_ROW]] is exported at [[$188F]]
-because every caller reads indices $\ge$~[[$05]], not the pad.
+the five bytes before the table ([[FLOOR_BASE_ROW_PAD]])
+are unreferenced pre-pad --- [[FLOOR_BASE_ROW]] is exported
+starting from the pad's first in-table offset because every caller
+reads indices $\ge$~[[$05]], not the pad.
 
 Consumed by:
 \begin{itemize}
@@ -10891,7 +10960,7 @@ game-code address space but serves two distinct roles:
   [[$BEA0]] in the language card) calls [[JSR]] [[STAGE_STACK]]
   before restoring the hi-res display.  Because the [[$0100]] stack
   page gets overwritten by 6502 stack operations during normal play,
-  the [[STAGE_STACK]] copy of [[SCREEN_ROW_COPY]] at [[$5C00]] is the
+  the [[STAGE_STACK]] copy of [[SCREEN_ROW_COPY]] is the
   only reliably-intact entry point for the wipe animation at the
   moment the loader wants to repaint.  Only the first 43 bytes
   ([[$5C00]]--[[$5C2A]]) are live at runtime; the remaining
@@ -10901,7 +10970,7 @@ game-code address space but serves two distinct roles:
 The [[$5E00]]--[[$5EC4]] block following the two page images is a
 197-byte fragment of a Disk II nibble-level sector reader ($C089,
 $C08C, $C08E soft-switches), ending with a fall-through into
-[[RESTART_DISPATCH]] at [[$5EC5]] (itself statically dead).  Nothing
+[[RESTART_DISPATCH]] (itself statically dead).  Nothing
 in any shipped binary jumps into this fragment --- linear
 disassembly of [[drol.bin]] finds no [[JSR]]/[[JMP]] targeting any
 address in [[$5C2B]]--[[$5FFF]] other than the live [[$5C00]] entry.
@@ -10933,7 +11002,7 @@ partitions into three sub-blocks:
   [[LDR_TRACK]]/[[LDR_SLOT]]/[[LDR_PHASE]] slot, the
   [[SCROLL_UP_PRE]]/[[SCROLL_DN]] pair, and the 64-byte
   [[SCREEN_ADDR_TBL]] --- with one caveat: the scroll routines here
-  still index [[SCREEN_ADDR_TBL]] at [[$BFC0]] (the post-relocation
+  still index [[SCREEN_ADDR_TBL]] (the post-relocation
   address), not at [[$5FC0]] (this copy), so even if their [[$5F4B]]
   and [[$5F7F]] entry points were called they would reach into the
   live language-card table anyway.  This strongly suggests that the
@@ -11802,7 +11871,7 @@ CLEAR_DRAW_PAGE:
 
 \section{Right-edge wall refresh}
 
-[[REFRESH_RIGHT_WALL]] at [[$61F0]] is the first of three
+[[REFRESH_RIGHT_WALL]] is the first of three
 \emph{playfield-refresh} routines carved out of the game-engine-A
 blob: each per-frame tick call restores the text-area stripe beneath
 the wall and re-paints a perspective-band sprite on top, so moving
@@ -11998,7 +12067,7 @@ REFRESH_RIGHT_WALL:
 
 \section{Left-edge wall refresh}
 
-[[REFRESH_LEFT_WALL]] at [[$626A]] is the mirror of
+[[REFRESH_LEFT_WALL]] is the mirror of
 [[REFRESH_RIGHT_WALL]] for the \emph{left} edge of the world.  The
 world-position gate fires when $\Delta=\mathtt{\$11}-[\mathtt{\$4A}]$
 is non-negative (i.e.\ [[ZP_PLAYER_Y]] $\le\mathtt{\$11}$).  The
@@ -12132,7 +12201,7 @@ REFRESH_LEFT_WALL:
 
 \section{Floor-line refresh}
 
-[[REFRESH_FLOOR_LINES]] at [[$62CA]] is a fourth playfield-refresh
+[[REFRESH_FLOOR_LINES]] is a fourth playfield-refresh
 callee, sandwiched in [[PLAYER_TICK_IDLE]] between
 [[REFRESH_RIGHT_WALL]] and [[REFRESH_PILLARS]].  Unlike its three
 neighbours it does \emph{not} call [[INTERLACE_BLIT]] /
@@ -12219,7 +12288,7 @@ REFRESH_FLOOR_LINES:
 
 \section{Landmark-pillar refresh}
 
-[[REFRESH_PILLARS]] at [[$62E2]] is the third
+[[REFRESH_PILLARS]] is the third
 [[INTERLACE_BLIT]]-calling playfield-refresh routine.  It iterates
 through a 6-slot table at ZP [[$60]]--[[$65]] of fixed world-Y
 pillar positions; for each entry it checks whether the pillar's
@@ -12362,7 +12431,7 @@ REFRESH_PILLARS:
 
 \section{Hit-entity refresh}
 
-[[REFRESH_HIT_ENTITIES]] at [[$6321]] is the fifth and last
+[[REFRESH_HIT_ENTITIES]] is the fifth and last
 playfield-refresh routine carved out of the game-engine-A tail.
 Where [[REFRESH_PILLARS]] walks a fixed 6-slot world-Y list and
 [[REFRESH_LEFT_WALL]]/[[REFRESH_RIGHT_WALL]]/[[REFRESH_FLOOR_LINES]]
@@ -12560,7 +12629,7 @@ The four routines share the common [[ZP_PLAYER_STANCE]] walk-animation cycle
 halves of [[DO_MOVE_RIGHT]].  The shared [[DESC_LANDED_CLEAR]] tail at
 [[$643C]] is reached only via [[BEQ]] from inside [[DO_DESCEND]]'s step-down
 code; it is physically adjacent to [[DO_MOVE_RIGHT]]'s second half
-([[MR_WALK_STEP]] at [[$6442]]) but not part of it.
+([[MR_WALK_STEP]]) but not part of it.
 
 \paragraph{[[DO_ASCEND]].}  Reads the ascent-target floor index from
 [[ZP_ASC_FLOOR]] ([[$0B]], set earlier by [[INPUT_DO_ASCEND]]) into~X.  If
@@ -12967,7 +13036,7 @@ ML_HIT_SLIDE:
 
 \section{Player movement tick dispatcher}
 
-[[PLAYER_MOVE_TICK]] at [[$64CB]] is the first routine called from
+[[PLAYER_MOVE_TICK]] is the first routine called from
 [[MAIN_LOOP]] each frame (formerly stubbed as \texttt{COLLISION\_DETECT}
 --- the name was a misnomer: the routine is a tri-state dispatcher, not a
 collision check).  It reads the player's horizontal movement state from
@@ -13062,7 +13131,7 @@ PLAYER_MOVE_TICK:
 
 \section{Player sprite renderer}
 
-[[DRAW_PLAYER]] at [[$64DF]] is the main-loop routine that draws the player
+[[DRAW_PLAYER]] is the main-loop routine that draws the player
 character onto the hidden hi-res page every frame.  It is the
 [[JSR SPRITE_RENDER]] slot in [[MAIN_LOOP]] --- the
 [[SMC_RENDER]] self-modifying byte at [[$67EF]] is toggled between
@@ -13105,8 +13174,7 @@ handlers):
   being OR'd into the screen.  After the flicker draw the
   [[SMC_SPRITE_MASK_OP]] byte is restored to [[$24]] (BIT) for the main
   body draw.  Then the main body is drawn from
-  [[PLAYER_SPR_ACTIVE_LO]]/[[PLAYER_SPR_ACTIVE_HI]] at
-  [[$03]]$\times$[[$14]] (one row taller than idle), falling through the
+  [[PLAYER_SPR_ACTIVE_LO]]/[[PLAYER_SPR_ACTIVE_HI]]$\times$[[$14]] (one row taller than idle), falling through the
   idle-path's JSR so the same column~[[$14]] and [[SMC_SR_YSRC]] apply.
 \end{itemize}
 
@@ -13350,7 +13418,7 @@ DRAW_PLAYER:
 
 \section{Sprite draw (transparent blit)}
 
-[[DRAW_SPRITE]] at [[$656F]] is the game's main sprite draw routine --- it
+[[DRAW_SPRITE]] is the game's main sprite draw routine --- it
 is called from about 40 places (projectiles, entities, UI sprites, the
 attract logo, extra-life animation). It OR-blits a rectangular sprite
 onto the currently-hidden hi-res page, using
@@ -13551,7 +13619,7 @@ SMC_STA_HI = *+2                  ; High of STA abs,X operand --- patched
 
 \section{Sprite draw (playfield, HUD-clipped)}
 
-[[DRAW_SPRITE_PLAYFIELD]] at [[$65D5]] is a sibling of [[DRAW_SPRITE]] that performs an identical transparent OR-blit onto the
+[[DRAW_SPRITE_PLAYFIELD]] is a sibling of [[DRAW_SPRITE]] that performs an identical transparent OR-blit onto the
 hidden hi-res page, but with a \emph{narrower} column-acceptance
 window.  It is called only from [[DRAW_ENTITIES]] --- its four sites
 draw the player, the ``special'' sprite, the two companion slots and
@@ -13708,7 +13776,7 @@ SMC_PFB_STA_HI = *+2              ; High of STA abs,X operand --- patched
 
 \section{Sprite draw (opaque)}
 
-[[DRAW_SPRITE_OPAQUE]] at [[$662C]] is the third member of Drol's
+[[DRAW_SPRITE_OPAQUE]] is the third member of Drol's
 sprite-blitter triplet --- sibling of [[DRAW_SPRITE]] and
 [[DRAW_SPRITE_PLAYFIELD]].  Where the other two use an
 [[ORA]]/[[STA]] pair to \emph{overlay} the sprite on top of whatever
@@ -13745,11 +13813,10 @@ Live size                     & 102 bytes        & 87 bytes                  & 7
 \begin{itemize}
 \item [[DISPLAY_UPDATE]] --- draws the timer animation tile
   at column~[[$09]], row~[[$16]] (a 1$\times$6 sprite in the SCORE HUD
-  strip).  Source comes from [[TIMER_FRAME_LO]]/[[HI]] at
-  [[$6800]]/[[$6900]].
+  strip).  Source comes from [[TIMER_FRAME_LO]]/[[TIMER_FRAME_HI]].
 \item [[DRAW_DIGIT]] --- draws a single BCD digit tile
   (1$\times$6) at a caller-chosen column.  Source comes from
-  [[DIGIT_TILE_LO]]/[[HI]] at [[$AFF6]]/[[$B076]].
+  [[DIGIT_TILE_LO]]/[[DIGIT_TILE_HI]].
   [[POST_FRAME]] calls this seven times per frame --- five
   score nibbles plus two level-state digits.
 \item [[REFRESH_HIT_ENTITIES]] --- draws each currently-active hit-entity
@@ -13878,11 +13945,10 @@ SMC_OPQ_STA_HI = *+2              ; High of STA abs,X operand --- patched
 
 \section{Floor-enemy subsystem}
 
-[[FLOOR_ENEMY_ADVANCE]] at [[$6683]] and [[FLOOR_ENEMY_DRAW]] at [[$673B]]
+[[FLOOR_ENEMY_ADVANCE]] and [[FLOOR_ENEMY_DRAW]]
 are the advance/draw pair for the \emph{floor-enemy} subsystem --- a
 4-slot hostile-entity table (slots indexed [[X]]~=~$0\ldots 3$) driven by
-the zero-page triple [[ZP_ENEMY_FLAG]]/[[ZP_ENEMY_COL]]/[[ZP_ENEMY_Y]] at
-[[$9B]]/[[$9F]]/[[$A3]] --- the same slots the player's laser beam
+the zero-page triple [[ZP_ENEMY_FLAG]]/[[ZP_ENEMY_COL]]/[[ZP_ENEMY_Y]] --- the same slots the player's laser beam
 ([[BEAM_UPDATE]]) targets and the same slots [[RESCUE_DRAW]] and
 [[ENEMY_C_DRAW]] clear on a mutual-kill collision.
 
@@ -13934,7 +14000,7 @@ memo), then looks up
 [[PROJ_FRAME_IDX]]~$[$[[ZP_ENEMY_COL]]$]$ for a sprite-frame index
 $Y=0\ldots 6$.  Finally a [[CPX]] cascade selects one of four 7-entry
 sprite-pointer tables (one per slot), patches [[SMC_DS_SRC_LO]] /
-[[SMC_DS_SRC_HI]] at [[$65B3]]/[[$65B4]], and calls [[DRAW_SPRITE]].
+[[SMC_DS_SRC_HI]], and calls [[DRAW_SPRITE]].
 
 The four slot-specific sprite-pointer tables live in the swappable
 level-1 region:
@@ -14254,7 +14320,7 @@ FLOOR_ENEMY_DRAW:
 
 \section{Speaker click / delay loop}
 
-[[SFX_TONE]] at [[$67C1]] is the game's sole sound-effect generator.  It is
+[[SFX_TONE]] is the game's sole sound-effect generator.  It is
 called from about eight sites --- the attract hazard animation, the
 projectile hazard handler, the level-intro countdown tick, the
 no-more-lives fanfare, and several level/game-event paths.
@@ -14323,17 +14389,16 @@ SFX_TONE:
 
 \section{Entity draw dispatcher}
 
-[[DRAW_ENTITIES]] at [[$683C]] is the last drawing call in [[MAIN_LOOP]]
+[[DRAW_ENTITIES]] is the last drawing call in [[MAIN_LOOP]]
 (before [[POST_FRAME]] and the exit checks).  Despite the old
 ``page-flip'' nickname it does \emph{not} flip the hardware page --- that
-is [[DISPLAY_PAGE_FLIP]] at [[$6138]].  Instead it is the frame-level
+is [[DISPLAY_PAGE_FLIP]].  Instead it is the frame-level
 ``restore-and-draw'' dispatcher for four independent sprite categories,
 each with its own state table:
 
 \begin{enumerate}
 \item A small ``hit-entity'' restore pass (phase~1) that scans a 12-slot
-  active table at [[ENTITY_HIT_STATE]] ([[$8D]],X bounded by [[ZP_HIT_MAX]]
-  at [[$41]]).  For the first active slot it restores two bytes of hi-res
+  active table at [[ENTITY_HIT_STATE]] ([[$8D]],X bounded by [[ZP_HIT_MAX]]).  For the first active slot it restores two bytes of hi-res
   background at an address assembled from [[HIT_BG_HI]] ([[$0328]],X),
   [[HIT_BG_LO]] ([[$0334]],X) and the saved pixel pair [[HIT_BG_BYTE1]]
   ([[$0340]],X) / [[HIT_BG_BYTE0]] ([[$034C]],X).  The high byte is bumped by
@@ -14379,10 +14444,10 @@ each with its own state table:
   sprite-data table at [[ENTITY_GRID_SPR_LO]]/[[ENTITY_GRID_SPR_HI]].
 \end{enumerate}
 
-Phases~2--5 each set up ZP sprite parameters ([[ZP_SPRITE_W]]/[[\_H]]
-at [[$56]]/[[$57]], [[ZP_SPRITE_Y]] at [[$5B]], [[ZP_SPRITE_X]] at [[$5D]]) and
+Phases~2--5 each set up ZP sprite parameters ([[ZP_SPRITE_W]]/[[ZP_SPRITE_H]],
+[[ZP_SPRITE_Y]], [[ZP_SPRITE_X]]) and
 then [[JSR DRAW_SPRITE_PLAYFIELD]] --- the playfield variant of
-[[DRAW_SPRITE]] at [[$65D5]] whose inner loop rejects column~[[$0B]] (the
+[[DRAW_SPRITE]] whose inner loop rejects column~[[$0B]] (the
 left playfield wall) and every column \$$\ge$~[[$1C]] (the right-side
 HISCORE HUD panel), so gameplay sprites can't overwrite those fixed
 screen regions.  They all patch the \emph{same} SMC operand bytes
@@ -14761,7 +14826,7 @@ playfield grid into the 2D hi-res buffer.
 
 \section{Level intro / countdown tick}
 
-[[LEVEL_INTRO_TICK]] at [[$699C]] is the first subroutine called by
+[[LEVEL_INTRO_TICK]] is the first subroutine called by
 [[MAIN_LOOP]] each frame.  It implements the state machine that runs
 between level transitions:
 
@@ -15083,10 +15148,9 @@ RESUME_GAMEPLAY_SMC:
 
 \section{Special sprite: per-frame tick}
 
-[[SPECIAL_TICK]] at [[$6ABA]] is the tick routine for the ``special''
+[[SPECIAL_TICK]] is the tick routine for the ``special''
 sprite slot drawn by [[DRAW_ENTITIES]] phase~3 (see the
-entity-draw-dispatcher section above).  It pairs with [[SPECIAL_DRAW]] at
-[[$6B39]] the same way the three enemy slots pair their
+entity-draw-dispatcher section above).  It pairs with [[SPECIAL_DRAW]] the same way the three enemy slots pair their
 \texttt{advance}/\texttt{draw} routines.  Both are called
 unconditionally from [[MAIN_LOOP]], immediately after the HUD tile
 update.
@@ -15307,7 +15371,7 @@ SPECIAL_REARM:
 
 \section{Special sprite: per-frame draw}
 
-[[SPECIAL_DRAW]] at [[$6B39]] is the direct draw partner of
+[[SPECIAL_DRAW]] is the direct draw partner of
 [[SPECIAL_TICK]].  Both are invoked unconditionally from [[MAIN_LOOP]]
 each frame; [[SPECIAL_TICK]] updates the slot's timer/state and
 [[SPECIAL_DRAW]] renders the sprite and handles both of its collision
@@ -15318,8 +15382,7 @@ drift-puff player-catch).
 [[ZP_SPECIAL_STATE]] just like the tick:
 
 \begin{itemize}
-\item [[$00]] (\textbf{inactive}) --- fall through to [[SPECIAL_INACTIVE_DRAW]]
-  at [[$6CDB]], a 29-byte helper that draws a small [[$02]]$\times$[[$06]] marker
+\item [[$00]] (\textbf{inactive}) --- fall through to [[SPECIAL_INACTIVE_DRAW]], a 29-byte helper that draws a small [[$02]]$\times$[[$06]] marker
   sprite from the level-data pointer pair at [[SPECIAL_PEEK_LO]]/[[SPECIAL_PEEK_HI]] at a
   fixed screen position derived from the slot's row anchor ([[$AE]]).
   Conceptually the ``peek'' of the creature waiting off-screen.
@@ -15359,8 +15422,8 @@ operand [[$6C3F]] on disk starts the cycle at handler~1.
 
 \paragraph{Which [[DRAW_SPRITE]] variant.}  All four sub-draws
 ([[SPECIAL_INACTIVE_DRAW]], the six body steps, the drift-puff, and
-the defeat transition) call [[DRAW_SPRITE]] at [[$656F]] --- not
-[[DRAW_SPRITE_PLAYFIELD]] at [[$65D5]].  This is the same transparent-OR
+the defeat transition) call [[DRAW_SPRITE]] --- not
+[[DRAW_SPRITE_PLAYFIELD]].  This is the same transparent-OR
 blit used by the three enemy slots (and distinct from the playfield
 blit used by [[DRAW_ENTITIES]]).  SMC source pointers go to
 [[SMC_DS_SRC_LO]]/[[SMC_DS_SRC_HI]], the
@@ -15368,7 +15431,7 @@ blit used by [[DRAW_ENTITIES]]).  SMC source pointers go to
 
 \paragraph{Sound slot.}  [[SPECIAL_DRAW]] drives a \emph{second} sound
 counter [[ZP_SPECIAL_SND_CTR_B]] with a companion pitch table
-[[SND_PITCH_TBL_SPECIAL_B]] at [[$021F]].  Unlike the ascending-tone
+[[SND_PITCH_TBL_SPECIAL_B]].  Unlike the ascending-tone
 counter the tick uses, this one clicks through [[SFX_TONE]] at
 duration [[$08]] --- a shorter, higher click.  It is armed to~[[$04]] on
 the player-catches-puff edge, producing a four-click ``pickup'' tone.
@@ -15826,7 +15889,7 @@ SPECIAL_INACTIVE_DRAW:
 
 \section{Companion slot: per-frame tick + draw}
 
-[[COMPANION_UPDATE]] at [[$6CFE]] is the per-frame tick-plus-draw routine
+[[COMPANION_UPDATE]] is the per-frame tick-plus-draw routine
 for a \emph{pair} of ``companion'' slots (indices 0 and 1) --- the
 hostile walker-creatures that patrol the perspective floor,
 occasionally climb to another floor, and damage the player on contact.
@@ -15897,15 +15960,17 @@ to [[$00]], ending the patrol.
 
 \paragraph{SMC-chained 3-pose walk cycle.}  The active-phase body
 draw uses two separate SMC chains (one per direction), each cycling
-through three sprite pointer tables.  A trampoline [[JMP]] at [[$6E30]]
-(positive direction) or [[$6EA9]] (negative direction) dispatches to
+through three sprite pointer tables.  A trampoline
+[[COMPANION_POS_TRAMP]] (positive direction) or
+[[COMPANION_NEG_TRAMP]] (negative direction) dispatches to
 the next pose; each pose's handler patches the trampoline's operand
 bytes to point to the successor, loads the pose pointer from a
 per-level sprite table at [[COMPANION_NEG_POSE1_LO]]/[[COMPANION_NEG_POSE2_LO]]/[[COMPANION_NEG_POSE3_LO]] (for \-direction) or
 [[COMPANION_POS_POSE1_LO]]/[[COMPANION_POS_POSE2_LO]]/[[COMPANION_POS_POSE3_LO]] (for \+direction), patches
 [[SMC_DS_SRC_LO]]/[[HI]] inside [[DRAW_SPRITE]], and [[JSR]]s.  On
-a cold start the on-disk trampoline values are [[JMP $6E33]] and
-[[JMP $6EAC]] (pose 1 for each direction).
+a cold start the on-disk trampoline operands target
+[[COMPANION_POS_POSE1]] and [[COMPANION_NEG_POSE1]] respectively
+(pose~1 for each direction).
 
 \paragraph{Player-catch.}  After drawing, the routine tests the
 companion's screen-X against the [[$40]]..[[$4F]] window and the player's
@@ -15938,7 +16003,8 @@ negative-direction poses [[N1]]/[[N2]]/[[N3]] in rows~1--3, then the
 three positive-direction poses [[P1]]/[[P2]]/[[P3]] in rows~4--6),
 each with seven perspective frames.  The body sprite is $[[$04]]\times
 [[$08]]$ bytes ([[ZP_SPRITE_W]]~=~[[$03]], [[ZP_SPRITE_H]]~=~[[$08]]) with 32
-bytes per frame.  The SMC walk cycle at [[$6E33]]/[[$6EAC]] visits poses
+bytes per frame.  The SMC walk cycle at
+[[COMPANION_POS_TRAMP]]/[[COMPANION_NEG_TRAMP]] visits poses
 1 $\to$ 2 $\to$ 3 $\to$ 1 on successive frames for whichever
 direction the slot is moving.  Sprite bytes live at
 [[$9DB1]]--[[$A2F0]] in the swappable level-data region.
@@ -16021,7 +16087,8 @@ COMPANION_UPDATE:
         ; Modifies:
         ;   ZP_COMPANION_STATE/DIR/POS/ROW, ZP_HIT_FLAG (on player hit),
         ;   ZP_SCREEN_X/HI, ZP_SPRITE_W/H/X/Y, ZP_DRAW_LOOP_IDX,
-        ;   SMC trampoline operands and $6EAA/$6EAB,
+        ;   SMC_COMPANION_POS_LO/HI, SMC_COMPANION_NEG_LO/HI
+        ;   (trampoline operand bytes rewritten per pose),
         ;   SMC_DS_SRC_LO/HI (via the pose handlers).
         ; Clobbers: A, X, Y
 
@@ -16434,11 +16501,11 @@ COMPANION_NEG_POSE3:
 
 \section{Rescue-child entity tick (20 slots)}
 
-[[RESCUE_UPDATE]] at [[$6F9C]] is the per-frame tick routine for the
+[[RESCUE_UPDATE]] is the per-frame tick routine for the
 20-slot ``rescue child'' entity subsystem --- the small walking figures
 that appear on the perspective floors and become the player's scoring
 objective.  It pairs with the sibling draw-plus-collision routine
-[[RESCUE_DRAW]] at [[$0C98]] (now its own ORG chunk) and with
+[[RESCUE_DRAW]] (now its own ORG chunk) and with
 [[DRAW_ENTITIES]] phase~5 (which handles the marker sprite at the
 receding-floor perspective projection).  The routine exists in the
 main-loop slot immediately after [[COMPANION_UPDATE]] and immediately
@@ -16476,8 +16543,7 @@ on [[$03A8]],Y:
 \item [[$00]] (\emph{inactive}): attempt to spawn.  A PRNG-gated
   slot-iteration counter [[ZP_RESCUE_SPAWN_CTR]] ($[[$4D]]$) advances once
   per processed slot (persists across frames, no reset), and spawn
-  eligibility requires \emph{both} the per-frame PRNG ([[PRNG]] at
-  [[$6674]]) to return [[$01]] (1/256) \emph{and} the [[$4D]] counter to be a
+  eligibility requires \emph{both} the per-frame PRNG ([[PRNG]]) to return [[$01]] (1/256) \emph{and} the [[$4D]] counter to be a
   multiple-of-4 residue [[$03]].  In addition to the PRNG path there is a
   \emph{player-floor trigger}: if the slot's assigned floor
   [[RESCUE_FLOOR]] equals the current player floor [[ZP_PLAYER_FLOOR]], and the animation counter [[ZP_ANIM_COUNTER]] is
@@ -17126,7 +17192,7 @@ indexed either by a 7-entry perspective-frame index (from
 half at [[$7600]] mirrors the layout byte-for-byte with page-high
 bytes instead of low bytes.  A single-byte null pad
 ([[SPRITE_POINTER_TABLES_LO_PAD]]) occupies [[$75FF]]; its twin
-[[SPRITE_POINTER_TABLES_HI_PAD]] at [[$76FF]] is also [[$00]].  These
+[[SPRITE_POINTER_TABLES_HI_PAD]] is also [[$00]].  These
 pads are never indexed at runtime.
 
 \paragraph{Sub-tables by subsystem.}  The named sub-tables are:
@@ -18151,6 +18217,8 @@ SPRITE_PIXEL_DATA:
 <<row copy click dead>>
 ; --- ORG $0200: Initial data tables on page 2 ---
 <<row copy data>>
+; --- ORG $02BA: LVL_INIT_SPRITE entity-hit-state seed (12 bytes of $FF) ---
+<<lvl init entity hit state data>>
 ; --- ORG $02C6: LVL_INIT_SPRITE tail ---
 <<lvl init sprite tail data>>
 ; --- ORG $02E2: LVL_INIT_INPUT (30-byte input block) ---
@@ -18431,7 +18499,7 @@ hold real bytes; every non-level page stays at [[$00]]:
   sprite sub-sections consumed by the draw routines.
 \item [[$8C00]]--[[$BDFF]] (50 pages, \emph{not} present in
   \texttt{drol.bin}) --- the bulk of the level-1 content: per-level
-  sprite tables ([[ATTRACT_SPR]] / [[ATTRACT_SPR2]] at [[$B002]]/[[$B006]]
+  sprite tables ([[ATTRACT_SPR_LO]] / [[ATTRACT_SPR2_LO]]
   with pointers into [[$B500]]--[[$BC]]\textit{xx}), the ``Broderbund''
   attribution strip at [[BRODERBUND_LOGO_SPR]], and the end-of-game
   handler [[GAME_OVER]].
@@ -18464,16 +18532,17 @@ chunks at [[START_ATTRACT]]/[[LIFE_LOST_HANDLER]]/[[ATTRACT_LOOP]] and share the
 
 \section{The attract-mode title sprite pointers}
 
-Two pointer tables at [[$B002]] and [[$B006]] (low bytes) with their high
-bytes at [[$B082]]/[[$B086]] feed the attract-mode sprite draws:
+Two pointer tables [[ATTRACT_SPR2_LO]] and [[ATTRACT_SPR_LO]]
+(with their high bytes at [[ATTRACT_SPR2_HI]]/[[ATTRACT_SPR_HI]])
+feed the attract-mode sprite draws:
 
 \begin{itemize}
-\item [[ATTRACT_SPR2]] ([[$B002]]/[[$B082]], 4 entries) --- consumed by
-  [[ATTRACT_ANIM_2]].  Entries point at [[$B571]], [[$B59B]],
+\item [[ATTRACT_SPR2_LO]]/[[ATTRACT_SPR2_HI]] (4 entries) --- consumed
+  by [[ATTRACT_ANIM_2]].  Entries point at [[$B571]], [[$B59B]],
   [[$B5C5]], [[$B5E1]].  Sprite byte counts are [[$2A]]/[[$2A]]/[[$1C]]/[[$1C]]
   respectively (W=2,H=14 and W=1,H=14) --- the tall drifting
   silhouettes that sweep across the attract playfield.
-\item [[ATTRACT_SPR]] ([[$B006]]/[[$B086]], 2 entries used by
+\item [[ATTRACT_SPR_LO]]/[[ATTRACT_SPR_HI]] (2 entries used by
   [[ATTRACT_ANIM_4]]; additional entries are consumed by
   unrelated callers).  Entries point at [[$B5FD]], [[$B665]].  [[$B5FD]] is a
   [[$68]]-byte sprite (13 bytes/row $\times$ 8 rows; [[ATTRACT_ANIM_4]]

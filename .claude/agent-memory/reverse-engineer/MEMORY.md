@@ -50,3 +50,4 @@
 - [LVL_INIT_ENTITY_HIT_STATE $FF seed](drol-lvl-init-entity-hit-state.md) — $02BA-$02C5 12 bytes of $FF are not dasm fill; seed ENTITY_HIT_STATE (ZP $8D-$98) to inactive on level restart
 - [LEVEL_TRANSITION HUD mirror](drol-level-transition-hud-mirror.md) — $116C copies left HUD digit strip into right HUD on BOTH pages, not just page 2; ZP_HISCORE_SRC/DST1/DST2 at $23/$25/$27
 - [Loader Phase 4 SMC patches](drol-loader-phase4-patches.md) — SMC_ATTRACT_EXIT_JMP ($72BA) redirects cold-boot to LIFE_LOST_HANDLER; SMC_KEY_LEFT/RIGHT ($6022/$600E) are IIc arrow-key CMP retargets
+- [Soft-switch symbol block](drol-soft-switch-symbols.md) — SW_CASSOUT ($C020) + SW_PAGE2 ($C055) added; ZP_DEAD_SLOT_46 covers GAME_RESTART's dead store

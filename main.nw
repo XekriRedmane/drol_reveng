@@ -1378,9 +1378,9 @@ FIRST_BOOT:
 ; Joystick detected: point input pointers to hardware button registers.
 .joy_found:
         LDA #<SW_PUSH_BTN0
-        STA ZP_INPUT_1          ; -> $C061 (push button 0)
+        STA ZP_INPUT_1          ; ZP_INPUT_1 -> SW_PUSH_BTN0
         LDA #<SW_PUSH_BTN1
-        STA ZP_INPUT_2          ; -> $C062 (push button 1)
+        STA ZP_INPUT_2          ; ZP_INPUT_2 -> SW_PUSH_BTN1
         LDA #>SW_PUSH_BTN0
         STA ZP_INPUT_1+1
         STA ZP_INPUT_2+1
@@ -2429,7 +2429,10 @@ FLOOR_Y_TABLE   = $03F8         ; Floor Y positions (indexed 1-4)
 ; --- Soft switches ---
 KEYBOARD        = $C000         ; Keyboard data (bit 7 = key available)
 KBDSTROBE       = $C010         ; Clear keyboard strobe
+SW_CASSOUT      = $C020         ; Cassette output toggle (silent; used as
+                                ;   no-op speaker target when sound is muted)
 SW_SPEAKER      = $C030         ; Speaker toggle
+SW_PAGE2        = $C055         ; Hi-res display page 2 select
 SW_PUSH_BTN0    = $C061         ; Push button 0 (bit 7 = pressed)
 SW_PUSH_BTN1    = $C062         ; Push button 1 (bit 7 = pressed)
 
@@ -3153,15 +3156,18 @@ KEY_CTRL_K      = $8B           ; Ctrl-K (switch to keyboard)
 KEY_CTRL_V      = $96           ; Ctrl-V (speaker click)
 
 ; --- Sound ---
-; $36/$37 form an indirect pointer used by SFX_TONE as a
-; speaker-click address.  $37 = $C0 (set during boot and never changed),
-; so the effective target is $C0xx.  Bit 4 of ZP_SFX_CLICK selects between:
-;   ZP_SFX_CLICK <- #$30 -> points (SW_SPEAKER) -- clicks the speaker
-;   ZP_SFX_CLICK <- #$20 -> points at $C020 (cassette output, unused) -- silent
+; ZP_SFX_CLICK (2 bytes) forms an indirect pointer used by SFX_TONE as a
+; speaker-click address.  ZP_SFX_CLICK+1 = $C0 (set during boot and never
+; changed), so the effective target is $C0xx.  Bit 4 of ZP_SFX_CLICK
+; selects between:
+;   ZP_SFX_CLICK <- #<SW_SPEAKER  ($30) -> clicks the speaker
+;   ZP_SFX_CLICK <- #<SW_CASSOUT  ($20) -> silent (cassette output, unused)
 ; Ctrl-S flips bit 4 to mute/unmute without touching the rest of the byte.
-; $38 is a preserved copy used across game/attract transitions (ATTRACT_LOOP
-; saves $36 into ZP_SFX_CLICK_SAVED on no-more-lives; restores $38 into ZP_SFX_CLICK on game start).
-SOUND_FLAG_MASK = $10           ; Bit that flips $C030<->$C020 in ZP_SFX_CLICK
+; ZP_SFX_CLICK_SAVED is a preserved copy used across game/attract transitions
+; (ATTRACT_LOOP saves ZP_SFX_CLICK on no-more-lives; restores ZP_SFX_CLICK_SAVED
+; on game start).
+SOUND_FLAG_MASK = $10           ; Bit that flips SW_SPEAKER <-> SW_CASSOUT
+                                ;   in ZP_SFX_CLICK
 @
 
 <<input process>>=
@@ -3206,7 +3212,7 @@ INPUT_PROCESS:
 
 .toggle_sound:
         LDA ZP_SFX_CLICK        ; Flip bit 4 of the speaker-click pointer:
-        EOR #SOUND_FLAG_MASK    ;   $30 (click $C030) <-> $20 (silent $C020)
+        EOR #SOUND_FLAG_MASK    ;   SW_SPEAKER (click) <-> SW_CASSOUT (silent)
         STA ZP_SFX_CLICK        ; Update working copy
         STA ZP_SFX_CLICK_SAVED  ; Keep the preserved copy in sync
         BIT KBDSTROBE
@@ -3377,11 +3383,14 @@ HAZARD_CHECK:
         ; Projectile update -- moves, draws, and collision-checks projectiles.
         ;
         ; Inputs:
-        ;   $31 -- max projectile slot index
-        ;   $C5-$D0 -- projectile state arrays
+        ;   ZP_PROJ_MAX          --- max active projectile slot index.
+        ;   ZP_PROJ_DIR[0..3]    --- direction (0=inactive, neg=left, pos=right).
+        ;   ZP_PROJ_X[0..3]      --- horizontal world position.
+        ;   ZP_PROJ_Y[0..3]      --- vertical world position.
+        ;   ZP_MOVE_DIR          --- player motion (parallax speed-up cue).
         ;
         ; Modifies:
-        ;   $C5-$D0 (projectile state), sprite params, $1E (hit flag)
+        ;   ZP_PROJ_DIR/X/Y, sprite params, ZP_HIT_FLAG
         ; Clobbers: A, X, Y
 
 ; --- Loop through projectile slots ---
@@ -3834,28 +3843,28 @@ SMC_ATTRACT = *
 
 [[DISPLAY_PAGE_FLIP]] toggles the active hi-res display page
 using self-modifying code. The instruction at [[DISPLAY_PAGE_FLIP]] alternates between
-[[LDA $C054]] (page~1) and [[LDA $C055]] (page~2) by XOR-patching its
-own operand byte at [[SMC_PAGE_SWITCH]]. It also adjusts [[ZP_PAGE_FLAG]] by adding [[$80]] each
+[[SW_PAGE1]] and [[SW_PAGE2]] by XOR-patching its own operand byte at
+[[SMC_PAGE_SWITCH]]. It also adjusts [[ZP_PAGE_FLAG]] by adding [[$80]] each
 frame (a half-page scroll offset counter).
 
 <<display page flip>>=
 
         ORG $6138
 DISPLAY_PAGE_FLIP:
-        ; Toggle hi-res display page via self-modifying LDA $C054/$C055.
+        ; Toggle hi-res display page via self-modifying LDA SW_PAGE1/SW_PAGE2.
         ;
         ; Behavior:
         ;   XOR-patches its own operand byte to alternate between
-        ;   SW_PAGE1(page 1) and $C055 (page 2) each frame. Also
-        ;   advances ZP $00 by $80.
+        ;   SW_PAGE1 (page 1) and SW_PAGE2 (page 2) each frame.  Also
+        ;   advances ZP_PAGE_FLAG by $80.
         ;
         ; Modifies:
-        ;   Display page soft switch, ZP $00, self
+        ;   Display page soft switch, ZP_PAGE_FLAG, self
         ; Clobbers: A
 SMC_PAGE_SWITCH = *+1
-        LDA $C055               ; Toggle display page (operand patched)
+        LDA SW_PAGE2            ; Toggle display page (operand patched)
         LDA SMC_PAGE_SWITCH     ; Read current page switch low byte
-        EOR #$01                ; Toggle $54 <-> $55
+        EOR #$01                ; Toggle SW_PAGE1 <-> SW_PAGE2
         STA SMC_PAGE_SWITCH     ; Patch for next frame
         LDA ZP_PAGE_FLAG
         CLC
@@ -4429,8 +4438,8 @@ input and draw subsystems.
 \paragraph{Second entry point.}  [[GAME_RESTART]] is the
 skip-past-init sub-entry invoked from [[RESTART_DISPATCH]] (another restart path)
 via [[JSR GAME_RESTART]].  It only resets the BCD lives counter, the
-score triple, [[$46]], and the restart flag [[$44]] before jumping into
-[[RESUME_GAMEPLAY_SMC]].
+score triple, [[ZP_DEAD_SLOT_46]], and the restart flag [[ZP_RESTART_FLAG]]
+before jumping into [[RESUME_GAMEPLAY_SMC]].
 
 \paragraph{What [[RESUME_GAMEPLAY_SMC]] actually does.}  Despite its address landing
 inside the [[SPECIAL_TICK]]--[[DIFFICULTY_UPDATE]] game-engine region, [[RESUME_GAMEPLAY_SMC]]
@@ -4461,7 +4470,7 @@ Addr & Name & Initial value \\
 [[ZP_SCORE_MID]]      & BCD score mid & [[$00]] \\
 [[ZP_SCORE_LO]]       & BCD score lo & [[$00]] \\
 [[ZP_LIVES_BCD]]      & On-screen lives & [[$04]] (four lives, BCD-decremented on death) \\
-[[$46]]               & (write-only) & [[$00]] (never read --- likely dead store) \\
+[[ZP_DEAD_SLOT_46]]   & (write-only) & [[$00]] (never read --- dead store) \\
 [[ZP_RESTART_FLAG]]   & Restart flag & [[$FF]] (write-only in practice; the
 only read is at [[RESTART_DISPATCH]] which is dead code) \\
 \end{tabular}
@@ -4503,6 +4512,9 @@ ZP_CLEAR_COL    = $2E           ; Playfield-clear column counter / right edge
 ZP_LIVES_BCD    = $5E           ; BCD lives counter (shown in HUD; <0 = game over)
 ZP_RESTART_FLAG = $44           ; Dispatch flag written to $FF on cold start;
                                 ; only read (dead code)
+ZP_DEAD_SLOT_46 = $46           ; Write-only ZP slot in GAME_RESTART (dead
+                                ; store: the only access is the STX at
+                                ; GAME_RESTART; no LDA/CMP/BIT reads exist)
 
 ; --- Playfield-column HUD bounds (read by BEAM_UPDATE, written here) ---
 HUD_SCORE_COL   = $65AB         ; Score-HUD right edge / playfield left bound
@@ -4532,7 +4544,7 @@ GAME_START_INIT:
         ;   Zeros the three on-screen score digits and the score BCD
         ;     triple.  Sets the two HUD column bounds that clip the
         ;     beam-tracer draw to the playfield.
-        ;   Sets lives counter to ZP_MOVE_DIR (BCD).  Sets restart flag to $FF.
+        ;   Sets lives counter to #$04 (BCD).  Sets restart flag to #$FF.
         ;   Calls DIFFICULTY_RESET (minimum tier preset) and
         ;     INIT_LEVEL_STATE (restore ZP from master buffers).
         ;   Tail-calls RESUME_GAMEPLAY_SMC to re-enable input
@@ -4540,7 +4552,7 @@ GAME_START_INIT:
         ;
         ; Modifies:
         ;   ZP_PLAYER_Y, ZP_SCORE_0..2, ZP_CLEAR_COL, ZP_LIVES_BCD,
-        ;   ZP_SCORE_HI/MID/LO, ZP_RESTART_FLAG, $46,
+        ;   ZP_SCORE_HI/MID/LO, ZP_RESTART_FLAG, ZP_DEAD_SLOT_46,
         ;   HUD_SCORE_COL, HUD_LIVES_COL
         ; Clobbers: A, X
 
@@ -4580,7 +4592,7 @@ GAME_RESTART:
         STX ZP_SCORE_HI          ; Clear BCD score triple
         STX ZP_SCORE_MID
         STX ZP_SCORE_LO
-        STX $46                  ; Write-only byte (never read)
+        STX ZP_DEAD_SLOT_46      ; Write-only ZP slot; no reader exists
         DEX
         STX ZP_RESTART_FLAG      ; $FF cold-start marker; only read at
                                  ;   RESTART_DISPATCH(dead code) --- effectively
@@ -8155,10 +8167,10 @@ chirps used all over Drol's sound code.
 The speaker toggle is performed via the [[ZP_SFX_CLICK]] indirect
 pointer: [[CMP (ZP_SFX_CLICK),Y]] with [[Y]]=[[$00]] reads from
 [[$C0XX]] where [[XX]]=[[ZP_SFX_CLICK]].  With [[ZP_SFX_CLICK]]
-seeded to [[$30]], that is [[$C030]] (the speaker toggle soft-switch);
-with [[ZP_SFX_CLICK]] seeded to [[$20]], the read hits [[$C020]]
-(cassette-out, unused) and is effectively silent --- the mechanism
-Ctrl-S uses to mute the game.
+seeded to [[$30]], that is [[SW_SPEAKER]] (the speaker toggle
+soft-switch); with [[ZP_SFX_CLICK]] seeded to [[$20]], the read hits
+[[SW_CASSOUT]] (cassette-out, unused) and is effectively silent ---
+the mechanism Ctrl-S uses to mute the game.
 
 Per iteration:
 
@@ -8168,7 +8180,7 @@ Per iteration:
   ([[Y]] starts at the pre-shift pitch).
 \item [[CMP (ZP_SFX_CLICK),Y]] with [[Y]]=[[$00]] reads the
   [[ZP_SFX_CLICK]] target address --- this is the click itself
-  ([[$C030]] toggles the speaker coil).
+  ([[SW_SPEAKER]] toggles the speaker coil).
 \item [[DEX]]/[[BNE]] --- loop until the caller-specified click
   count runs out.
 \end{itemize}
@@ -8192,8 +8204,8 @@ SND_DELAY_DOWN:
         ;   A   --- starting pitch / delay unit count.  Must be >= X
         ;           so the inner counter never wraps past zero.
         ;   X   --- click count (outer iteration count).
-        ;   ZP_SFX_CLICK ($36) --- speaker-click pointer low byte
-        ;           ($30 = $C030 speaker toggle; $20 = $C020 silent).
+        ;   ZP_SFX_CLICK       --- speaker-click pointer low byte
+        ;           (#<SW_SPEAKER = click; #<SW_CASSOUT = silent).
         ;
         ; Behavior:
         ;   Loop X times: save pitch to Y, decrement A by 1 (shrinks
@@ -8229,7 +8241,7 @@ SND_DELAY_UP:
         ; Inputs:
         ;   A   --- starting pitch / delay unit count.
         ;   X   --- click count (outer iteration count).
-        ;   ZP_SFX_CLICK ($36) --- speaker-click pointer low byte.
+        ;   ZP_SFX_CLICK       --- speaker-click pointer low byte.
         ;
         ; Behavior:
         ;   Identical to SND_DELAY_DOWN but A increments instead of
@@ -14388,12 +14400,12 @@ The routine is a classic Apple~II nested delay-loop speaker click:
 \item The X register on entry sets the duration --- the number of
   clicks to emit.
 \item The speaker access is done indirectly through zero-page pointer
-  [[ZP_SFX_CLICK]] (2 bytes, lo at [[$36]], hi at [[$37]]).  The high byte
-  [[$37]] is [[$C0]] (set at boot and never modified).  The low byte
-  [[ZP_SFX_CLICK]] is either [[$30]]
-  (points at [[SW_SPEAKER]], clicks the speaker) when sound is
-  enabled, or [[$20]] (points at the unused cassette-output soft-switch
-  [[$C020]], silent) when sound is muted.
+  [[ZP_SFX_CLICK]] (2 bytes, at [[ZP_SFX_CLICK]] and
+  [[ZP_SFX_CLICK]]+1).  The high byte is [[$C0]] (set at boot and
+  never modified).  The low byte is either [[#<SW_SPEAKER]]
+  ([[$30]], clicks the speaker) when sound is enabled, or
+  [[#<SW_CASSOUT]] ([[$20]], points at the unused cassette-output
+  soft-switch, silent) when sound is muted.
 \end{itemize}
 
 Making the speaker address data-driven this way lets the Ctrl-S mute
@@ -14419,15 +14431,15 @@ SFX_TONE:
         ;   A              --- pitch (inner-loop count, cycles per click).
         ;   X              --- duration (number of clicks to emit).
         ;   ZP_SFX_CLICK   --- low byte of speaker-click pointer
-        ;                      ($30 = click $C030, $20 = silent $C020).
-        ;   $37            --- high byte of speaker-click pointer, = $C0.
+        ;                      (#<SW_SPEAKER = click, #<SW_CASSOUT = silent).
+        ;   ZP_SFX_CLICK+1 --- high byte of speaker-click pointer (= $C0).
         ;
         ; Behavior:
         ;   Outer loop (X iterations): TAY loads Y from pitch, the
         ;   DEY/BNE inner loop counts Y down to 0 (about 5*A + 5 cycles
-        ;   of delay), then CMP,Y reads through the ZP pointer.
-        ;   When ZP_SFX_CLICK points this toggles the speaker;
-        ;   when it points at $C020 the read is silent.  X is then
+        ;   of delay), then CMP,Y reads through the ZP pointer.  When
+        ;   ZP_SFX_CLICK points at SW_SPEAKER this toggles the speaker;
+        ;   when it points at SW_CASSOUT the read is silent.  X is then
         ;   decremented; when X reaches 0 the routine returns.
         ;
         ; Clobbers: A is preserved (CMP does not modify A), X=0 on exit, Y=0.
@@ -14436,7 +14448,7 @@ SFX_TONE:
 .delay:
         DEY
         BNE .delay              ; Inner delay: Y counts down to 0
-        CMP (ZP_SFX_CLICK),Y    ; Y=0; read $C030 (click) or $C020 (silent)
+        CMP (ZP_SFX_CLICK),Y    ; Y=0; read SW_SPEAKER (click) or SW_CASSOUT (silent)
         DEX
         BNE SFX_TONE            ; Next click (reloads Y from A via TAY)
         RTS

@@ -598,10 +598,30 @@ FLOOR_Y_TABLE   = $03F8         ; Floor Y positions: $00,$43,$6B,$93,$BB
 ; Dummy pointer target for keyboard mode: any RAM address with bit 7 clear.
 KBD_DUMMY_ADDR  = $6219         ; RAM byte always has bit 7 clear
 
-; Game code patch addresses (not yet RE'd).
-PATCH_72BA      = $72BA         ; Game code patch (in screen data hex)
-PATCH_6022      = $6022         ; Apple IIc patch location (in input dispatch)
-PATCH_600E      = $600E         ; Apple IIc patch location (in input dispatch)
+; Game-code patch operands.  Loader writes one-time patches into three
+; self-modifying immediate/operand bytes after disk load.  Each label is
+; defined symbolically at its site in the game code; these EQUs let
+; loader.asm reference them (the two files assemble independently):
+;   SMC_ATTRACT_EXIT_JMP  -- JMP operand in START_ATTRACT; redirects the
+;                            cold-boot exit from ATTRACT_LOOP to
+;                            LIFE_LOST_HANDLER (shared extras-animation
+;                            path).  Patched on every boot regardless of
+;                            machine type.
+;   SMC_KEY_RIGHT         -- CMP #imm at INPUT_DISPATCH's right-arrow
+;                            check; patched to KEY_IIC_RIGHT on Apple IIc.
+;   SMC_KEY_LEFT          -- CMP #imm at INPUT_DISPATCH's left-arrow
+;                            check; patched to KEY_IIC_LEFT on IIc.
+SMC_ATTRACT_EXIT_JMP = $72BA    ; JMP operand low-byte in START_ATTRACT
+SMC_KEY_RIGHT   = $600E         ; CMP #imm operand in INPUT_DISPATCH
+SMC_KEY_LEFT    = $6022         ; CMP #imm operand in INPUT_DISPATCH
+LIFE_LOST_HANDLER = $7208       ; Exit target for patched START_ATTRACT
+
+; Machine ID constants (from ROM_MACHID at $FBB4).
+MACHID_IIC      = $08           ; Apple IIc marker byte
+
+; Apple IIc arrow-key codes (different from II/IIe $88/$95).
+KEY_IIC_LEFT    = $CB           ; IIc left-arrow: 'K' with high bit set
+KEY_IIC_RIGHT   = $CC           ; IIc right-arrow: 'L' with high bit set
 
 ; Game entry.
 ZP_GAME_ENTRY   = $4E           ; Indirect jump vector for game entry ($4E/$4F)
@@ -1367,17 +1387,20 @@ FIRST_BOOT:
 
 ; --- Phase 4: Machine-specific patches ---
 .patch:
-        LDA #$08
-        STA PATCH_72BA          ; Game code patch
+        LDA #<LIFE_LOST_HANDLER
+        STA SMC_ATTRACT_EXIT_JMP ; Redirect START_ATTRACT's exit JMP
+                                 ;   from ATTRACT_LOOP to LIFE_LOST_HANDLER
+                                 ;   (shared code path for cold boot and
+                                 ;   end-of-life).
 
 ; Check machine type for Apple IIc-specific patches.
         LDA ROM_MACHID
-        CMP #$08                ; Apple IIc identifier?
+        CMP #MACHID_IIC         ; Apple IIc?
         BNE .restore_zp
-        LDA #$CB
-        STA PATCH_6022          ; Patch game code for IIc
-        LDA #$CC
-        STA PATCH_600E          ; Patch game code for IIc
+        LDA #KEY_IIC_LEFT       ; IIc left-arrow key code
+        STA SMC_KEY_LEFT        ; Patch INPUT_DISPATCH left-arrow CMP
+        LDA #KEY_IIC_RIGHT      ; IIc right-arrow key code
+        STA SMC_KEY_RIGHT       ; Patch INPUT_DISPATCH right-arrow CMP
 
 ; Restore zero page and jump to game.
 .restore_zp:
@@ -1396,6 +1419,32 @@ FIRST_BOOT:
         DS $55FC-*,0
         HEX 04 A5 00 04         ; Residual data
 @ %def DISPATCH FIRST_BOOT
+
+\paragraph{Phase 4 game-code patches.}  After the disk load is complete
+(all level data in place, joystick probe done) but before the zero-page
+restore and game entry, [[FIRST_BOOT]] writes three self-modifying
+operand bytes in the freshly loaded game image:
+
+\begin{itemize}
+\item [[SMC_ATTRACT_EXIT_JMP]] (the low-byte operand of the closing
+  [[JMP]] in [[START_ATTRACT]]) is unconditionally rewritten to
+  [[#<LIFE_LOST_HANDLER]].  The original on-disk value points at
+  [[ATTRACT_LOOP]], but no real-world boot path ever takes that target:
+  every cold boot lands in [[LIFE_LOST_HANDLER]] first (extras stash is
+  zero, so the handler falls through to [[RESTART_NEW_GAME]], which
+  runs [[GAME_START_INIT]] and then falls into [[ATTRACT_LOOP]]).  The
+  on-disk [[JMP ATTRACT_LOOP]] byte sequence is kept for byte-exact
+  preservation but is dead as shipped.
+\item [[SMC_KEY_LEFT]] and [[SMC_KEY_RIGHT]] (the immediate operands of
+  the two arrow-key [[CMP]]s in [[INPUT_DISPATCH]]) are rewritten to
+  [[KEY_IIC_LEFT]] ([[$CB]]) and [[KEY_IIC_RIGHT]] ([[$CC]]) only when
+  [[ROM_MACHID]] reports [[MACHID_IIC]].  These are the Apple~IIc
+  keycodes emitted by its dedicated left/right arrow keys, which differ
+  from the Apple~II/IIe [[$88]]/[[$95]] codes that the game was
+  originally built against.  On II and IIe machines the patch is
+  skipped and the CMPs keep their shipped [[KEY_LEFT]]/[[KEY_RIGHT]]
+  values.
+\end{itemize}
 
 \section{Empty page and zero-page image}
 
@@ -2925,6 +2974,7 @@ INPUT_DISPATCH:
 .got_key:
 
 ; --- Right arrow ---
+SMC_KEY_RIGHT = *+1             ; Immediate operand of CMP; patched to #$CC on IIc
         CMP #KEY_RIGHT
         BNE .check_left
         BIT KBDSTROBE           ; Clear keyboard strobe
@@ -2938,6 +2988,7 @@ INPUT_SET_RIGHT:
 
 ; --- Left arrow ---
 .check_left:
+SMC_KEY_LEFT = *+1              ; Immediate operand of CMP; patched to #$CB on IIc
         CMP #KEY_LEFT
         BNE .check_action
         BIT KBDSTROBE
@@ -3082,7 +3133,7 @@ INPUT_DO_DESCEND:
         BIT KBDSTROBE
 .unknown_key:
         RTS
-@ %def INPUT_DISPATCH INPUT_SET_RIGHT INPUT_SET_LEFT INPUT_DO_ASCEND INPUT_DO_DESCEND
+@ %def INPUT_DISPATCH INPUT_SET_RIGHT INPUT_SET_LEFT INPUT_DO_ASCEND INPUT_DO_DESCEND SMC_KEY_LEFT SMC_KEY_RIGHT
 
 \section{Meta-key handler}
 
@@ -5303,8 +5354,12 @@ START_ATTRACT:
         CMP #$40                ; Done when source reaches $4000
         BNE .copy
         LDA KBDSTROBE           ; Clear keyboard strobe
-        JMP ATTRACT_LOOP        ; Enter attract loop
-@ %def START_ATTRACT
+SMC_ATTRACT_EXIT_JMP = *+1       ; JMP operand low-byte; loader patches
+                                 ; to #<LIFE_LOST_HANDLER so first-boot
+                                 ; exit lands on the shared extras-animation
+                                 ; path instead of looping attract directly.
+        JMP ATTRACT_LOOP        ; Enter attract loop (patched on boot)
+@ %def START_ATTRACT SMC_ATTRACT_EXIT_JMP
 @ \chapter{Undocumented regions}
 
 The following sections contain raw hex data for regions not yet fully
@@ -14850,7 +14905,7 @@ between level transitions:
 \item When the countdown reaches zero, the routine switches into a
   wait-for-start phase.  A software timer advances in [[$06]] and
   when it rolls over, the BCD lives counter [[ZP_LIVES_BCD]] is decremented.  If it goes negative the routine
-  returns and the main-loop exit check at [[$7208]] takes over
+  returns and the main-loop exit check at [[LIFE_LOST_HANDLER]] takes over
   (game-over path).
 \item While waiting, the routine reads the keyboard, the two input
   handler slots ([[ZP_INPUT_1]] / [[ZP_INPUT_2]]) and the auto-start

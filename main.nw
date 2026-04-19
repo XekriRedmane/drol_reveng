@@ -12893,9 +12893,9 @@ Where [[REFRESH_PILLARS]] walks a fixed 6-slot world-Y list and
 [[REFRESH_LEFT_WALL]]/[[REFRESH_RIGHT_WALL]]/[[REFRESH_FLOOR_LINES]]
 paint fixed-position playfield elements, this routine redraws the
 currently-active \emph{hit entities} --- the 12-slot array at
-[[ENTITY_HIT_STATE]] ([[$8D]]) whose parallel Y (world-Y) and row
-(screen-row) attributes live at [[ENTITY_HIT_Y]] ([[$66]]) and
-[[ENTITY_HIT_ROW]] ([[$72]]).  The routine is called per frame from
+[[ENTITY_HIT_STATE]] whose parallel Y (world-Y) and row (screen-row)
+attributes live at [[ENTITY_HIT_Y]] and [[ENTITY_HIT_ROW]].  The
+routine is called per frame from
 [[PLAYER_TICK_IDLE]] and [[PLAYER_TICK_MOVE_LEFT]] in the game-engine-A
 tick chain, after the [[CLEAR_DRAW_PAGE]] pass has zeroed the drawing
 page.  Unlike the three playfield-refresh siblings which use
@@ -12926,8 +12926,48 @@ written directly into [[SMC_TILE_SRC_LO]]/[[SMC_TILE_SRC_HI]]
 [[DRAW_SPRITE_OPAQUE]].
 
 \paragraph{Sprite dimensions.}  All hit-entity sprites are
-[[$07]]~bytes wide (seven 7-pixel cells = 49~px) and [[$05]]~rows
-tall, planted at screen row [[ENTITY_HIT_ROW]],X.
+[[ZP_SPRITE_W]]~=~[[$07]] (eight 7-pixel cells per row, 56~px wide:
+the [[DRAW_SPRITE_OPAQUE]] inner loop runs [[W+1]] iterations) and
+[[ZP_SPRITE_H]]~=~[[$05]]~rows tall, planted at screen row
+[[ENTITY_HIT_ROW]],X.  Each frame therefore occupies exactly
+[[$28]] ([[40]]) bytes --- which matches the [[$28]]-byte stride
+between consecutive pointers in both [[HIT_SPR_POS_LO]] and
+[[HIT_SPR_NEG_LO]].
+
+\paragraph{Sprite artwork.}  Figure~\ref{fig:hit_sprites} shows the
+fourteen frames (seven per direction) decoded with the standard hi-res
+palette.  The sprites are wide-and-short trail/stripe-style motifs
+rather than character bodies: every frame is the same vertical-bar
+pattern shifted horizontally and progressively truncated from one
+side (the [[$7F]] / [[$55]] / [[$2A]] / [[$3F]] byte values in the
+hex dump are the exposed palette-bit variants of the solid-bar
+pattern).  Across the 7-frame cycle the bars walk one byte-column
+per frame, producing a horizontal streak visible for exactly as long
+as the rescue entity is in flight.  The positive table (top row,
+plotted in blue/orange because every source byte has bit~7 set) and
+the negative table (bottom row, violet/green because bit~7 is clear)
+differ only in palette bit --- the binary structure is the same.  The
+animation index [[ZP_SPRITE_XREF]] is shared with the walking-frame
+counter used by [[REFRESH_PILLARS]] / [[REFRESH_LEFT_WALL]] /
+[[REFRESH_RIGHT_WALL]] so the hit-entity streak syncs to the
+player's footfall cadence.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{images/hit_sprites_pos.png}
+\\[4pt]
+\includegraphics[width=0.98\textwidth]{images/hit_sprites_neg.png}
+\caption{Hit-entity sprite frames consumed by
+[[REFRESH_HIT_ENTITIES]].  Top row: positive-facing
+([[HIT_SPR_POS_LO]]/[[HIT_SPR_POS_HI]], [[$8AC0]]--[[$8BD7]] in the
+persistent game-code bank, 7 frames).  Bottom row: negative-facing
+([[HIT_SPR_NEG_LO]]/[[HIT_SPR_NEG_HI]], [[$7AD4]]--[[$7BEB]]; frame~0
+lives at the tail of the swappable level-1 region [[$7500]]--[[$7AFF]]
+and frames~1..6 spill into the persistent bank [[$7B00]]--[[$8BFF]]).
+Each frame is [[$28]] bytes (8 bytes/row $\times$ 5 rows);
+consecutive pointers advance by the same [[$28]] stride.}
+\label{fig:hit_sprites}
+\end{figure}
 
 <<refresh hit entities defines>>=
 

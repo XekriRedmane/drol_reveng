@@ -58,3 +58,4 @@
 - [Level-1 tail sprite decomposition](drol-level1-tail-sprite-decomposition.md) — $B5FD-$BD9F split into 10 labeled sprite-data sub-chunks (ATTRACT_SPR_0/1_DATA, EXTRA_LIFE_SPR_DATA, SPRITE_TABLE_A/B_*_DATA, BRODERBUND_LOGO_SPR_DATA, residue)
 - [Level-1 page 02 decomposition](drol-level1-page02-decomposition.md) — $0200-$02FF split into 11 L1_-prefixed sub-chunks mirroring drol's decomp (sound/wipe/LVL_INIT seeds + pre-release residue)
 - [STAGE_RESIDUE_DEAD decomposition](drol-stage-residue-dead-decomp.md) — $5E00-$5EC4 dead nibble-reader + GAME_START_INIT-clone tail; BIT-abs mid-entry trick on STA ZP_SCORE_1 operand
+- [HIT_SPR_POS/NEG sprite data](drol-hit-sprite-data.md) — 7-frame hit-entity sprites W=7/H=5 $28-stride; POS in drol.bin $8AC0; NEG split swap $7AD4 / persistent $7AFC

@@ -20811,10 +20811,83 @@ because the pointer table's high-byte side
 ([[ENEMY_C_TAIL_HI]]) lists their page bytes explicitly, so the
 pointers are live data even if no draw path consumes them.
 
-The remaining 12555 bytes of the chunk ([[$8CF5]]--[[$BDFF]]) stay
-as raw [[HEX]] for now; future rounds will peel off further
-labelled regions starting with [[FLOOR_ENEMY_SPR_S3_DATA_0]] at
-[[$8CF5]].
+\subsection{Page 8C tail through $B4B0$: sprite pixel data region
+([[$8CF5]]--[[$B4B0]])}
+
+The next 10172 bytes ([[$8CF5]]--[[$B4B0]]) hold the bulk of the
+level-1 swappable sprite pixel data and pointer tables.  All sub-regions
+are indexed from pointer tables either in [[SPRITE_POINTER_TABLES_LO]]
+/ [[SPRITE_POINTER_TABLES_HI]] (for the players/floor-enemies/rescue
+children/entity-grid/companion families) or from the level-swap tail
+pointer tables at [[$AFD3]]--[[$B0FF]] (for the projectile/special-puff/
+enemy-C/scroll-edge/digit/SPRITE\_TABLE pointer families, which are
+[[EQU]]-declared and stored as the [[SPRITE_POINTER_TABLES_TAIL]] raw
+byte block within the collection chunk).
+
+\begin{center}
+\scalebox{0.7}{
+\begin{tabular}{lllll} \toprule
+Label family & Span & Bytes/frame & Shape & Consumer \\ \midrule
+[[FLOOR_ENEMY_SPR_S3_DATA_0..6]] & [[$8CF5]]--[[$8D3A]] & $7\times 10$ & W=1, H=5 & [[FLOOR_ENEMY_DRAW]] (slot 3) \\
+[[FLOOR_ENEMY_SPR_S2_DATA_0..6]] & [[$8D3B]]--[[$8D80]] & $7\times 10$ & W=1, H=5 & [[FLOOR_ENEMY_DRAW]] (slot 2) \\
+[[FLOOR_ENEMY_SPR_S1_DATA_0..6]] & [[$8D81]]--[[$8DC6]] & $7\times 10$ & W=1, H=5 & [[FLOOR_ENEMY_DRAW]] (slot 1) \\
+[[FLOOR_ENEMY_SPR_S0_DATA_0..6]] & [[$8DC7]]--[[$8E0C]] & $7\times 10$ & W=1, H=5 & [[FLOOR_ENEMY_DRAW]] (slot 0) \\
+[[SPECIAL_BODY_POSE0_DATA_0..6]] & [[$8E0D]]--[[$91E0]] & $7\times 140$ & W=6, H=$\$14$ & [[SPECIAL_DRAW]] (walk pose 0) \\
+[[SPECIAL_BODY_POSE1_DATA_0..6]] & [[$91E1]]--[[$95B4]] & $7\times 140$ & W=6, H=$\$14$ & [[SPECIAL_DRAW]] (walk pose 1) \\
+[[SPECIAL_BODY_POSE2_DATA_0..6]] & [[$95B5]]--[[$9988]] & $7\times 140$ & W=6, H=$\$14$ & [[SPECIAL_DRAW]] (walk pose 2) \\
+[[SPECIAL_BODY_POSE3_DATA_0..6]] & [[$9989]]--[[$9D5C]] & $7\times 140$ & W=6, H=$\$14$ & [[SPECIAL_DRAW]] (walk pose 3) \\
+[[SPECIAL_GRID_SPR_A_DATA_0..6]] & [[$9D5D]]--[[$9D86]] & $7\times 6$ & W=1, H=3 & [[DRAW_ENTITIES]] phase 3 (A) \\
+[[SPECIAL_GRID_SPR_B_DATA_0..6]] & [[$9D87]]--[[$9DB0]] & $7\times 6$ & W=1, H=3 & [[DRAW_ENTITIES]] phase 3 (B) \\
+[[COMPANION_NEG_POSE1_DATA_0..6]] & [[$9DB1]]--[[$9E90]] & $7\times 32$ & W=3, H=8 & [[COMPANION_UPDATE]] (NEG pose 1) \\
+[[COMPANION_NEG_POSE2_DATA_0..6]] & [[$9E91]]--[[$9F70]] & $7\times 32$ & W=3, H=8 & [[COMPANION_UPDATE]] (NEG pose 2) \\
+[[COMPANION_NEG_POSE3_DATA_0..6]] & [[$9F71]]--[[$A050]] & $7\times 32$ & W=3, H=8 & [[COMPANION_UPDATE]] (NEG pose 3) \\
+[[COMPANION_POS_POSE1_DATA_0..6]] & [[$A051]]--[[$A130]] & $7\times 32$ & W=3, H=8 & [[COMPANION_UPDATE]] (POS pose 1) \\
+[[COMPANION_POS_POSE2_DATA_0..6]] & [[$A131]]--[[$A210]] & $7\times 32$ & W=3, H=8 & [[COMPANION_UPDATE]] (POS pose 2) \\
+[[COMPANION_POS_POSE3_DATA_0..6]] & [[$A211]]--[[$A2F0]] & $7\times 32$ & W=3, H=8 & [[COMPANION_UPDATE]] (POS pose 3) \\
+[[COMPANION_GRID_SPR_DATA_0..6]] & [[$A2F1]]--[[$A30C]] & $7\times 4$ & W=1, H=2 & [[DRAW_ENTITIES]] phase 4 \\
+[[HUD_STRIP_SRC_DATA]] & [[$A30D]]--[[$A37C]] & 112 & 16 cols $\times$ 7 & [[PAINT_HUD_STRIP_P1]]/[[PAINT_HUD_STRIP_P2]] \\
+[[ENTITY_GRID_SPR_DATA_0..6]] & [[$A37D]]--[[$A3C2]] & $7\times 10$ & W=1, H=5 & [[DRAW_ENTITIES]] phase 5 \\
+[[RESCUE_SPR_NEG_END_DATA_0..6]] & [[$A3C3]]--[[$A69A]] & $7\times 104$ & W=3, H=$\$1A$ & [[RESCUE_DRAW]] (NEG end) \\
+[[RESCUE_SPR_NEG_MID_DATA_0..6]] & [[$A69B]]--[[$A9AA]] & $7\times 112$ & W=3, H=$\$1C$ & [[RESCUE_DRAW]] (NEG mid) \\
+[[RESCUE_SPR_POS_END_DATA_0..6]] & [[$A9AB]]--[[$AC82]] & $7\times 104$ & W=3, H=$\$1A$ & [[RESCUE_DRAW]] (POS end) \\
+[[RESCUE_SPR_POS_MID_DATA_0..6]] & [[$AC83]]--[[$AF92]] & $7\times 112$ & W=3, H=$\$1C$ & [[RESCUE_DRAW]] (POS mid) \\
+[[PROJ_SPR_R_DATA_0..6]] & [[$AF93]]--[[$AFD1]] & $7\times 9$ & W=2, H=3 & [[HAZARD_CHECK]] (right) \\
+[[PROJ_SPR_R_DATA_7_RESIDUE]] & [[$AFD2]] & 1 & unused lead & (idx 7 unreached) \\
+[[SPRITE_POINTER_TABLES_TAIL]] & [[$AFD3]]--[[$B0FF]] & 301 & pointer tables & various \\
+[[PROJ_SPR_L_DATA_0..6]] & [[$B100]]--[[$B13E]] & $7\times 9$ & W=2, H=3 & [[HAZARD_CHECK]] (left) \\
+[[SPECIAL_PUFF_DATA_0..6]] & [[$B13F]]--[[$B34B]] & $7\times 75$ & W=4, H=$\$0F$ & [[SPECIAL_DRAW]] drift \\
+[[SPRITE_TABLE_C_DATA_0..6]] & [[$B34C]]--[[$B432]] & $7\times 33$ & W=2, H=$\$0B$ & [[ENEMY_C_DRAW]] body \\
+[[SCROLL_EDGE_L_SPR_DATA_0..6]] & [[$B433]]--[[$B471]] & $7\times 9$ & W=2, H=3 & [[SCROLL_EDGE_L]] \\
+[[SCROLL_EDGE_R_SPR_DATA_0..6]] & [[$B472]]--[[$B4B0]] & $7\times 9$ & W=2, H=3 & [[SCROLL_EDGE_R]] \\ \bottomrule
+\end{tabular}
+}
+\end{center}
+
+As with the page-8C head table, the ``Shape'' column reports
+[[ZP_SPRITE_W]] / [[ZP_SPRITE_H]] values set by the consuming draw
+routine, so the byte total per frame is $(W+1) \times H$.
+
+\paragraph{Overlap quirks.}  Three aliasing cases are worth naming:
+
+\begin{itemize}
+\item [[COMPANION_GRID_SPR]] pointer table lists 8 entries at
+  [[$A2F1]], [[$A2F5]], [[$A2F9]], [[$A2FD]], [[$A301]], [[$A305]],
+  [[$A309]], [[$A30D]].  The first seven are labelled as
+  [[COMPANION_GRID_SPR_DATA_0]]--[[COMPANION_GRID_SPR_DATA_6]]; entry
+  7 at [[$A30D]] overlaps the first 4 bytes of
+  [[HUD_STRIP_SRC_DATA]], which is the primary consumer of that
+  storage.
+\item [[PROJ_SPR_R]] ships with 8 pointers in [[drol.bin]] at
+  [[$75F7]]/[[$76F7]], but [[PROJ_FRAME_IDX]] only iterates
+  [[$00]]..[[$06]], so ``frame 7'' at [[$AFD2]] is never drawn.  Its
+  first byte is labelled [[PROJ_SPR_R_DATA_7_RESIDUE]]; the next 9
+  bytes overlap the [[PROJ_SPR_L_LO]] and [[SPECIAL_PUFF_LO]] pointer
+  tables (part of [[SPRITE_POINTER_TABLES_TAIL]]).
+\item [[PROJ_SPR_L]] similarly lists pointers [[$B100]], [[$B109]],
+  \ldots, [[$B136]], [[$B13F]].  The eighth pointer [[$B13F]] equals
+  [[SPECIAL_PUFF_DATA_0]]; since the left-projectile draw path only
+  iterates frames~0..6, the overlap never matters at runtime.
+\end{itemize}
 
 \begin{figure}[H]
 \centering
@@ -20955,1197 +21028,1614 @@ SPECIAL_PEEK_DATA:
         HEX 8A 22 A2 A0 22 A2 A0 2A
         HEX AA 8A
 
-        ; --- Remaining raw bytes $8CF5-$BDFF (12555 bytes). ---
-        HEX 00 1C 00
-        HEX 7F 00 5D 00 55 00 14 00
-        HEX 70 03 7C 02 74 02 54 00
-        HEX 50 03 40 0F 70 0B 50 0A
-        HEX 50 02 40 0E 00 3F 40 2E
-        HEX 40 2A 40 0A 00 00 38 01
-        HEX 7E 01 3A 01 2A 00 28 01
-        HEX 60 07 78 05 68 05 28 01
-        HEX 20 07 00 1F 60 17 20 15
-        HEX 20 05 00 00 38 01 7E 01
-        HEX 3A 01 2A 00 28 01 60 07
-        HEX 78 05 68 05 28 01 20 07
-        HEX 00 1F 60 17 20 15 20 05
+FLOOR_ENEMY_SPR_S3_DATA_0:
+        ; FLOOR_ENEMY_SPR_S3 frame 0 (10 bytes, W=1 H=5) at $8CF5.
         HEX 00 1C 00 7F 00 5D 00 55
-        HEX 00 14 00 00 70 03 7C 02
-        HEX 74 02 54 00 50 03 40 0F
-        HEX 70 0B 50 0A 50 02 40 0E
-        HEX 00 3F 40 2E 40 2A 40 0A
-        HEX 00 80 9C 80 FF 80 DD 80
-        HEX D5 80 94 80 F0 83 FC 82
-        HEX F4 82 D4 80 D0 83 C0 8F
-        HEX F0 8B D0 8A D0 82 C0 8E
-        HEX 80 BF C0 AE C0 AA C0 8A
-        HEX 80 80 B8 81 FE 81 BA 81
-        HEX AA 80 A8 81 E0 87 F8 85
-        HEX E8 85 A8 81 A0 87 80 9F
-        HEX E0 97 A0 95 A0 85 80 80
-        HEX B8 81 FE 81 BA 81 AA 80
-        HEX A8 81 E0 87 F8 85 E8 85
-        HEX A8 81 A0 87 80 9F E0 97
-        HEX A0 95 A0 85 80 9C 80 FF
-        HEX 80 DD 80 D5 80 94 80 80
-        HEX F0 83 FC 82 F4 82 D4 80
-        HEX D0 83 C0 8F F0 8B D0 8A
-        HEX D0 82 C0 8E 80 BF C0 AE
-        HEX C0 AA C0 8A 80 00 80 00
-        HEX 83 FC 00 00 00 80 00 8F
-        HEX FF 00 00 00 80 80 8E D7
-        HEX 00 00 00 83 C0 8E DC 00
-        HEX 00 00 87 E0 9B F8 00 00
-        HEX 00 86 EC 9A F8 80 00 80
-        HEX 96 EE 9B F0 8A 00 80 D3
-        HEX DF 9A F0 AA C0 80 D4 BF
-        HEX DB F1 A0 D0 80 C7 FF DF
-        HEX F7 8A 80 80 83 E7 E7 CF
-        HEX 82 C0 00 80 81 F8 BE 80
-        HEX D0 00 00 80 BF FE 00 00
-        HEX 00 00 80 8F FC 00 00 00
-        HEX 00 00 83 F0 00 00 00 00
-        HEX 00 81 A8 00 00 00 00 00
-        HEX 85 A8 00 00 00 00 00 8D
-        HEX 00 00 00 00 00 00 86 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 80 8F F0 00 00
-        HEX 80 80 80 BF FC 00 00 80
-        HEX 80 80 BA DC 00 00 80 8E
-        HEX 80 BA F0 00 00 80 9F 80
-        HEX EF E0 00 00 80 9B B0 EB
-        HEX E0 80 00 80 DB B8 EF C0
-        HEX A8 00 82 CE FC EB C1 AA
-        HEX 80 82 D1 FE EF C5 82 C0
-        HEX 82 9F FE FF DC A8 80 80
-        HEX 8F 9F 9E BC 8A 80 80 80
-        HEX 87 E1 F8 82 C0 00 80 81
-        HEX FF F8 00 00 00 80 80 BF
-        HEX F0 00 00 00 00 80 8F C0
-        HEX 00 00 00 00 80 85 A0 00
-        HEX 00 00 00 80 95 A0 00 00
-        HEX 00 00 80 B4 00 00 00 00
-        HEX 00 80 98 00 00 00 00 00
-        HEX 00 00 00 00 00 80 80 80
-        HEX BF C0 00 00 80 80 81 FF
-        HEX F0 00 00 80 80 81 EA F0
-        HEX 00 00 80 B8 81 EB C0 00
-        HEX 00 80 FC 83 BF 80 00 00
-        HEX 80 ED C3 AF 80 80 00 82
-        HEX ED E3 BE 81 A0 00 8A BB
-        HEX F3 AE 85 A8 80 8A C7 FB
-        HEX BE 94 8A 80 88 FF FB FE
-        HEX F1 A0 80 80 BC FC F9 F0
-        HEX A8 80 80 80 9F 87 E0 8A
-        HEX 80 80 80 87 FF E0 00 00
-        HEX 80 80 81 FF C0 00 00 00
-        HEX 80 80 BE 80 00 00 00 80
-        HEX 80 95 80 00 00 00 80 80
-        HEX D5 80 00 00 00 80 81 D0
-        HEX 00 00 00 00 80 80 E0 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 81 FE 80 00 00
-        HEX 80 80 87 FF C0 00 00 80
-        HEX 80 87 AB C0 00 00 81 E0
-        HEX 87 AE 80 00 00 83 F0 8D
-        HEX FC 80 00 00 83 B6 8D BC
-        HEX 80 80 00 8B B7 8D F8 85
-        HEX 80 00 A9 EF CD B8 95 A0
-        HEX 80 AA 9F ED F8 D0 A8 80
-        HEX A3 FF EF FB C5 80 80 81
-        HEX F3 F3 E7 C1 A0 80 80 80
-        HEX FC 9F 80 A8 80 80 80 9F
-        HEX FF 80 00 00 80 80 87 FE
-        HEX 80 00 00 80 80 81 F8 80
-        HEX 00 00 80 80 80 D4 80 00
-        HEX 00 80 80 82 D4 80 00 00
-        HEX 80 80 86 C0 00 00 00 80
-        HEX 80 83 80 00 00 00 00 00
-        HEX 00 00 00 00 00 80 80 80
-        HEX 87 F8 80 00 80 80 80 9F
-        HEX FE 80 00 80 80 80 9D AE
-        HEX 80 00 80 87 80 9D B8 80
-        HEX 00 80 8F C0 B7 F0 80 00
-        HEX 80 8D D8 B5 F0 80 80 80
-        HEX AD DC B7 E0 94 80 81 A7
-        HEX BE B5 E0 D5 80 81 A8 FF
-        HEX B7 E2 C1 A0 81 8F FF BF
-        HEX EE 94 80 80 87 CF CF 9E
-        HEX 85 80 80 80 83 F0 FC 81
-        HEX A0 80 80 80 FF FC 80 00
-        HEX 80 80 80 9F F8 80 00 80
-        HEX 80 80 87 E0 80 00 80 80
-        HEX 80 82 D0 80 00 80 80 80
-        HEX 8A D0 80 00 80 80 80 9A
-        HEX 80 00 00 80 80 80 8C 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 80 9F E0 80 00
-        HEX 80 80 80 FF F8 80 00 80
-        HEX 80 80 F5 B8 80 00 80 9C
-        HEX 80 F5 E0 80 00 80 BE 81
-        HEX DF C0 80 00 80 B6 E1 D7
-        HEX C0 80 80 81 B6 F1 DF 80
-        HEX D0 80 85 9D F9 D7 82 D4
-        HEX 80 85 A3 FD DF 8A 85 80
-        HEX 84 BF FD FF B8 D0 80 80
-        HEX 9E BE BC F8 94 80 80 80
-        HEX 8F C3 F0 85 80 80 80 83
-        HEX FF F0 80 00 80 80 80 FF
-        HEX E0 80 00 80 80 80 9F 80
-        HEX 80 00 80 80 80 8A C0 80
-        HEX 00 80 80 80 AA C0 80 00
-        HEX 80 80 80 E8 80 00 00 80
-        HEX 80 80 B0 80 00 00 00 00
-        HEX 00 00 00 00 00 80 80 80
-        HEX FF 80 80 00 80 80 83 FF
-        HEX E0 80 00 80 80 83 D5 E0
-        HEX 80 00 80 F0 83 D7 80 80
-        HEX 00 81 F8 86 FE 80 80 00
-        HEX 81 DB 86 DE 80 80 80 85
-        HEX DB C6 FC 82 C0 80 94 F7
-        HEX E6 DC 8A D0 80 95 8F F6
-        HEX FC A8 94 80 91 FF F7 FD
-        HEX E2 C0 80 80 F9 F9 F3 E0
-        HEX D0 80 80 80 BE 8F C0 94
-        HEX 80 80 80 8F FF C0 80 00
-        HEX 80 80 83 FF 80 80 00 80
-        HEX 80 80 FC 80 80 00 80 80
-        HEX 80 AA 80 80 00 80 80 81
-        HEX AA 80 80 00 80 80 83 A0
-        HEX 80 00 00 80 80 81 C0 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 80 00 00 00 00 00
+        HEX 00 14
+FLOOR_ENEMY_SPR_S3_DATA_1:
+        ; FLOOR_ENEMY_SPR_S3 frame 1 (10 bytes, W=1 H=5) at $8CFF.
+        HEX 00 70 03 7C 02 74 02 54
+        HEX 00 50
+FLOOR_ENEMY_SPR_S3_DATA_2:
+        ; FLOOR_ENEMY_SPR_S3 frame 2 (10 bytes, W=1 H=5) at $8D09.
+        HEX 03 40 0F 70 0B 50 0A 50
+        HEX 02 40
+FLOOR_ENEMY_SPR_S3_DATA_3:
+        ; FLOOR_ENEMY_SPR_S3 frame 3 (10 bytes, W=1 H=5) at $8D13.
+        HEX 0E 00 3F 40 2E 40 2A 40
+        HEX 0A 00
+FLOOR_ENEMY_SPR_S3_DATA_4:
+        ; FLOOR_ENEMY_SPR_S3 frame 4 (10 bytes, W=1 H=5) at $8D1D.
+        HEX 00 38 01 7E 01 3A 01 2A
+        HEX 00 28
+FLOOR_ENEMY_SPR_S3_DATA_5:
+        ; FLOOR_ENEMY_SPR_S3 frame 5 (10 bytes, W=1 H=5) at $8D27.
+        HEX 01 60 07 78 05 68 05 28
+        HEX 01 20
+FLOOR_ENEMY_SPR_S3_DATA_6:
+        ; FLOOR_ENEMY_SPR_S3 frame 6 (10 bytes, W=1 H=5) at $8D31.
+        HEX 07 00 1F 60 17 20 15 20
+        HEX 05 00
+FLOOR_ENEMY_SPR_S2_DATA_0:
+        ; FLOOR_ENEMY_SPR_S2 frame 0 (10 bytes, W=1 H=5) at $8D3B.
+        HEX 00 38 01 7E 01 3A 01 2A
+        HEX 00 28
+FLOOR_ENEMY_SPR_S2_DATA_1:
+        ; FLOOR_ENEMY_SPR_S2 frame 1 (10 bytes, W=1 H=5) at $8D45.
+        HEX 01 60 07 78 05 68 05 28
+        HEX 01 20
+FLOOR_ENEMY_SPR_S2_DATA_2:
+        ; FLOOR_ENEMY_SPR_S2 frame 2 (10 bytes, W=1 H=5) at $8D4F.
+        HEX 07 00 1F 60 17 20 15 20
+        HEX 05 00
+FLOOR_ENEMY_SPR_S2_DATA_3:
+        ; FLOOR_ENEMY_SPR_S2 frame 3 (10 bytes, W=1 H=5) at $8D59.
+        HEX 1C 00 7F 00 5D 00 55 00
+        HEX 14 00
+FLOOR_ENEMY_SPR_S2_DATA_4:
+        ; FLOOR_ENEMY_SPR_S2 frame 4 (10 bytes, W=1 H=5) at $8D63.
+        HEX 00 70 03 7C 02 74 02 54
+        HEX 00 50
+FLOOR_ENEMY_SPR_S2_DATA_5:
+        ; FLOOR_ENEMY_SPR_S2 frame 5 (10 bytes, W=1 H=5) at $8D6D.
+        HEX 03 40 0F 70 0B 50 0A 50
+        HEX 02 40
+FLOOR_ENEMY_SPR_S2_DATA_6:
+        ; FLOOR_ENEMY_SPR_S2 frame 6 (10 bytes, W=1 H=5) at $8D77.
+        HEX 0E 00 3F 40 2E 40 2A 40
+        HEX 0A 00
+FLOOR_ENEMY_SPR_S1_DATA_0:
+        ; FLOOR_ENEMY_SPR_S1 frame 0 (10 bytes, W=1 H=5) at $8D81.
+        HEX 80 9C 80 FF 80 DD 80 D5
+        HEX 80 94
+FLOOR_ENEMY_SPR_S1_DATA_1:
+        ; FLOOR_ENEMY_SPR_S1 frame 1 (10 bytes, W=1 H=5) at $8D8B.
+        HEX 80 F0 83 FC 82 F4 82 D4
+        HEX 80 D0
+FLOOR_ENEMY_SPR_S1_DATA_2:
+        ; FLOOR_ENEMY_SPR_S1 frame 2 (10 bytes, W=1 H=5) at $8D95.
+        HEX 83 C0 8F F0 8B D0 8A D0
+        HEX 82 C0
+FLOOR_ENEMY_SPR_S1_DATA_3:
+        ; FLOOR_ENEMY_SPR_S1 frame 3 (10 bytes, W=1 H=5) at $8D9F.
+        HEX 8E 80 BF C0 AE C0 AA C0
+        HEX 8A 80
+FLOOR_ENEMY_SPR_S1_DATA_4:
+        ; FLOOR_ENEMY_SPR_S1 frame 4 (10 bytes, W=1 H=5) at $8DA9.
+        HEX 80 B8 81 FE 81 BA 81 AA
+        HEX 80 A8
+FLOOR_ENEMY_SPR_S1_DATA_5:
+        ; FLOOR_ENEMY_SPR_S1 frame 5 (10 bytes, W=1 H=5) at $8DB3.
+        HEX 81 E0 87 F8 85 E8 85 A8
+        HEX 81 A0
+FLOOR_ENEMY_SPR_S1_DATA_6:
+        ; FLOOR_ENEMY_SPR_S1 frame 6 (10 bytes, W=1 H=5) at $8DBD.
+        HEX 87 80 9F E0 97 A0 95 A0
+        HEX 85 80
+FLOOR_ENEMY_SPR_S0_DATA_0:
+        ; FLOOR_ENEMY_SPR_S0 frame 0 (10 bytes, W=1 H=5) at $8DC7.
+        HEX 80 B8 81 FE 81 BA 81 AA
+        HEX 80 A8
+FLOOR_ENEMY_SPR_S0_DATA_1:
+        ; FLOOR_ENEMY_SPR_S0 frame 1 (10 bytes, W=1 H=5) at $8DD1.
+        HEX 81 E0 87 F8 85 E8 85 A8
+        HEX 81 A0
+FLOOR_ENEMY_SPR_S0_DATA_2:
+        ; FLOOR_ENEMY_SPR_S0 frame 2 (10 bytes, W=1 H=5) at $8DDB.
+        HEX 87 80 9F E0 97 A0 95 A0
+        HEX 85 80
+FLOOR_ENEMY_SPR_S0_DATA_3:
+        ; FLOOR_ENEMY_SPR_S0 frame 3 (10 bytes, W=1 H=5) at $8DE5.
+        HEX 9C 80 FF 80 DD 80 D5 80
+        HEX 94 80
+FLOOR_ENEMY_SPR_S0_DATA_4:
+        ; FLOOR_ENEMY_SPR_S0 frame 4 (10 bytes, W=1 H=5) at $8DEF.
+        HEX 80 F0 83 FC 82 F4 82 D4
+        HEX 80 D0
+FLOOR_ENEMY_SPR_S0_DATA_5:
+        ; FLOOR_ENEMY_SPR_S0 frame 5 (10 bytes, W=1 H=5) at $8DF9.
+        HEX 83 C0 8F F0 8B D0 8A D0
+        HEX 82 C0
+FLOOR_ENEMY_SPR_S0_DATA_6:
+        ; FLOOR_ENEMY_SPR_S0 frame 6 (10 bytes, W=1 H=5) at $8E03.
+        HEX 8E 80 BF C0 AE C0 AA C0
+        HEX 8A 80
+SPECIAL_BODY_POSE0_DATA_0:
+        ; SPECIAL_BODY_POSE0 frame 0 (140 bytes, W=6 H=20) at $8E0D.
+        HEX 00 80 00 83 FC 00 00 00
+        HEX 80 00 8F FF 00 00 00 80
+        HEX 80 8E D7 00 00 00 83 C0
+        HEX 8E DC 00 00 00 87 E0 9B
+        HEX F8 00 00 00 86 EC 9A F8
+        HEX 80 00 80 96 EE 9B F0 8A
+        HEX 00 80 D3 DF 9A F0 AA C0
+        HEX 80 D4 BF DB F1 A0 D0 80
+        HEX C7 FF DF F7 8A 80 80 83
+        HEX E7 E7 CF 82 C0 00 80 81
+        HEX F8 BE 80 D0 00 00 80 BF
+        HEX FE 00 00 00 00 80 8F FC
+        HEX 00 00 00 00 00 83 F0 00
+        HEX 00 00 00 00 81 A8 00 00
+        HEX 00 00 00 85 A8 00 00 00
+        HEX 00 00 8D 00 00 00 00 00
+        HEX 00 86 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE0_DATA_1:
+        ; SPECIAL_BODY_POSE0 frame 1 (140 bytes, W=6 H=20) at $8E99.
+        HEX 80 80 80 8F F0 00 00 80
+        HEX 80 80 BF FC 00 00 80 80
+        HEX 80 BA DC 00 00 80 8E 80
+        HEX BA F0 00 00 80 9F 80 EF
+        HEX E0 00 00 80 9B B0 EB E0
+        HEX 80 00 80 DB B8 EF C0 A8
+        HEX 00 82 CE FC EB C1 AA 80
+        HEX 82 D1 FE EF C5 82 C0 82
+        HEX 9F FE FF DC A8 80 80 8F
+        HEX 9F 9E BC 8A 80 80 80 87
+        HEX E1 F8 82 C0 00 80 81 FF
+        HEX F8 00 00 00 80 80 BF F0
+        HEX 00 00 00 00 80 8F C0 00
+        HEX 00 00 00 80 85 A0 00 00
+        HEX 00 00 80 95 A0 00 00 00
+        HEX 00 80 B4 00 00 00 00 00
+        HEX 80 98 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE0_DATA_2:
+        ; SPECIAL_BODY_POSE0 frame 2 (140 bytes, W=6 H=20) at $8F25.
+        HEX 80 80 80 BF C0 00 00 80
+        HEX 80 81 FF F0 00 00 80 80
+        HEX 81 EA F0 00 00 80 B8 81
+        HEX EB C0 00 00 80 FC 83 BF
+        HEX 80 00 00 80 ED C3 AF 80
+        HEX 80 00 82 ED E3 BE 81 A0
+        HEX 00 8A BB F3 AE 85 A8 80
+        HEX 8A C7 FB BE 94 8A 80 88
+        HEX FF FB FE F1 A0 80 80 BC
+        HEX FC F9 F0 A8 80 80 80 9F
+        HEX 87 E0 8A 80 80 80 87 FF
+        HEX E0 00 00 80 80 81 FF C0
+        HEX 00 00 00 80 80 BE 80 00
+        HEX 00 00 80 80 95 80 00 00
+        HEX 00 80 80 D5 80 00 00 00
+        HEX 80 81 D0 00 00 00 00 80
+        HEX 80 E0 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE0_DATA_3:
+        ; SPECIAL_BODY_POSE0 frame 3 (140 bytes, W=6 H=20) at $8FB1.
+        HEX 80 80 81 FE 80 00 00 80
+        HEX 80 87 FF C0 00 00 80 80
+        HEX 87 AB C0 00 00 81 E0 87
+        HEX AE 80 00 00 83 F0 8D FC
+        HEX 80 00 00 83 B6 8D BC 80
+        HEX 80 00 8B B7 8D F8 85 80
+        HEX 00 A9 EF CD B8 95 A0 80
+        HEX AA 9F ED F8 D0 A8 80 A3
+        HEX FF EF FB C5 80 80 81 F3
+        HEX F3 E7 C1 A0 80 80 80 FC
+        HEX 9F 80 A8 80 80 80 9F FF
+        HEX 80 00 00 80 80 87 FE 80
+        HEX 00 00 80 80 81 F8 80 00
+        HEX 00 80 80 80 D4 80 00 00
+        HEX 80 80 82 D4 80 00 00 80
+        HEX 80 86 C0 00 00 00 80 80
+        HEX 83 80 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE0_DATA_4:
+        ; SPECIAL_BODY_POSE0 frame 4 (140 bytes, W=6 H=20) at $903D.
+        HEX 80 80 80 87 F8 80 00 80
+        HEX 80 80 9F FE 80 00 80 80
+        HEX 80 9D AE 80 00 80 87 80
+        HEX 9D B8 80 00 80 8F C0 B7
+        HEX F0 80 00 80 8D D8 B5 F0
+        HEX 80 80 80 AD DC B7 E0 94
+        HEX 80 81 A7 BE B5 E0 D5 80
+        HEX 81 A8 FF B7 E2 C1 A0 81
+        HEX 8F FF BF EE 94 80 80 87
+        HEX CF CF 9E 85 80 80 80 83
+        HEX F0 FC 81 A0 80 80 80 FF
+        HEX FC 80 00 80 80 80 9F F8
+        HEX 80 00 80 80 80 87 E0 80
+        HEX 00 80 80 80 82 D0 80 00
+        HEX 80 80 80 8A D0 80 00 80
+        HEX 80 80 9A 80 00 00 80 80
+        HEX 80 8C 80 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE0_DATA_5:
+        ; SPECIAL_BODY_POSE0 frame 5 (140 bytes, W=6 H=20) at $90C9.
+        HEX 80 80 80 9F E0 80 00 80
+        HEX 80 80 FF F8 80 00 80 80
+        HEX 80 F5 B8 80 00 80 9C 80
+        HEX F5 E0 80 00 80 BE 81 DF
+        HEX C0 80 00 80 B6 E1 D7 C0
+        HEX 80 80 81 B6 F1 DF 80 D0
+        HEX 80 85 9D F9 D7 82 D4 80
+        HEX 85 A3 FD DF 8A 85 80 84
+        HEX BF FD FF B8 D0 80 80 9E
+        HEX BE BC F8 94 80 80 80 8F
+        HEX C3 F0 85 80 80 80 83 FF
+        HEX F0 80 00 80 80 80 FF E0
+        HEX 80 00 80 80 80 9F 80 80
+        HEX 00 80 80 80 8A C0 80 00
+        HEX 80 80 80 AA C0 80 00 80
+        HEX 80 80 E8 80 00 00 80 80
+        HEX 80 B0 80 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE0_DATA_6:
+        ; SPECIAL_BODY_POSE0 frame 6 (140 bytes, W=6 H=20) at $9155.
+        HEX 80 80 80 FF 80 80 00 80
+        HEX 80 83 FF E0 80 00 80 80
+        HEX 83 D5 E0 80 00 80 F0 83
+        HEX D7 80 80 00 81 F8 86 FE
+        HEX 80 80 00 81 DB 86 DE 80
+        HEX 80 80 85 DB C6 FC 82 C0
+        HEX 80 94 F7 E6 DC 8A D0 80
+        HEX 95 8F F6 FC A8 94 80 91
+        HEX FF F7 FD E2 C0 80 80 F9
+        HEX F9 F3 E0 D0 80 80 80 BE
+        HEX 8F C0 94 80 80 80 8F FF
+        HEX C0 80 00 80 80 83 FF 80
+        HEX 80 00 80 80 80 FC 80 80
+        HEX 00 80 80 80 AA 80 80 00
+        HEX 80 80 81 AA 80 80 00 80
+        HEX 80 83 A0 80 00 00 80 80
+        HEX 81 C0 80 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE1_DATA_0:
+        ; SPECIAL_BODY_POSE1 frame 0 (140 bytes, W=6 H=20) at $91E1.
         HEX 00 80 00 00 00 00 00 00
-        HEX 80 00 00 00 00 00 00 83
-        HEX C0 00 00 00 00 00 87 E0
-        HEX 00 00 00 00 00 86 EC 00
-        HEX 00 00 00 80 96 EE 83 F8
-        HEX 8A 00 80 D3 DF 8F FE AA
-        HEX C0 80 D4 BF DA DE A0 D0
-        HEX 80 C7 FF DB F9 8A 80 80
-        HEX 83 E7 E7 C7 82 C0 00 80
-        HEX 81 F8 BE 80 D0 00 00 80
-        HEX BF FE 00 00 00 00 00 8F
-        HEX FC 00 00 00 00 00 83 F0
-        HEX 00 00 00 00 00 81 A8 00
-        HEX 00 00 00 00 85 A8 00 00
-        HEX 00 00 00 8D 00 00 00 00
-        HEX 00 00 86 00 00 00 00 00
-        HEX 00 00 00 00 00 80 80 00
-        HEX 00 00 00 00 80 80 00 00
-        HEX 00 00 00 80 80 00 00 00
-        HEX 00 00 80 8E 80 00 00 00
-        HEX 00 80 9F 80 00 00 00 00
-        HEX 80 9B B0 00 00 00 00 80
-        HEX DB B8 8F E0 A8 00 82 CE
-        HEX FC BF F9 AA 80 82 D1 FE
-        HEX EA F9 82 C0 82 9F FE EF
-        HEX E4 A8 80 80 8F 9F 9E 9C
-        HEX 8A 80 80 80 87 E1 F8 82
-        HEX C0 00 80 81 FF F8 00 00
-        HEX 00 00 80 BF F0 00 00 00
-        HEX 00 80 8F C0 00 00 00 00
-        HEX 80 85 A0 00 00 00 00 80
-        HEX 95 A0 00 00 00 00 80 B4
-        HEX 00 00 00 00 00 80 98 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 00 00 00 00 00
+        HEX 80 00 00 00 00 00 00 80
+        HEX 00 00 00 00 00 00 83 C0
+        HEX 00 00 00 00 00 87 E0 00
+        HEX 00 00 00 00 86 EC 00 00
+        HEX 00 00 80 96 EE 83 F8 8A
+        HEX 00 80 D3 DF 8F FE AA C0
+        HEX 80 D4 BF DA DE A0 D0 80
+        HEX C7 FF DB F9 8A 80 80 83
+        HEX E7 E7 C7 82 C0 00 80 81
+        HEX F8 BE 80 D0 00 00 80 BF
+        HEX FE 00 00 00 00 00 8F FC
+        HEX 00 00 00 00 00 83 F0 00
+        HEX 00 00 00 00 81 A8 00 00
+        HEX 00 00 00 85 A8 00 00 00
+        HEX 00 00 8D 00 00 00 00 00
+        HEX 00 86 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE1_DATA_1:
+        ; SPECIAL_BODY_POSE1 frame 1 (140 bytes, W=6 H=20) at $926D.
         HEX 80 80 00 00 00 00 00 80
-        HEX 80 00 00 00 00 00 80 B8
-        HEX 80 00 00 00 00 80 FC 80
-        HEX 00 00 00 00 80 ED C0 00
-        HEX 00 00 00 82 ED E0 BF 81
-        HEX A0 00 8A BB F1 FF E5 A8
-        HEX 80 8A C7 FB AB E4 8A 80
-        HEX 88 FF FB BF 91 A0 80 80
-        HEX BC FC F8 F0 A8 80 80 80
-        HEX 9F 87 E0 8A 80 80 80 87
-        HEX FF E0 00 00 00 80 81 FF
-        HEX C0 00 00 00 80 80 BE 80
-        HEX 00 00 00 80 80 95 80 00
-        HEX 00 00 80 80 D5 80 00 00
-        HEX 00 80 81 D0 00 00 00 00
-        HEX 80 80 E0 00 00 00 00 00
-        HEX 00 00 00 00 00 80 80 00
-        HEX 00 00 00 00 80 80 00 00
-        HEX 00 00 00 80 80 00 00 00
-        HEX 00 00 81 E0 80 00 00 00
-        HEX 00 83 F0 80 00 00 00 00
-        HEX 83 B6 80 00 00 00 00 8B
-        HEX B7 81 FC 85 80 00 A9 EF
-        HEX C7 FF 95 A0 80 AA 9F ED
-        HEX AF 90 A8 80 A3 FF ED FC
-        HEX C5 80 80 81 F3 F3 E3 C1
-        HEX A0 80 80 80 FC 9F 80 A8
-        HEX 80 80 80 9F FF 80 00 00
-        HEX 80 80 87 FE 80 00 00 80
-        HEX 80 81 F8 80 00 00 80 80
-        HEX 80 D4 80 00 00 80 80 82
-        HEX D4 80 00 00 80 80 86 C0
-        HEX 00 00 00 80 80 83 80 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 80 00 00 00 00
-        HEX 80 80 80 00 00 00 00 80
-        HEX 80 80 00 00 00 00 80 87
-        HEX 80 80 00 00 00 80 8F C0
-        HEX 80 00 00 00 80 8D D8 80
-        HEX 00 00 00 80 AD DC 87 F0
-        HEX 94 80 81 A7 BE 9F FC D5
-        HEX 80 81 A8 FF B5 BC C1 A0
-        HEX 81 8F FF B7 F2 94 80 80
-        HEX 87 CF CF 8E 85 80 80 80
-        HEX 83 F0 FC 81 A0 80 80 80
-        HEX FF FC 80 00 80 80 80 9F
-        HEX F8 80 00 80 80 80 87 E0
-        HEX 80 00 80 80 80 82 D0 80
-        HEX 00 80 80 80 8A D0 80 00
-        HEX 80 80 80 9A 80 00 00 80
-        HEX 80 80 8C 80 00 00 00 00
-        HEX 00 00 00 00 00 80 80 80
-        HEX 00 00 00 00 80 80 80 00
-        HEX 00 00 00 80 80 80 00 00
-        HEX 00 00 80 9C 80 80 00 00
-        HEX 00 80 BE 80 80 00 00 00
-        HEX 80 B6 E0 80 00 00 00 81
-        HEX B6 F0 9F C0 D0 80 85 9D
-        HEX F8 FF F2 D4 80 85 A3 FD
-        HEX D5 F2 85 80 84 BF FD DF
-        HEX C8 D0 80 80 9E BE BC B8
-        HEX 94 80 80 80 8F C3 F0 85
-        HEX 80 80 80 83 FF F0 80 00
-        HEX 80 80 80 FF E0 80 00 80
-        HEX 80 80 9F 80 80 00 80 80
-        HEX 80 8A C0 80 00 80 80 80
-        HEX AA C0 80 00 80 80 80 E8
-        HEX 80 00 00 80 80 80 B0 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 80 00 00 00 00
-        HEX 80 80 80 00 00 00 00 80
-        HEX 80 80 00 00 00 00 80 F0
-        HEX 80 80 00 00 00 81 F8 80
-        HEX 80 00 00 00 81 DB 80 80
-        HEX 00 00 00 85 DB C0 FE 82
-        HEX C0 80 94 F7 E3 FF CA D0
-        HEX 80 95 8F F6 D7 C8 94 80
-        HEX 91 FF F6 FE A2 C0 80 80
-        HEX F9 F9 F1 E0 D0 80 80 80
-        HEX BE 8F C0 94 80 80 80 8F
-        HEX FF C0 80 00 80 80 83 FF
-        HEX 80 80 00 80 80 80 FC 80
-        HEX 80 00 80 80 80 AA 80 80
-        HEX 00 80 80 81 AA 80 80 00
-        HEX 80 80 83 A0 80 00 00 80
-        HEX 80 81 C0 80 00 00 00 00
-        HEX 00 00 00 00 00 00 80 00
-        HEX 00 00 00 00 00 80 00 00
-        HEX 00 00 00 00 80 00 00 00
-        HEX 00 00 00 83 C0 00 00 00
-        HEX 00 00 87 E0 00 00 00 00
-        HEX 00 86 EC 00 00 00 00 80
-        HEX 96 EE 80 80 8A D0 80 D3
-        HEX DF 83 F0 AA 80 80 D4 BF
-        HEX CF FD A0 80 80 C7 FF F8
-        HEX BF 8A C0 80 83 E7 E7 C3
-        HEX 82 D0 00 80 81 DF FC 80
-        HEX 80 00 00 80 9C FF 00 00
-        HEX 00 00 00 8F FF 00 00 00
-        HEX 00 00 83 FC 00 00 00 00
-        HEX 00 81 A8 00 00 00 00 00
-        HEX 85 A8 00 00 00 00 00 8D
-        HEX 00 00 00 00 00 00 86 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 00 00 00 00 00
+        HEX 80 00 00 00 00 00 80 80
+        HEX 00 00 00 00 00 80 8E 80
+        HEX 00 00 00 00 80 9F 80 00
+        HEX 00 00 00 80 9B B0 00 00
+        HEX 00 00 80 DB B8 8F E0 A8
+        HEX 00 82 CE FC BF F9 AA 80
+        HEX 82 D1 FE EA F9 82 C0 82
+        HEX 9F FE EF E4 A8 80 80 8F
+        HEX 9F 9E 9C 8A 80 80 80 87
+        HEX E1 F8 82 C0 00 80 81 FF
+        HEX F8 00 00 00 00 80 BF F0
+        HEX 00 00 00 00 80 8F C0 00
+        HEX 00 00 00 80 85 A0 00 00
+        HEX 00 00 80 95 A0 00 00 00
+        HEX 00 80 B4 00 00 00 00 00
+        HEX 80 98 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE1_DATA_2:
+        ; SPECIAL_BODY_POSE1 frame 2 (140 bytes, W=6 H=20) at $92F9.
         HEX 80 80 00 00 00 00 00 80
-        HEX 80 00 00 00 00 00 80 8E
-        HEX 80 00 00 00 00 80 9F 80
-        HEX 00 00 00 00 80 9B B0 00
-        HEX 00 00 00 80 DB B8 80 80
-        HEX AA C0 82 CE FC 8F C1 A8
-        HEX 80 82 D1 FE BF F5 80 80
-        HEX 82 9F FF E1 FC AA 80 80
-        HEX 8F 9F 9E 8C 8A C0 80 80
-        HEX 86 FF F0 80 80 00 80 80
-        HEX F3 FC 00 00 00 00 80 BF
-        HEX FC 00 00 00 00 80 8F F0
-        HEX 00 00 00 00 80 85 A0 00
-        HEX 00 00 00 80 95 A0 00 00
-        HEX 00 00 80 B4 00 00 00 00
-        HEX 00 80 98 00 00 00 00 00
-        HEX 00 00 00 00 00 80 80 00
-        HEX 00 00 00 00 80 80 00 00
-        HEX 00 00 00 80 80 00 00 00
-        HEX 00 00 80 B8 80 00 00 00
-        HEX 00 80 FC 80 00 00 00 00
-        HEX 80 ED C0 00 00 00 00 82
-        HEX ED E0 80 81 AA 80 8A BB
-        HEX F0 BE 85 A0 80 8A C7 F9
-        HEX FF D4 80 80 88 FF FF 87
-        HEX F1 A8 80 80 BC FC F8 B0
-        HEX AA 80 80 80 9B FF C0 80
-        HEX 80 80 80 83 CF F0 00 00
-        HEX 00 80 81 FF F0 00 00 00
-        HEX 80 80 BF C0 00 00 00 80
-        HEX 80 95 80 00 00 00 80 80
-        HEX D5 80 00 00 00 80 81 D0
-        HEX 00 00 00 00 80 80 E0 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 00 00 00 00 00
+        HEX 80 00 00 00 00 00 80 80
+        HEX 00 00 00 00 00 80 B8 80
+        HEX 00 00 00 00 80 FC 80 00
+        HEX 00 00 00 80 ED C0 00 00
+        HEX 00 00 82 ED E0 BF 81 A0
+        HEX 00 8A BB F1 FF E5 A8 80
+        HEX 8A C7 FB AB E4 8A 80 88
+        HEX FF FB BF 91 A0 80 80 BC
+        HEX FC F8 F0 A8 80 80 80 9F
+        HEX 87 E0 8A 80 80 80 87 FF
+        HEX E0 00 00 00 80 81 FF C0
+        HEX 00 00 00 80 80 BE 80 00
+        HEX 00 00 80 80 95 80 00 00
+        HEX 00 80 80 D5 80 00 00 00
+        HEX 80 81 D0 00 00 00 00 80
+        HEX 80 E0 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE1_DATA_3:
+        ; SPECIAL_BODY_POSE1 frame 3 (140 bytes, W=6 H=20) at $9385.
         HEX 80 80 00 00 00 00 00 80
-        HEX 80 00 00 00 00 00 81 E0
-        HEX 80 00 00 00 00 83 F0 80
-        HEX 00 00 00 00 83 B6 80 00
-        HEX 00 00 00 8B B7 80 80 85
-        HEX A8 80 A9 EF C1 F8 95 80
-        HEX 80 AA 9F E7 FE D0 80 80
-        HEX A3 FF FC 9F C5 A0 80 81
-        HEX F3 F3 E1 C1 A8 80 80 80
-        HEX EF FE 80 80 80 80 80 8E
-        HEX BF C0 00 00 80 80 87 FF
-        HEX C0 00 00 80 80 81 FE 80
-        HEX 00 00 80 80 80 D4 80 00
-        HEX 00 80 80 82 D4 80 00 00
-        HEX 80 80 86 C0 00 00 00 80
-        HEX 80 83 80 00 00 00 00 00
-        HEX 00 00 00 00 00 80 80 80
-        HEX 00 00 00 00 80 80 80 00
-        HEX 00 00 00 80 80 80 00 00
-        HEX 00 00 80 87 80 80 00 00
-        HEX 00 80 8F C0 80 00 00 00
-        HEX 80 8D D8 80 00 00 00 80
-        HEX AD DC 80 80 95 A0 81 A7
-        HEX BE 87 E0 D4 80 81 A8 FF
-        HEX 9F FA C0 80 81 8F FF F0
-        HEX FE 95 80 80 87 CF CF 86
-        HEX 85 A0 80 80 83 BF F8 80
-        HEX 80 80 80 80 B9 FE 80 00
-        HEX 80 80 80 9F FE 80 00 80
-        HEX 80 80 87 F8 80 00 80 80
-        HEX 80 82 D0 80 00 80 80 80
-        HEX 8A D0 80 00 80 80 80 9A
-        HEX 80 00 00 80 80 80 8C 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 80 00 00 00 00
+        HEX 80 00 00 00 00 00 80 80
+        HEX 00 00 00 00 00 81 E0 80
+        HEX 00 00 00 00 83 F0 80 00
+        HEX 00 00 00 83 B6 80 00 00
+        HEX 00 00 8B B7 81 FC 85 80
+        HEX 00 A9 EF C7 FF 95 A0 80
+        HEX AA 9F ED AF 90 A8 80 A3
+        HEX FF ED FC C5 80 80 81 F3
+        HEX F3 E3 C1 A0 80 80 80 FC
+        HEX 9F 80 A8 80 80 80 9F FF
+        HEX 80 00 00 80 80 87 FE 80
+        HEX 00 00 80 80 81 F8 80 00
+        HEX 00 80 80 80 D4 80 00 00
+        HEX 80 80 82 D4 80 00 00 80
+        HEX 80 86 C0 00 00 00 80 80
+        HEX 83 80 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE1_DATA_4:
+        ; SPECIAL_BODY_POSE1 frame 4 (140 bytes, W=6 H=20) at $9411.
         HEX 80 80 80 00 00 00 00 80
-        HEX 80 80 00 00 00 00 80 9C
-        HEX 80 80 00 00 00 80 BE 80
-        HEX 80 00 00 00 80 B6 E0 80
-        HEX 00 00 00 81 B6 F0 80 80
-        HEX D5 80 85 9D F8 9F 82 D0
-        HEX 80 85 A3 FC FF EA 80 80
-        HEX 84 BF FF C3 F8 D4 80 80
-        HEX 9E BE BC 98 95 80 80 80
-        HEX 8D FF E0 80 80 80 80 81
-        HEX E7 F8 80 00 80 80 80 FF
-        HEX F8 80 00 80 80 80 9F E0
-        HEX 80 00 80 80 80 8A C0 80
-        HEX 00 80 80 80 AA C0 80 00
-        HEX 80 80 80 E8 80 00 00 80
-        HEX 80 80 B0 80 00 00 00 00
-        HEX 00 00 00 00 00 80 80 80
-        HEX 00 00 00 00 80 80 80 00
-        HEX 00 00 00 80 80 80 00 00
-        HEX 00 00 80 F0 80 80 00 00
-        HEX 00 81 F8 80 80 00 00 00
-        HEX 81 DB 80 80 00 00 00 85
-        HEX DB C0 80 82 D4 80 94 F7
-        HEX E0 FC 8A C0 80 95 8F F3
-        HEX FF A8 80 80 91 FF FE 8F
-        HEX E2 D0 80 80 F9 F9 F0 E0
-        HEX D4 80 80 80 B7 FF 80 80
-        HEX 80 80 80 87 9F E0 80 00
-        HEX 80 80 83 FF E0 80 00 80
-        HEX 80 80 FF 80 80 00 80 80
-        HEX 80 AA 80 80 00 80 80 81
-        HEX AA 80 80 00 80 80 83 A0
-        HEX 80 00 00 80 80 81 C0 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 80 00 00 00 00 00
+        HEX 80 80 00 00 00 00 80 80
+        HEX 80 00 00 00 00 80 87 80
+        HEX 80 00 00 00 80 8F C0 80
+        HEX 00 00 00 80 8D D8 80 00
+        HEX 00 00 80 AD DC 87 F0 94
+        HEX 80 81 A7 BE 9F FC D5 80
+        HEX 81 A8 FF B5 BC C1 A0 81
+        HEX 8F FF B7 F2 94 80 80 87
+        HEX CF CF 8E 85 80 80 80 83
+        HEX F0 FC 81 A0 80 80 80 FF
+        HEX FC 80 00 80 80 80 9F F8
+        HEX 80 00 80 80 80 87 E0 80
+        HEX 00 80 80 80 82 D0 80 00
+        HEX 80 80 80 8A D0 80 00 80
+        HEX 80 80 9A 80 00 00 80 80
+        HEX 80 8C 80 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE1_DATA_5:
+        ; SPECIAL_BODY_POSE1 frame 5 (140 bytes, W=6 H=20) at $949D.
+        HEX 80 80 80 00 00 00 00 80
+        HEX 80 80 00 00 00 00 80 80
+        HEX 80 00 00 00 00 80 9C 80
+        HEX 80 00 00 00 80 BE 80 80
+        HEX 00 00 00 80 B6 E0 80 00
+        HEX 00 00 81 B6 F0 9F C0 D0
+        HEX 80 85 9D F8 FF F2 D4 80
+        HEX 85 A3 FD D5 F2 85 80 84
+        HEX BF FD DF C8 D0 80 80 9E
+        HEX BE BC B8 94 80 80 80 8F
+        HEX C3 F0 85 80 80 80 83 FF
+        HEX F0 80 00 80 80 80 FF E0
+        HEX 80 00 80 80 80 9F 80 80
+        HEX 00 80 80 80 8A C0 80 00
+        HEX 80 80 80 AA C0 80 00 80
+        HEX 80 80 E8 80 00 00 80 80
+        HEX 80 B0 80 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE1_DATA_6:
+        ; SPECIAL_BODY_POSE1 frame 6 (140 bytes, W=6 H=20) at $9529.
+        HEX 80 80 80 00 00 00 00 80
+        HEX 80 80 00 00 00 00 80 80
+        HEX 80 00 00 00 00 80 F0 80
+        HEX 80 00 00 00 81 F8 80 80
+        HEX 00 00 00 81 DB 80 80 00
+        HEX 00 00 85 DB C0 FE 82 C0
+        HEX 80 94 F7 E3 FF CA D0 80
+        HEX 95 8F F6 D7 C8 94 80 91
+        HEX FF F6 FE A2 C0 80 80 F9
+        HEX F9 F1 E0 D0 80 80 80 BE
+        HEX 8F C0 94 80 80 80 8F FF
+        HEX C0 80 00 80 80 83 FF 80
+        HEX 80 00 80 80 80 FC 80 80
+        HEX 00 80 80 80 AA 80 80 00
+        HEX 80 80 81 AA 80 80 00 80
+        HEX 80 83 A0 80 00 00 80 80
+        HEX 81 C0 80 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE2_DATA_0:
+        ; SPECIAL_BODY_POSE2 frame 0 (140 bytes, W=6 H=20) at $95B5.
         HEX 00 80 00 00 00 00 00 00
-        HEX 80 00 00 00 00 00 00 83
-        HEX C0 00 00 00 00 00 87 E0
-        HEX 00 00 00 00 00 86 EC 00
-        HEX 00 00 00 80 96 EE 80 80
-        HEX 8A C0 80 D3 DF 83 F0 AA
-        HEX D0 80 D4 BF CF FD A0 80
-        HEX 80 C7 FF F8 BF 8A C0 80
-        HEX 83 E7 E7 CF 82 D0 00 00
-        HEX 81 DF F6 00 00 00 00 80
-        HEX 9B F0 00 00 00 00 00 9B
-        HEX F0 00 00 00 00 00 9B F8
-        HEX 00 00 00 00 00 9D F8 00
-        HEX 00 00 00 00 8D FC 00 00
-        HEX 00 00 00 8E BF 00 00 00
-        HEX 00 00 8F FF 00 00 00 00
-        HEX 00 83 FC 00 00 80 80 00
-        HEX 00 00 00 00 80 80 00 00
-        HEX 00 00 00 80 80 00 00 00
-        HEX 00 00 80 8E 80 00 00 00
-        HEX 00 80 9F 80 00 00 00 00
-        HEX 80 9B B0 00 00 00 00 80
-        HEX DB B8 80 80 AA 80 82 CE
-        HEX FC 8F C1 AA C0 82 D1 FE
-        HEX BF F5 80 80 82 9F FF E1
-        HEX FC AA 80 80 8F 9F 9E BC
-        HEX 8A C0 00 80 86 FF D8 00
-        HEX 00 00 80 80 EF C0 00 00
-        HEX 00 00 80 EF C0 00 00 00
-        HEX 00 80 EF E0 00 00 00 00
-        HEX 80 F7 E0 00 00 00 00 80
-        HEX B7 F0 00 00 00 00 80 B9
+        HEX 80 00 00 00 00 00 00 80
+        HEX 00 00 00 00 00 00 83 C0
+        HEX 00 00 00 00 00 87 E0 00
+        HEX 00 00 00 00 86 EC 00 00
+        HEX 00 00 80 96 EE 80 80 8A
+        HEX D0 80 D3 DF 83 F0 AA 80
+        HEX 80 D4 BF CF FD A0 80 80
+        HEX C7 FF F8 BF 8A C0 80 83
+        HEX E7 E7 C3 82 D0 00 80 81
+        HEX DF FC 80 80 00 00 80 9C
+        HEX FF 00 00 00 00 00 8F FF
+        HEX 00 00 00 00 00 83 FC 00
+        HEX 00 00 00 00 81 A8 00 00
+        HEX 00 00 00 85 A8 00 00 00
+        HEX 00 00 8D 00 00 00 00 00
+        HEX 00 86 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE2_DATA_1:
+        ; SPECIAL_BODY_POSE2 frame 1 (140 bytes, W=6 H=20) at $9641.
+        HEX 80 80 00 00 00 00 00 80
+        HEX 80 00 00 00 00 00 80 80
+        HEX 00 00 00 00 00 80 8E 80
+        HEX 00 00 00 00 80 9F 80 00
+        HEX 00 00 00 80 9B B0 00 00
+        HEX 00 00 80 DB B8 80 80 AA
+        HEX C0 82 CE FC 8F C1 A8 80
+        HEX 82 D1 FE BF F5 80 80 82
+        HEX 9F FF E1 FC AA 80 80 8F
+        HEX 9F 9E 8C 8A C0 80 80 86
+        HEX FF F0 80 80 00 80 80 F3
         HEX FC 00 00 00 00 80 BF FC
         HEX 00 00 00 00 80 8F F0 00
-        HEX 00 80 80 00 00 00 00 00
+        HEX 00 00 00 80 85 A0 00 00
+        HEX 00 00 80 95 A0 00 00 00
+        HEX 00 80 B4 00 00 00 00 00
+        HEX 80 98 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE2_DATA_2:
+        ; SPECIAL_BODY_POSE2 frame 2 (140 bytes, W=6 H=20) at $96CD.
         HEX 80 80 00 00 00 00 00 80
-        HEX 80 00 00 00 00 00 80 B8
-        HEX 80 00 00 00 00 80 FC 80
-        HEX 00 00 00 00 80 ED C0 00
-        HEX 00 00 00 82 ED E0 80 81
-        HEX A8 80 8A BB F0 BE 85 AA
-        HEX 80 8A C7 F9 FF D4 80 80
-        HEX 88 FF FF 87 F1 A8 80 80
-        HEX BC FC F9 F0 AA 80 80 80
-        HEX 9B FE E0 00 00 80 80 83
-        HEX BE 80 00 00 00 80 83 BE
-        HEX 80 00 00 00 80 83 BF 80
-        HEX 00 00 00 80 83 DF 80 00
-        HEX 00 00 80 81 DF C0 00 00
-        HEX 00 80 81 E7 F0 00 00 00
-        HEX 80 81 FF F0 00 00 00 80
-        HEX 80 BF C0 00 00 80 80 00
-        HEX 00 00 00 00 80 80 00 00
-        HEX 00 00 00 80 80 00 00 00
-        HEX 00 00 81 E0 80 00 00 00
-        HEX 00 83 F0 80 00 00 00 00
-        HEX 83 B6 80 00 00 00 00 8B
-        HEX B7 80 80 85 A0 80 A9 EF
-        HEX C1 F8 95 A8 80 AA 9F E7
-        HEX FE D0 80 80 A3 FF FC 9F
-        HEX C5 A0 80 81 F3 F3 E7 C1
-        HEX A8 80 80 80 EF FB 80 00
-        HEX 00 80 80 8D F8 80 00 00
-        HEX 80 80 8D F8 80 00 00 80
-        HEX 80 8D FC 80 00 00 80 80
-        HEX 8E FC 80 00 00 80 80 86
-        HEX FE 80 00 00 80 80 87 9F
+        HEX 80 00 00 00 00 00 80 80
+        HEX 00 00 00 00 00 80 B8 80
+        HEX 00 00 00 00 80 FC 80 00
+        HEX 00 00 00 80 ED C0 00 00
+        HEX 00 00 82 ED E0 80 81 AA
+        HEX 80 8A BB F0 BE 85 A0 80
+        HEX 8A C7 F9 FF D4 80 80 88
+        HEX FF FF 87 F1 A8 80 80 BC
+        HEX FC F8 B0 AA 80 80 80 9B
+        HEX FF C0 80 80 80 80 83 CF
+        HEX F0 00 00 00 80 81 FF F0
+        HEX 00 00 00 80 80 BF C0 00
+        HEX 00 00 80 80 95 80 00 00
+        HEX 00 80 80 D5 80 00 00 00
+        HEX 80 81 D0 00 00 00 00 80
+        HEX 80 E0 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE2_DATA_3:
+        ; SPECIAL_BODY_POSE2 frame 3 (140 bytes, W=6 H=20) at $9759.
+        HEX 80 80 00 00 00 00 00 80
+        HEX 80 00 00 00 00 00 80 80
+        HEX 00 00 00 00 00 81 E0 80
+        HEX 00 00 00 00 83 F0 80 00
+        HEX 00 00 00 83 B6 80 00 00
+        HEX 00 00 8B B7 80 80 85 A8
+        HEX 80 A9 EF C1 F8 95 80 80
+        HEX AA 9F E7 FE D0 80 80 A3
+        HEX FF FC 9F C5 A0 80 81 F3
+        HEX F3 E1 C1 A8 80 80 80 EF
+        HEX FE 80 80 80 80 80 8E BF
         HEX C0 00 00 80 80 87 FF C0
         HEX 00 00 80 80 81 FE 80 00
-        HEX 00 80 80 80 00 00 00 00
+        HEX 00 80 80 80 D4 80 00 00
+        HEX 80 80 82 D4 80 00 00 80
+        HEX 80 86 C0 00 00 00 80 80
+        HEX 83 80 00 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE2_DATA_4:
+        ; SPECIAL_BODY_POSE2 frame 4 (140 bytes, W=6 H=20) at $97E5.
         HEX 80 80 80 00 00 00 00 80
-        HEX 80 80 00 00 00 00 80 87
-        HEX 80 80 00 00 00 80 8F C0
-        HEX 80 00 00 00 80 8D D8 80
-        HEX 00 00 00 80 AD DC 80 80
-        HEX 95 80 81 A7 BE 87 E0 D5
-        HEX A0 81 A8 FF 9F FA C0 80
-        HEX 81 8F FF F0 FE 95 80 80
-        HEX 87 CF CF 9E 85 A0 80 80
-        HEX 83 BF EC 80 00 80 80 80
-        HEX B7 E0 80 00 80 80 80 B7
-        HEX E0 80 00 80 80 80 B7 F0
-        HEX 80 00 80 80 80 BB F0 80
-        HEX 00 80 80 80 9B F8 80 00
-        HEX 80 80 80 9C FE 80 00 80
-        HEX 80 80 9F FE 80 00 80 80
-        HEX 80 87 F8 80 00 80 80 80
-        HEX 00 00 00 00 80 80 80 00
-        HEX 00 00 00 80 80 80 00 00
-        HEX 00 00 80 9C 80 80 00 00
-        HEX 00 80 BE 80 80 00 00 00
-        HEX 80 B6 E0 80 00 00 00 81
-        HEX B6 F0 80 80 D4 80 85 9D
-        HEX F8 9F 82 D5 80 85 A3 FC
-        HEX FF EA 80 80 84 BF FF C3
-        HEX F8 D4 80 80 9E BE BC F8
-        HEX 95 80 80 80 8D FF B0 80
-        HEX 00 80 80 81 DF 80 80 00
-        HEX 80 80 81 DF 80 80 00 80
-        HEX 80 81 DF C0 80 00 80 80
-        HEX 81 EF C0 80 00 80 80 80
-        HEX EF E0 80 00 80 80 80 F3
+        HEX 80 80 00 00 00 00 80 80
+        HEX 80 00 00 00 00 80 87 80
+        HEX 80 00 00 00 80 8F C0 80
+        HEX 00 00 00 80 8D D8 80 00
+        HEX 00 00 80 AD DC 80 80 95
+        HEX A0 81 A7 BE 87 E0 D4 80
+        HEX 81 A8 FF 9F FA C0 80 81
+        HEX 8F FF F0 FE 95 80 80 87
+        HEX CF CF 86 85 A0 80 80 83
+        HEX BF F8 80 80 80 80 80 B9
+        HEX FE 80 00 80 80 80 9F FE
+        HEX 80 00 80 80 80 87 F8 80
+        HEX 00 80 80 80 82 D0 80 00
+        HEX 80 80 80 8A D0 80 00 80
+        HEX 80 80 9A 80 00 00 80 80
+        HEX 80 8C 80 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE2_DATA_5:
+        ; SPECIAL_BODY_POSE2 frame 5 (140 bytes, W=6 H=20) at $9871.
+        HEX 80 80 80 00 00 00 00 80
+        HEX 80 80 00 00 00 00 80 80
+        HEX 80 00 00 00 00 80 9C 80
+        HEX 80 00 00 00 80 BE 80 80
+        HEX 00 00 00 80 B6 E0 80 00
+        HEX 00 00 81 B6 F0 80 80 D5
+        HEX 80 85 9D F8 9F 82 D0 80
+        HEX 85 A3 FC FF EA 80 80 84
+        HEX BF FF C3 F8 D4 80 80 9E
+        HEX BE BC 98 95 80 80 80 8D
+        HEX FF E0 80 80 80 80 81 E7
         HEX F8 80 00 80 80 80 FF F8
         HEX 80 00 80 80 80 9F E0 80
-        HEX 00 80 80 80 00 00 00 00
+        HEX 00 80 80 80 8A C0 80 00
+        HEX 80 80 80 AA C0 80 00 80
+        HEX 80 80 E8 80 00 00 80 80
+        HEX 80 B0 80 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE2_DATA_6:
+        ; SPECIAL_BODY_POSE2 frame 6 (140 bytes, W=6 H=20) at $98FD.
         HEX 80 80 80 00 00 00 00 80
-        HEX 80 80 00 00 00 00 80 F0
-        HEX 80 80 00 00 00 81 F8 80
-        HEX 80 00 00 00 81 DB 80 80
-        HEX 00 00 00 85 DB C0 80 82
-        HEX D0 80 94 F7 E0 FC 8A D4
-        HEX 80 95 8F F3 FF A8 80 80
-        HEX 91 FF FE 8F E2 D0 80 80
-        HEX F9 F9 F3 E0 D4 80 80 80
-        HEX B7 FD C0 80 00 80 80 86
-        HEX FC 80 80 00 80 80 86 FC
-        HEX 80 80 00 80 80 86 FE 80
-        HEX 80 00 80 80 87 BE 80 80
-        HEX 00 80 80 83 BF 80 80 00
-        HEX 80 80 83 CF E0 80 00 80
-        HEX 80 83 FF E0 80 00 80 80
-        HEX 80 FF 80 80 00 00 98 00
-        HEX BA 00 00 80 E0 81 E8 00
-        HEX 00 83 80 87 A0 00 00 8C
-        HEX 80 9D 80 00 00 80 B0 80
-        HEX F4 00 00 81 C0 83 D0 00
-        HEX 00 86 80 8E C0 00 00 00
-        HEX 00 00 BA 00 98 00 00 81
-        HEX E8 80 E0 00 00 87 A0 83
-        HEX 80 00 00 9D 80 8C 80 00
-        HEX 00 80 F4 80 B0 00 00 83
-        HEX D0 81 C0 00 00 8E C0 86
-        HEX 80 00 00 2A 40 00 05 2E
-        HEX 50 00 15 2B 54 00 55 2A
-        HEX 54 00 55 2A 54 00 57 6F
-        HEX 54 00 A3 E7 C8 00 8B D7
-        HEX A0 00 01 2A 00 00 15 3A
-        HEX 40 00 55 2E 50 02 55 2A
-        HEX 50 02 55 2A 50 02 5F 3E
-        HEX 50 81 8F 9E A0 80 AE DD
-        HEX 80 00 05 28 00 00 55 6A
-        HEX 00 02 55 3A 40 0A 55 2A
-        HEX 40 0A 55 2A 40 0A 7D 7A
-        HEX 40 84 BC F9 80 81 BA F4
-        HEX 80 00 15 20 00 02 57 28
-        HEX 00 0A 55 6A 00 2A 55 2A
-        HEX 00 2A 55 2A 00 2B 77 6A
-        HEX 00 91 F3 E4 80 85 EB D0
-        HEX 80 00 00 55 00 00 0A 5D
-        HEX 20 00 2A 57 28 01 2A 55
-        HEX 28 01 2A 55 28 01 2F 5F
-        HEX 28 80 C7 CF 90 80 97 AE
-        HEX C0 00 02 54 00 00 2A 75
-        HEX 00 01 2A 5D 20 05 2A 55
-        HEX 20 05 2A 55 20 05 3E 7D
-        HEX 20 82 9E BC C0 80 DD BA
-        HEX 80 00 0A 50 00 01 2B 54
-        HEX 00 05 2A 75 00 15 2A 55
-        HEX 00 15 2A 55 00 15 7B 75
-        HEX 00 88 F9 F2 80 82 F5 E8
-        HEX 80 00 00 2A 40 00 05 2E
-        HEX 50 00 15 2B 54 00 55 2A
-        HEX 54 00 55 2A 54 00 57 6F
-        HEX 54 00 A3 E7 D8 00 8E DD
-        HEX A0 00 01 2A 00 00 15 3A
-        HEX 40 00 55 2E 50 02 55 2A
-        HEX 50 02 55 2A 50 02 5F 3E
-        HEX 50 81 8F 9E E0 80 BA F5
-        HEX 80 00 05 28 00 00 55 6A
-        HEX 00 02 55 3A 40 0A 55 2A
-        HEX 40 0A 55 2A 40 0A 7D 7A
-        HEX 40 84 BC FB 80 81 EB D4
-        HEX 80 00 15 20 00 02 57 28
-        HEX 00 0A 55 6A 00 2A 55 2A
-        HEX 00 2A 55 2A 00 2B 77 6A
-        HEX 00 91 F3 EC 80 87 AE D0
-        HEX 80 00 00 55 00 00 0A 5D
-        HEX 20 00 2A 57 28 01 2A 55
-        HEX 28 01 2A 55 28 01 2F 5F
-        HEX 28 80 C7 CF B0 80 9D BA
-        HEX C0 00 02 54 00 00 2A 75
-        HEX 00 01 2A 5D 20 05 2A 55
-        HEX 20 05 2A 55 20 05 3E 7D
-        HEX 20 82 9E BD C0 80 F5 EA
-        HEX 80 00 0A 50 00 01 2B 54
-        HEX 00 05 2A 75 00 15 2A 55
-        HEX 00 15 2A 55 00 15 7B 75
-        HEX 00 88 F9 F6 80 83 D7 A8
-        HEX 80 00 00 2A 40 00 05 2E
-        HEX 50 00 15 2B 54 00 55 2A
-        HEX 54 00 55 2A 54 00 57 6F
-        HEX 54 00 B3 E7 C8 00 8A F5
-        HEX E0 00 01 2A 00 00 15 3A
-        HEX 40 00 55 2E 50 02 55 2A
-        HEX 50 02 55 2A 50 02 5F 3E
-        HEX 50 81 CF 9E A0 80 AB D7
-        HEX 80 00 05 28 00 00 55 6A
-        HEX 00 02 55 3A 40 0A 55 2A
-        HEX 40 0A 55 2A 40 0A 7D 7A
-        HEX 40 86 BC F9 80 81 AE DC
-        HEX 80 00 15 20 00 02 57 28
-        HEX 00 0A 55 6A 00 2A 55 2A
-        HEX 00 2A 55 2A 00 2B 77 6A
-        HEX 00 99 F3 E4 80 85 BA F0
-        HEX 80 00 00 55 00 00 0A 5D
-        HEX 20 00 2A 57 28 01 2A 55
-        HEX 28 01 2A 55 28 01 2F 5F
-        HEX 28 80 E7 CF 90 80 95 EB
-        HEX C0 00 02 54 00 00 2A 75
-        HEX 00 01 2A 5D 20 05 2A 55
-        HEX 20 05 2A 55 20 05 3E 7D
-        HEX 20 83 9E BC C0 80 D7 AE
-        HEX 80 00 0A 50 00 01 2B 54
-        HEX 00 05 2A 75 00 15 2A 55
-        HEX 00 15 2A 55 00 15 7B 75
-        HEX 00 8C F9 F2 80 82 DD B8
-        HEX 80 00 05 28 00 00 15 6A
-        HEX 40 00 57 2A 50 00 55 2A
-        HEX 54 00 55 2A 54 00 57 6F
-        HEX 54 00 B3 E7 C8 00 8A F5
-        HEX E0 00 15 20 00 00 57 2A
-        HEX 00 02 5D 2A 40 02 55 2A
-        HEX 50 02 55 2A 50 02 5F 3E
-        HEX 50 81 CF 9E A0 80 AB D7
-        HEX 80 00 55 00 00 02 5D 28
-        HEX 00 0A 75 2A 00 0A 55 2A
-        HEX 40 0A 55 2A 40 0A 7D 7A
-        HEX 40 86 BC F9 80 81 AE DC
-        HEX 80 02 54 00 00 0A 75 20
-        HEX 00 2B 55 28 00 2A 55 2A
-        HEX 00 2A 55 2A 00 2B 77 6A
-        HEX 00 99 F3 E4 80 85 BA F0
-        HEX 80 00 0A 50 00 00 2B 55
-        HEX 00 01 2E 55 20 01 2A 55
-        HEX 28 01 2A 55 28 01 2F 5F
-        HEX 28 80 E7 CF 90 80 95 EB
-        HEX C0 00 2A 40 00 01 2E 54
-        HEX 00 05 3A 55 00 05 2A 55
-        HEX 20 05 2A 55 20 05 3E 7D
-        HEX 20 83 9E BC C0 80 D7 AE
-        HEX 80 01 2A 00 00 05 3A 50
-        HEX 00 15 6A 54 00 15 2A 55
-        HEX 00 15 2A 55 00 15 7B 75
-        HEX 00 8C F9 F2 80 82 DD B8
-        HEX 80 00 05 28 00 00 15 6A
-        HEX 40 00 57 2A 50 00 55 2A
-        HEX 54 00 55 2A 54 00 57 6F
-        HEX 54 00 A3 E7 D8 00 8E DD
-        HEX A0 00 15 20 00 00 57 2A
-        HEX 00 02 5D 2A 40 02 55 2A
-        HEX 50 02 55 2A 50 02 5F 3E
-        HEX 50 81 8F 9E E0 80 BA F5
-        HEX 80 00 55 00 00 02 5D 28
-        HEX 00 0A 75 2A 00 0A 55 2A
-        HEX 40 0A 55 2A 40 0A 7D 7A
-        HEX 40 84 BC FB 80 81 EB D4
-        HEX 80 02 54 00 00 0A 75 20
-        HEX 00 2B 55 28 00 2A 55 2A
-        HEX 00 2A 55 2A 00 2B 77 6A
-        HEX 00 91 F3 EC 80 87 AE D0
-        HEX 80 00 0A 50 00 00 2B 55
-        HEX 00 01 2E 55 20 01 2A 55
-        HEX 28 01 2A 55 28 01 2F 5F
-        HEX 28 80 C7 CF B0 80 9D BA
-        HEX C0 00 2A 40 00 01 2E 54
-        HEX 00 05 3A 55 00 05 2A 55
-        HEX 20 05 2A 55 20 05 3E 7D
-        HEX 20 82 9E BD C0 80 F5 EA
-        HEX 80 01 2A 00 00 05 3A 50
-        HEX 00 15 6A 54 00 15 2A 55
-        HEX 00 15 2A 55 00 15 7B 75
-        HEX 00 88 F9 F6 80 83 D7 A8
-        HEX 80 00 05 28 00 00 15 6A
-        HEX 40 00 57 2A 50 00 55 2A
-        HEX 54 00 55 2A 54 00 57 6F
-        HEX 54 00 A3 E7 C8 00 8B D7
-        HEX A0 00 15 20 00 00 57 2A
-        HEX 00 02 5D 2A 40 02 55 2A
-        HEX 50 02 55 2A 50 02 5F 3E
-        HEX 50 81 8F 9E A0 80 AE DD
-        HEX 80 00 55 00 00 02 5D 28
-        HEX 00 0A 75 2A 00 0A 55 2A
-        HEX 40 0A 55 2A 40 0A 7D 7A
-        HEX 40 84 BC F9 80 81 BA F4
-        HEX 80 02 54 00 00 0A 75 20
-        HEX 00 2B 55 28 00 2A 55 2A
-        HEX 00 2A 55 2A 00 2B 77 6A
-        HEX 00 91 F3 E4 80 85 EB D0
-        HEX 80 00 0A 50 00 00 2B 55
-        HEX 00 01 2E 55 20 01 2A 55
-        HEX 28 01 2A 55 28 01 2F 5F
-        HEX 28 80 C7 CF 90 80 97 AE
-        HEX C0 00 2A 40 00 01 2E 54
-        HEX 00 05 3A 55 00 05 2A 55
-        HEX 20 05 2A 55 20 05 3E 7D
-        HEX 20 82 9E BC C0 80 DD BA
-        HEX 80 01 2A 00 00 05 3A 50
-        HEX 00 15 6A 54 00 15 2A 55
-        HEX 00 15 2A 55 00 15 7B 75
-        HEX 00 88 F9 F2 80 82 F5 E8
-        HEX 80 00 05 00 05 00 14 00
-        HEX 14 00 50 00 50 02 40 02
-        HEX 40 00 0A 00 0A 00 28 00
-        HEX 28 01 20 01 20 00 2A 01
-        HEX 2A 01 2A 01 00 55 60 7F
-        HEX 60 55 60 00 2B 00 2A 00
-        HEX 2B 00 00 7D 03 55 03 7D
-        HEX 03 00 2A 40 3F 40 2A 40
-        HEX 00 55 00 55 00 55 00 00
-        HEX 7E 07 2A 07 2A 07 00 55
-        HEX 00 55 00 5F 00 00 2A 01
-        HEX 2A 01 6A 01 00 55 60 7F
-        HEX 60 55 60 00 2F 00 2A 00
-        HEX 2F 00 00 75 03 55 03 75
-        HEX 03 00 2A 40 3F 40 2A 40
-        HEX 00 57 00 55 00 57 00 00
-        HEX 7A 07 2A 07 7A 07 00 55
-        HEX 00 55 00 55 00 00 80 00
-        HEX 87 00 85 00 85 00 87 80
-        HEX 80 80 9C 80 94 80 94 80
-        HEX 9C 80 80 80 F0 80 D0 80
-        HEX D0 80 F0 80 80 83 C0 82
-        HEX C0 82 C0 83 C0 80 80 80
-        HEX 8E 80 8A 80 8A 80 8E 80
-        HEX 80 80 B8 80 A8 80 A8 80
-        HEX B8 80 80 81 E0 81 A0 81
-        HEX A0 81 E0 00 00 00 00 00
+        HEX 80 80 00 00 00 00 80 80
+        HEX 80 00 00 00 00 80 F0 80
+        HEX 80 00 00 00 81 F8 80 80
+        HEX 00 00 00 81 DB 80 80 00
+        HEX 00 00 85 DB C0 80 82 D4
+        HEX 80 94 F7 E0 FC 8A C0 80
+        HEX 95 8F F3 FF A8 80 80 91
+        HEX FF FE 8F E2 D0 80 80 F9
+        HEX F9 F0 E0 D4 80 80 80 B7
+        HEX FF 80 80 80 80 80 87 9F
+        HEX E0 80 00 80 80 83 FF E0
+        HEX 80 00 80 80 80 FF 80 80
+        HEX 00 80 80 80 AA 80 80 00
+        HEX 80 80 81 AA 80 80 00 80
+        HEX 80 83 A0 80 00 00 80 80
+        HEX 81 C0 80 00 00 00 00 00
+        HEX 00 00 00 00
+SPECIAL_BODY_POSE3_DATA_0:
+        ; SPECIAL_BODY_POSE3 frame 0 (140 bytes, W=6 H=20) at $9989.
+        HEX 00 80 00 00 00 00 00 00
+        HEX 80 00 00 00 00 00 00 80
+        HEX 00 00 00 00 00 00 83 C0
+        HEX 00 00 00 00 00 87 E0 00
+        HEX 00 00 00 00 86 EC 00 00
+        HEX 00 00 80 96 EE 80 80 8A
+        HEX C0 80 D3 DF 83 F0 AA D0
+        HEX 80 D4 BF CF FD A0 80 80
+        HEX C7 FF F8 BF 8A C0 80 83
+        HEX E7 E7 CF 82 D0 00 00 81
+        HEX DF F6 00 00 00 00 80 9B
+        HEX F0 00 00 00 00 00 9B F0
+        HEX 00 00 00 00 00 9B F8 00
+        HEX 00 00 00 00 9D F8 00 00
+        HEX 00 00 00 8D FC 00 00 00
+        HEX 00 00 8E BF 00 00 00 00
+        HEX 00 8F FF 00 00 00 00 00
+        HEX 83 FC 00 00
+SPECIAL_BODY_POSE3_DATA_1:
+        ; SPECIAL_BODY_POSE3 frame 1 (140 bytes, W=6 H=20) at $9A15.
+        HEX 80 80 00 00 00 00 00 80
+        HEX 80 00 00 00 00 00 80 80
+        HEX 00 00 00 00 00 80 8E 80
+        HEX 00 00 00 00 80 9F 80 00
+        HEX 00 00 00 80 9B B0 00 00
+        HEX 00 00 80 DB B8 80 80 AA
+        HEX 80 82 CE FC 8F C1 AA C0
+        HEX 82 D1 FE BF F5 80 80 82
+        HEX 9F FF E1 FC AA 80 80 8F
+        HEX 9F 9E BC 8A C0 00 80 86
+        HEX FF D8 00 00 00 80 80 EF
+        HEX C0 00 00 00 00 80 EF C0
+        HEX 00 00 00 00 80 EF E0 00
+        HEX 00 00 00 80 F7 E0 00 00
+        HEX 00 00 80 B7 F0 00 00 00
+        HEX 00 80 B9 FC 00 00 00 00
+        HEX 80 BF FC 00 00 00 00 80
+        HEX 8F F0 00 00
+SPECIAL_BODY_POSE3_DATA_2:
+        ; SPECIAL_BODY_POSE3 frame 2 (140 bytes, W=6 H=20) at $9AA1.
+        HEX 80 80 00 00 00 00 00 80
+        HEX 80 00 00 00 00 00 80 80
+        HEX 00 00 00 00 00 80 B8 80
+        HEX 00 00 00 00 80 FC 80 00
+        HEX 00 00 00 80 ED C0 00 00
+        HEX 00 00 82 ED E0 80 81 A8
+        HEX 80 8A BB F0 BE 85 AA 80
+        HEX 8A C7 F9 FF D4 80 80 88
+        HEX FF FF 87 F1 A8 80 80 BC
+        HEX FC F9 F0 AA 80 80 80 9B
+        HEX FE E0 00 00 80 80 83 BE
+        HEX 80 00 00 00 80 83 BE 80
+        HEX 00 00 00 80 83 BF 80 00
+        HEX 00 00 80 83 DF 80 00 00
+        HEX 00 80 81 DF C0 00 00 00
+        HEX 80 81 E7 F0 00 00 00 80
+        HEX 81 FF F0 00 00 00 80 80
+        HEX BF C0 00 00
+SPECIAL_BODY_POSE3_DATA_3:
+        ; SPECIAL_BODY_POSE3 frame 3 (140 bytes, W=6 H=20) at $9B2D.
+        HEX 80 80 00 00 00 00 00 80
+        HEX 80 00 00 00 00 00 80 80
+        HEX 00 00 00 00 00 81 E0 80
+        HEX 00 00 00 00 83 F0 80 00
+        HEX 00 00 00 83 B6 80 00 00
+        HEX 00 00 8B B7 80 80 85 A0
+        HEX 80 A9 EF C1 F8 95 A8 80
+        HEX AA 9F E7 FE D0 80 80 A3
+        HEX FF FC 9F C5 A0 80 81 F3
+        HEX F3 E7 C1 A8 80 80 80 EF
+        HEX FB 80 00 00 80 80 8D F8
+        HEX 80 00 00 80 80 8D F8 80
+        HEX 00 00 80 80 8D FC 80 00
+        HEX 00 80 80 8E FC 80 00 00
+        HEX 80 80 86 FE 80 00 00 80
+        HEX 80 87 9F C0 00 00 80 80
+        HEX 87 FF C0 00 00 80 80 81
+        HEX FE 80 00 00
+SPECIAL_BODY_POSE3_DATA_4:
+        ; SPECIAL_BODY_POSE3 frame 4 (140 bytes, W=6 H=20) at $9BB9.
+        HEX 80 80 80 00 00 00 00 80
+        HEX 80 80 00 00 00 00 80 80
+        HEX 80 00 00 00 00 80 87 80
+        HEX 80 00 00 00 80 8F C0 80
+        HEX 00 00 00 80 8D D8 80 00
+        HEX 00 00 80 AD DC 80 80 95
+        HEX 80 81 A7 BE 87 E0 D5 A0
+        HEX 81 A8 FF 9F FA C0 80 81
+        HEX 8F FF F0 FE 95 80 80 87
+        HEX CF CF 9E 85 A0 80 80 83
+        HEX BF EC 80 00 80 80 80 B7
+        HEX E0 80 00 80 80 80 B7 E0
+        HEX 80 00 80 80 80 B7 F0 80
+        HEX 00 80 80 80 BB F0 80 00
+        HEX 80 80 80 9B F8 80 00 80
+        HEX 80 80 9C FE 80 00 80 80
+        HEX 80 9F FE 80 00 80 80 80
+        HEX 87 F8 80 00
+SPECIAL_BODY_POSE3_DATA_5:
+        ; SPECIAL_BODY_POSE3 frame 5 (140 bytes, W=6 H=20) at $9C45.
+        HEX 80 80 80 00 00 00 00 80
+        HEX 80 80 00 00 00 00 80 80
+        HEX 80 00 00 00 00 80 9C 80
+        HEX 80 00 00 00 80 BE 80 80
+        HEX 00 00 00 80 B6 E0 80 00
+        HEX 00 00 81 B6 F0 80 80 D4
+        HEX 80 85 9D F8 9F 82 D5 80
+        HEX 85 A3 FC FF EA 80 80 84
+        HEX BF FF C3 F8 D4 80 80 9E
+        HEX BE BC F8 95 80 80 80 8D
+        HEX FF B0 80 00 80 80 81 DF
+        HEX 80 80 00 80 80 81 DF 80
+        HEX 80 00 80 80 81 DF C0 80
+        HEX 00 80 80 81 EF C0 80 00
+        HEX 80 80 80 EF E0 80 00 80
+        HEX 80 80 F3 F8 80 00 80 80
+        HEX 80 FF F8 80 00 80 80 80
+        HEX 9F E0 80 00
+SPECIAL_BODY_POSE3_DATA_6:
+        ; SPECIAL_BODY_POSE3 frame 6 (140 bytes, W=6 H=20) at $9CD1.
+        HEX 80 80 80 00 00 00 00 80
+        HEX 80 80 00 00 00 00 80 80
+        HEX 80 00 00 00 00 80 F0 80
+        HEX 80 00 00 00 81 F8 80 80
+        HEX 00 00 00 81 DB 80 80 00
+        HEX 00 00 85 DB C0 80 82 D0
+        HEX 80 94 F7 E0 FC 8A D4 80
+        HEX 95 8F F3 FF A8 80 80 91
+        HEX FF FE 8F E2 D0 80 80 F9
+        HEX F9 F3 E0 D4 80 80 80 B7
+        HEX FD C0 80 00 80 80 86 FC
+        HEX 80 80 00 80 80 86 FC 80
+        HEX 80 00 80 80 86 FE 80 80
+        HEX 00 80 80 87 BE 80 80 00
+        HEX 80 80 83 BF 80 80 00 80
+        HEX 80 83 CF E0 80 00 80 80
+        HEX 83 FF E0 80 00 80 80 80
+        HEX FF 80 80 00
+SPECIAL_GRID_SPR_A_DATA_0:
+        ; SPECIAL_GRID_SPR_A frame 0 (6 bytes, W=1 H=3) at $9D5D.
+        HEX 00 98 00 BA 00 00
+SPECIAL_GRID_SPR_A_DATA_1:
+        ; SPECIAL_GRID_SPR_A frame 1 (6 bytes, W=1 H=3) at $9D63.
+        HEX 80 E0 81 E8 00 00
+SPECIAL_GRID_SPR_A_DATA_2:
+        ; SPECIAL_GRID_SPR_A frame 2 (6 bytes, W=1 H=3) at $9D69.
+        HEX 83 80 87 A0 00 00
+SPECIAL_GRID_SPR_A_DATA_3:
+        ; SPECIAL_GRID_SPR_A frame 3 (6 bytes, W=1 H=3) at $9D6F.
+        HEX 8C 80 9D 80 00 00
+SPECIAL_GRID_SPR_A_DATA_4:
+        ; SPECIAL_GRID_SPR_A frame 4 (6 bytes, W=1 H=3) at $9D75.
+        HEX 80 B0 80 F4 00 00
+SPECIAL_GRID_SPR_A_DATA_5:
+        ; SPECIAL_GRID_SPR_A frame 5 (6 bytes, W=1 H=3) at $9D7B.
+        HEX 81 C0 83 D0 00 00
+SPECIAL_GRID_SPR_A_DATA_6:
+        ; SPECIAL_GRID_SPR_A frame 6 (6 bytes, W=1 H=3) at $9D81.
+        HEX 86 80 8E C0 00 00
+SPECIAL_GRID_SPR_B_DATA_0:
+        ; SPECIAL_GRID_SPR_B frame 0 (6 bytes, W=1 H=3) at $9D87.
+        HEX 00 00 00 BA 00 98
+SPECIAL_GRID_SPR_B_DATA_1:
+        ; SPECIAL_GRID_SPR_B frame 1 (6 bytes, W=1 H=3) at $9D8D.
+        HEX 00 00 81 E8 80 E0
+SPECIAL_GRID_SPR_B_DATA_2:
+        ; SPECIAL_GRID_SPR_B frame 2 (6 bytes, W=1 H=3) at $9D93.
+        HEX 00 00 87 A0 83 80
+SPECIAL_GRID_SPR_B_DATA_3:
+        ; SPECIAL_GRID_SPR_B frame 3 (6 bytes, W=1 H=3) at $9D99.
+        HEX 00 00 9D 80 8C 80
+SPECIAL_GRID_SPR_B_DATA_4:
+        ; SPECIAL_GRID_SPR_B frame 4 (6 bytes, W=1 H=3) at $9D9F.
+        HEX 00 00 80 F4 80 B0
+SPECIAL_GRID_SPR_B_DATA_5:
+        ; SPECIAL_GRID_SPR_B frame 5 (6 bytes, W=1 H=3) at $9DA5.
+        HEX 00 00 83 D0 81 C0
+SPECIAL_GRID_SPR_B_DATA_6:
+        ; SPECIAL_GRID_SPR_B frame 6 (6 bytes, W=1 H=3) at $9DAB.
+        HEX 00 00 8E C0 86 80
+COMPANION_NEG_POSE1_DATA_0:
+        ; COMPANION_NEG_POSE1 frame 0 (32 bytes, W=3 H=8) at $9DB1.
+        HEX 00 00 2A 40 00 05 2E 50
+        HEX 00 15 2B 54 00 55 2A 54
+        HEX 00 55 2A 54 00 57 6F 54
+        HEX 00 A3 E7 C8 00 8B D7 A0
+COMPANION_NEG_POSE1_DATA_1:
+        ; COMPANION_NEG_POSE1 frame 1 (32 bytes, W=3 H=8) at $9DD1.
+        HEX 00 01 2A 00 00 15 3A 40
+        HEX 00 55 2E 50 02 55 2A 50
+        HEX 02 55 2A 50 02 5F 3E 50
+        HEX 81 8F 9E A0 80 AE DD 80
+COMPANION_NEG_POSE1_DATA_2:
+        ; COMPANION_NEG_POSE1 frame 2 (32 bytes, W=3 H=8) at $9DF1.
+        HEX 00 05 28 00 00 55 6A 00
+        HEX 02 55 3A 40 0A 55 2A 40
+        HEX 0A 55 2A 40 0A 7D 7A 40
+        HEX 84 BC F9 80 81 BA F4 80
+COMPANION_NEG_POSE1_DATA_3:
+        ; COMPANION_NEG_POSE1 frame 3 (32 bytes, W=3 H=8) at $9E11.
+        HEX 00 15 20 00 02 57 28 00
+        HEX 0A 55 6A 00 2A 55 2A 00
+        HEX 2A 55 2A 00 2B 77 6A 00
+        HEX 91 F3 E4 80 85 EB D0 80
+COMPANION_NEG_POSE1_DATA_4:
+        ; COMPANION_NEG_POSE1 frame 4 (32 bytes, W=3 H=8) at $9E31.
+        HEX 00 00 55 00 00 0A 5D 20
+        HEX 00 2A 57 28 01 2A 55 28
+        HEX 01 2A 55 28 01 2F 5F 28
+        HEX 80 C7 CF 90 80 97 AE C0
+COMPANION_NEG_POSE1_DATA_5:
+        ; COMPANION_NEG_POSE1 frame 5 (32 bytes, W=3 H=8) at $9E51.
+        HEX 00 02 54 00 00 2A 75 00
+        HEX 01 2A 5D 20 05 2A 55 20
+        HEX 05 2A 55 20 05 3E 7D 20
+        HEX 82 9E BC C0 80 DD BA 80
+COMPANION_NEG_POSE1_DATA_6:
+        ; COMPANION_NEG_POSE1 frame 6 (32 bytes, W=3 H=8) at $9E71.
+        HEX 00 0A 50 00 01 2B 54 00
+        HEX 05 2A 75 00 15 2A 55 00
+        HEX 15 2A 55 00 15 7B 75 00
+        HEX 88 F9 F2 80 82 F5 E8 80
+COMPANION_NEG_POSE2_DATA_0:
+        ; COMPANION_NEG_POSE2 frame 0 (32 bytes, W=3 H=8) at $9E91.
+        HEX 00 00 2A 40 00 05 2E 50
+        HEX 00 15 2B 54 00 55 2A 54
+        HEX 00 55 2A 54 00 57 6F 54
+        HEX 00 A3 E7 D8 00 8E DD A0
+COMPANION_NEG_POSE2_DATA_1:
+        ; COMPANION_NEG_POSE2 frame 1 (32 bytes, W=3 H=8) at $9EB1.
+        HEX 00 01 2A 00 00 15 3A 40
+        HEX 00 55 2E 50 02 55 2A 50
+        HEX 02 55 2A 50 02 5F 3E 50
+        HEX 81 8F 9E E0 80 BA F5 80
+COMPANION_NEG_POSE2_DATA_2:
+        ; COMPANION_NEG_POSE2 frame 2 (32 bytes, W=3 H=8) at $9ED1.
+        HEX 00 05 28 00 00 55 6A 00
+        HEX 02 55 3A 40 0A 55 2A 40
+        HEX 0A 55 2A 40 0A 7D 7A 40
+        HEX 84 BC FB 80 81 EB D4 80
+COMPANION_NEG_POSE2_DATA_3:
+        ; COMPANION_NEG_POSE2 frame 3 (32 bytes, W=3 H=8) at $9EF1.
+        HEX 00 15 20 00 02 57 28 00
+        HEX 0A 55 6A 00 2A 55 2A 00
+        HEX 2A 55 2A 00 2B 77 6A 00
+        HEX 91 F3 EC 80 87 AE D0 80
+COMPANION_NEG_POSE2_DATA_4:
+        ; COMPANION_NEG_POSE2 frame 4 (32 bytes, W=3 H=8) at $9F11.
+        HEX 00 00 55 00 00 0A 5D 20
+        HEX 00 2A 57 28 01 2A 55 28
+        HEX 01 2A 55 28 01 2F 5F 28
+        HEX 80 C7 CF B0 80 9D BA C0
+COMPANION_NEG_POSE2_DATA_5:
+        ; COMPANION_NEG_POSE2 frame 5 (32 bytes, W=3 H=8) at $9F31.
+        HEX 00 02 54 00 00 2A 75 00
+        HEX 01 2A 5D 20 05 2A 55 20
+        HEX 05 2A 55 20 05 3E 7D 20
+        HEX 82 9E BD C0 80 F5 EA 80
+COMPANION_NEG_POSE2_DATA_6:
+        ; COMPANION_NEG_POSE2 frame 6 (32 bytes, W=3 H=8) at $9F51.
+        HEX 00 0A 50 00 01 2B 54 00
+        HEX 05 2A 75 00 15 2A 55 00
+        HEX 15 2A 55 00 15 7B 75 00
+        HEX 88 F9 F6 80 83 D7 A8 80
+COMPANION_NEG_POSE3_DATA_0:
+        ; COMPANION_NEG_POSE3 frame 0 (32 bytes, W=3 H=8) at $9F71.
+        HEX 00 00 2A 40 00 05 2E 50
+        HEX 00 15 2B 54 00 55 2A 54
+        HEX 00 55 2A 54 00 57 6F 54
+        HEX 00 B3 E7 C8 00 8A F5 E0
+COMPANION_NEG_POSE3_DATA_1:
+        ; COMPANION_NEG_POSE3 frame 1 (32 bytes, W=3 H=8) at $9F91.
+        HEX 00 01 2A 00 00 15 3A 40
+        HEX 00 55 2E 50 02 55 2A 50
+        HEX 02 55 2A 50 02 5F 3E 50
+        HEX 81 CF 9E A0 80 AB D7 80
+COMPANION_NEG_POSE3_DATA_2:
+        ; COMPANION_NEG_POSE3 frame 2 (32 bytes, W=3 H=8) at $9FB1.
+        HEX 00 05 28 00 00 55 6A 00
+        HEX 02 55 3A 40 0A 55 2A 40
+        HEX 0A 55 2A 40 0A 7D 7A 40
+        HEX 86 BC F9 80 81 AE DC 80
+COMPANION_NEG_POSE3_DATA_3:
+        ; COMPANION_NEG_POSE3 frame 3 (32 bytes, W=3 H=8) at $9FD1.
+        HEX 00 15 20 00 02 57 28 00
+        HEX 0A 55 6A 00 2A 55 2A 00
+        HEX 2A 55 2A 00 2B 77 6A 00
+        HEX 99 F3 E4 80 85 BA F0 80
+COMPANION_NEG_POSE3_DATA_4:
+        ; COMPANION_NEG_POSE3 frame 4 (32 bytes, W=3 H=8) at $9FF1.
+        HEX 00 00 55 00 00 0A 5D 20
+        HEX 00 2A 57 28 01 2A 55 28
+        HEX 01 2A 55 28 01 2F 5F 28
+        HEX 80 E7 CF 90 80 95 EB C0
+COMPANION_NEG_POSE3_DATA_5:
+        ; COMPANION_NEG_POSE3 frame 5 (32 bytes, W=3 H=8) at $A011.
+        HEX 00 02 54 00 00 2A 75 00
+        HEX 01 2A 5D 20 05 2A 55 20
+        HEX 05 2A 55 20 05 3E 7D 20
+        HEX 83 9E BC C0 80 D7 AE 80
+COMPANION_NEG_POSE3_DATA_6:
+        ; COMPANION_NEG_POSE3 frame 6 (32 bytes, W=3 H=8) at $A031.
+        HEX 00 0A 50 00 01 2B 54 00
+        HEX 05 2A 75 00 15 2A 55 00
+        HEX 15 2A 55 00 15 7B 75 00
+        HEX 8C F9 F2 80 82 DD B8 80
+COMPANION_POS_POSE1_DATA_0:
+        ; COMPANION_POS_POSE1 frame 0 (32 bytes, W=3 H=8) at $A051.
+        HEX 00 05 28 00 00 15 6A 40
+        HEX 00 57 2A 50 00 55 2A 54
+        HEX 00 55 2A 54 00 57 6F 54
+        HEX 00 B3 E7 C8 00 8A F5 E0
+COMPANION_POS_POSE1_DATA_1:
+        ; COMPANION_POS_POSE1 frame 1 (32 bytes, W=3 H=8) at $A071.
+        HEX 00 15 20 00 00 57 2A 00
+        HEX 02 5D 2A 40 02 55 2A 50
+        HEX 02 55 2A 50 02 5F 3E 50
+        HEX 81 CF 9E A0 80 AB D7 80
+COMPANION_POS_POSE1_DATA_2:
+        ; COMPANION_POS_POSE1 frame 2 (32 bytes, W=3 H=8) at $A091.
+        HEX 00 55 00 00 02 5D 28 00
+        HEX 0A 75 2A 00 0A 55 2A 40
+        HEX 0A 55 2A 40 0A 7D 7A 40
+        HEX 86 BC F9 80 81 AE DC 80
+COMPANION_POS_POSE1_DATA_3:
+        ; COMPANION_POS_POSE1 frame 3 (32 bytes, W=3 H=8) at $A0B1.
+        HEX 02 54 00 00 0A 75 20 00
+        HEX 2B 55 28 00 2A 55 2A 00
+        HEX 2A 55 2A 00 2B 77 6A 00
+        HEX 99 F3 E4 80 85 BA F0 80
+COMPANION_POS_POSE1_DATA_4:
+        ; COMPANION_POS_POSE1 frame 4 (32 bytes, W=3 H=8) at $A0D1.
+        HEX 00 0A 50 00 00 2B 55 00
+        HEX 01 2E 55 20 01 2A 55 28
+        HEX 01 2A 55 28 01 2F 5F 28
+        HEX 80 E7 CF 90 80 95 EB C0
+COMPANION_POS_POSE1_DATA_5:
+        ; COMPANION_POS_POSE1 frame 5 (32 bytes, W=3 H=8) at $A0F1.
+        HEX 00 2A 40 00 01 2E 54 00
+        HEX 05 3A 55 00 05 2A 55 20
+        HEX 05 2A 55 20 05 3E 7D 20
+        HEX 83 9E BC C0 80 D7 AE 80
+COMPANION_POS_POSE1_DATA_6:
+        ; COMPANION_POS_POSE1 frame 6 (32 bytes, W=3 H=8) at $A111.
+        HEX 01 2A 00 00 05 3A 50 00
+        HEX 15 6A 54 00 15 2A 55 00
+        HEX 15 2A 55 00 15 7B 75 00
+        HEX 8C F9 F2 80 82 DD B8 80
+COMPANION_POS_POSE2_DATA_0:
+        ; COMPANION_POS_POSE2 frame 0 (32 bytes, W=3 H=8) at $A131.
+        HEX 00 05 28 00 00 15 6A 40
+        HEX 00 57 2A 50 00 55 2A 54
+        HEX 00 55 2A 54 00 57 6F 54
+        HEX 00 A3 E7 D8 00 8E DD A0
+COMPANION_POS_POSE2_DATA_1:
+        ; COMPANION_POS_POSE2 frame 1 (32 bytes, W=3 H=8) at $A151.
+        HEX 00 15 20 00 00 57 2A 00
+        HEX 02 5D 2A 40 02 55 2A 50
+        HEX 02 55 2A 50 02 5F 3E 50
+        HEX 81 8F 9E E0 80 BA F5 80
+COMPANION_POS_POSE2_DATA_2:
+        ; COMPANION_POS_POSE2 frame 2 (32 bytes, W=3 H=8) at $A171.
+        HEX 00 55 00 00 02 5D 28 00
+        HEX 0A 75 2A 00 0A 55 2A 40
+        HEX 0A 55 2A 40 0A 7D 7A 40
+        HEX 84 BC FB 80 81 EB D4 80
+COMPANION_POS_POSE2_DATA_3:
+        ; COMPANION_POS_POSE2 frame 3 (32 bytes, W=3 H=8) at $A191.
+        HEX 02 54 00 00 0A 75 20 00
+        HEX 2B 55 28 00 2A 55 2A 00
+        HEX 2A 55 2A 00 2B 77 6A 00
+        HEX 91 F3 EC 80 87 AE D0 80
+COMPANION_POS_POSE2_DATA_4:
+        ; COMPANION_POS_POSE2 frame 4 (32 bytes, W=3 H=8) at $A1B1.
+        HEX 00 0A 50 00 00 2B 55 00
+        HEX 01 2E 55 20 01 2A 55 28
+        HEX 01 2A 55 28 01 2F 5F 28
+        HEX 80 C7 CF B0 80 9D BA C0
+COMPANION_POS_POSE2_DATA_5:
+        ; COMPANION_POS_POSE2 frame 5 (32 bytes, W=3 H=8) at $A1D1.
+        HEX 00 2A 40 00 01 2E 54 00
+        HEX 05 3A 55 00 05 2A 55 20
+        HEX 05 2A 55 20 05 3E 7D 20
+        HEX 82 9E BD C0 80 F5 EA 80
+COMPANION_POS_POSE2_DATA_6:
+        ; COMPANION_POS_POSE2 frame 6 (32 bytes, W=3 H=8) at $A1F1.
+        HEX 01 2A 00 00 05 3A 50 00
+        HEX 15 6A 54 00 15 2A 55 00
+        HEX 15 2A 55 00 15 7B 75 00
+        HEX 88 F9 F6 80 83 D7 A8 80
+COMPANION_POS_POSE3_DATA_0:
+        ; COMPANION_POS_POSE3 frame 0 (32 bytes, W=3 H=8) at $A211.
+        HEX 00 05 28 00 00 15 6A 40
+        HEX 00 57 2A 50 00 55 2A 54
+        HEX 00 55 2A 54 00 57 6F 54
+        HEX 00 A3 E7 C8 00 8B D7 A0
+COMPANION_POS_POSE3_DATA_1:
+        ; COMPANION_POS_POSE3 frame 1 (32 bytes, W=3 H=8) at $A231.
+        HEX 00 15 20 00 00 57 2A 00
+        HEX 02 5D 2A 40 02 55 2A 50
+        HEX 02 55 2A 50 02 5F 3E 50
+        HEX 81 8F 9E A0 80 AE DD 80
+COMPANION_POS_POSE3_DATA_2:
+        ; COMPANION_POS_POSE3 frame 2 (32 bytes, W=3 H=8) at $A251.
+        HEX 00 55 00 00 02 5D 28 00
+        HEX 0A 75 2A 00 0A 55 2A 40
+        HEX 0A 55 2A 40 0A 7D 7A 40
+        HEX 84 BC F9 80 81 BA F4 80
+COMPANION_POS_POSE3_DATA_3:
+        ; COMPANION_POS_POSE3 frame 3 (32 bytes, W=3 H=8) at $A271.
+        HEX 02 54 00 00 0A 75 20 00
+        HEX 2B 55 28 00 2A 55 2A 00
+        HEX 2A 55 2A 00 2B 77 6A 00
+        HEX 91 F3 E4 80 85 EB D0 80
+COMPANION_POS_POSE3_DATA_4:
+        ; COMPANION_POS_POSE3 frame 4 (32 bytes, W=3 H=8) at $A291.
+        HEX 00 0A 50 00 00 2B 55 00
+        HEX 01 2E 55 20 01 2A 55 28
+        HEX 01 2A 55 28 01 2F 5F 28
+        HEX 80 C7 CF 90 80 97 AE C0
+COMPANION_POS_POSE3_DATA_5:
+        ; COMPANION_POS_POSE3 frame 5 (32 bytes, W=3 H=8) at $A2B1.
+        HEX 00 2A 40 00 01 2E 54 00
+        HEX 05 3A 55 00 05 2A 55 20
+        HEX 05 2A 55 20 05 3E 7D 20
+        HEX 82 9E BC C0 80 DD BA 80
+COMPANION_POS_POSE3_DATA_6:
+        ; COMPANION_POS_POSE3 frame 6 (32 bytes, W=3 H=8) at $A2D1.
+        HEX 01 2A 00 00 05 3A 50 00
+        HEX 15 6A 54 00 15 2A 55 00
+        HEX 15 2A 55 00 15 7B 75 00
+        HEX 88 F9 F2 80 82 F5 E8 80
+COMPANION_GRID_SPR_DATA_0:
+        ; COMPANION_GRID_SPR frame 0 (4 bytes, W=1 H=2) at $A2F1.
+        HEX 00 05 00 05
+COMPANION_GRID_SPR_DATA_1:
+        ; COMPANION_GRID_SPR frame 1 (4 bytes, W=1 H=2) at $A2F5.
+        HEX 00 14 00 14
+COMPANION_GRID_SPR_DATA_2:
+        ; COMPANION_GRID_SPR frame 2 (4 bytes, W=1 H=2) at $A2F9.
+        HEX 00 50 00 50
+COMPANION_GRID_SPR_DATA_3:
+        ; COMPANION_GRID_SPR frame 3 (4 bytes, W=1 H=2) at $A2FD.
+        HEX 02 40 02 40
+COMPANION_GRID_SPR_DATA_4:
+        ; COMPANION_GRID_SPR frame 4 (4 bytes, W=1 H=2) at $A301.
+        HEX 00 0A 00 0A
+COMPANION_GRID_SPR_DATA_5:
+        ; COMPANION_GRID_SPR frame 5 (4 bytes, W=1 H=2) at $A305.
+        HEX 00 28 00 28
+COMPANION_GRID_SPR_DATA_6:
+        ; COMPANION_GRID_SPR frame 6 (4 bytes, W=1 H=2) at $A309.
+        HEX 01 20 01 20
+HUD_STRIP_SRC_DATA:
+        ; HUD_STRIP_SRC (112 bytes at $A30D): 16 columns x 7 bytes/column.
+        ; Consumed by PAINT_HUD_STRIP_P1 / PAINT_HUD_STRIP_P2.  The first
+        ; 4 bytes at $A30D also serve as COMPANION_GRID_SPR[7] frame data.
+        HEX 00 2A 01 2A 01 2A 01 00
+        HEX 55 60 7F 60 55 60 00 2B
+        HEX 00 2A 00 2B 00 00 7D 03
+        HEX 55 03 7D 03 00 2A 40 3F
+        HEX 40 2A 40 00 55 00 55 00
+        HEX 55 00 00 7E 07 2A 07 2A
+        HEX 07 00 55 00 55 00 5F 00
+        HEX 00 2A 01 2A 01 6A 01 00
+        HEX 55 60 7F 60 55 60 00 2F
+        HEX 00 2A 00 2F 00 00 75 03
+        HEX 55 03 75 03 00 2A 40 3F
+        HEX 40 2A 40 00 57 00 55 00
+        HEX 57 00 00 7A 07 2A 07 7A
+        HEX 07 00 55 00 55 00 55 00
+ENTITY_GRID_SPR_DATA_0:
+        ; ENTITY_GRID_SPR frame 0 (10 bytes, W=1 H=5) at $A37D.
+        HEX 00 80 00 87 00 85 00 85
+        HEX 00 87
+ENTITY_GRID_SPR_DATA_1:
+        ; ENTITY_GRID_SPR frame 1 (10 bytes, W=1 H=5) at $A387.
+        HEX 80 80 80 9C 80 94 80 94
+        HEX 80 9C
+ENTITY_GRID_SPR_DATA_2:
+        ; ENTITY_GRID_SPR frame 2 (10 bytes, W=1 H=5) at $A391.
+        HEX 80 80 80 F0 80 D0 80 D0
+        HEX 80 F0
+ENTITY_GRID_SPR_DATA_3:
+        ; ENTITY_GRID_SPR frame 3 (10 bytes, W=1 H=5) at $A39B.
+        HEX 80 80 83 C0 82 C0 82 C0
+        HEX 83 C0
+ENTITY_GRID_SPR_DATA_4:
+        ; ENTITY_GRID_SPR frame 4 (10 bytes, W=1 H=5) at $A3A5.
+        HEX 80 80 80 8E 80 8A 80 8A
+        HEX 80 8E
+ENTITY_GRID_SPR_DATA_5:
+        ; ENTITY_GRID_SPR frame 5 (10 bytes, W=1 H=5) at $A3AF.
+        HEX 80 80 80 B8 80 A8 80 A8
+        HEX 80 B8
+ENTITY_GRID_SPR_DATA_6:
+        ; ENTITY_GRID_SPR frame 6 (10 bytes, W=1 H=5) at $A3B9.
+        HEX 80 80 81 E0 81 A0 81 A0
+        HEX 81 E0
+RESCUE_SPR_NEG_END_DATA_0:
+        ; RESCUE_SPR_NEG_END frame 0 (104 bytes, W=3 H=$1A) at $A3C3.
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 8A F0 00
-        HEX 00 AA DC 00 80 AA DE 00
-        HEX 81 8A FE 00 85 A0 8F 00
-        HEX 85 A8 83 00 81 A0 00 00
-        HEX 94 00 00 00 95 00 F6 00
-        HEX 94 AB FB 00 81 AB E9 00
-        HEX 85 AB FB 00 85 EA F6 00
-        HEX 97 AA D5 00 95 AA D5 00
-        HEX 95 AA D1 00 95 EB C4 00
-        HEX 97 EF D4 00 87 AE D0 00
-        HEX 87 AE D6 00 8F DF 9F 00
-        HEX 8D DB 9B 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 80 AB C0 00
-        HEX 81 AA F0 00 81 AA F8 00
-        HEX 84 AB F8 00 95 80 BC 00
-        HEX 95 A0 8C 00 85 80 00 80
-        HEX D0 00 00 80 D4 83 D8 80
-        HEX D1 AF EC 00 85 AF A4 00
-        HEX 95 AF EC 00 97 AB D8 80
-        HEX DD AA D4 80 D5 AA D4 80
-        HEX D5 AA C4 80 D7 AE 90 80
-        HEX DF BE D0 00 9D BA C0 00
-        HEX 9D BA D8 00 BE FC FC 00
-        HEX B6 EC EC 00 00 00 00 00
+        HEX 00 00 8A F0 00 00 AA DC
+        HEX 00 80 AA DE 00 81 8A FE
+        HEX 00 85 A0 8F 00 85 A8 83
+        HEX 00 81 A0 00 00 94 00 00
+        HEX 00 95 00 F6 00 94 AB FB
+        HEX 00 81 AB E9 00 85 AB FB
+        HEX 00 85 EA F6 00 97 AA D5
+        HEX 00 95 AA D5 00 95 AA D1
+        HEX 00 95 EB C4 00 97 EF D4
+        HEX 00 87 AE D0 00 87 AE D6
+        HEX 00 8F DF 9F 00 8D DB 9B
+RESCUE_SPR_NEG_END_DATA_1:
+        ; RESCUE_SPR_NEG_END frame 1 (104 bytes, W=3 H=$1A) at $A42B.
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 81 AE 00 00
-        HEX 85 AB C0 00 85 AB E0 00
-        HEX 91 AF E0 80 D4 81 F0 80
-        HEX D5 80 B0 00 94 80 00 82
-        HEX C0 00 00 82 D0 8E E0 82
-        HEX C5 BF B0 00 95 BD 90 80
-        HEX D5 BF B0 80 DD AE E0 82
-        HEX F5 AA D0 82 D5 AA D0 82
-        HEX D5 AA 90 82 DD B8 C0 82
-        HEX FD FA C0 80 F5 EA 00 80
-        HEX F5 EA E0 81 FB F3 F0 81
-        HEX DB B3 B0 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 85 B8 00 00
-        HEX 95 AE 00 00 95 AF 00 80
-        HEX C5 BF 00 82 D0 87 C0 82
-        HEX D4 81 C0 80 D0 80 00 8A
-        HEX 80 00 00 8A C0 BB 00 8A
-        HEX 95 FD C0 80 D5 F4 C0 82
-        HEX D5 FD C0 82 F5 BB 00 8B
-        HEX D5 AA C0 8A D5 AA C0 8A
-        HEX D5 A8 C0 8A F5 E2 00 8B
-        HEX F7 EA 00 83 D7 A8 00 83
-        HEX D7 AB 00 87 EF CF C0 86
-        HEX ED CD C0 00 00 00 00 00
+        HEX 00 80 AB C0 00 81 AA F0
+        HEX 00 81 AA F8 00 84 AB F8
+        HEX 00 95 80 BC 00 95 A0 8C
+        HEX 00 85 80 00 80 D0 00 00
+        HEX 80 D4 83 D8 80 D1 AF EC
+        HEX 00 85 AF A4 00 95 AF EC
+        HEX 00 97 AB D8 80 DD AA D4
+        HEX 80 D5 AA D4 80 D5 AA C4
+        HEX 80 D7 AE 90 80 DF BE D0
+        HEX 00 9D BA C0 00 9D BA D8
+        HEX 00 BE FC FC 00 B6 EC EC
+RESCUE_SPR_NEG_END_DATA_2:
+        ; RESCUE_SPR_NEG_END frame 2 (104 bytes, W=3 H=$1A) at $A493.
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 80 95 E0 00
-        HEX 80 D5 B8 00 80 D5 BC 00
-        HEX 82 95 FC 00 8A C0 9E 00
-        HEX 8A D0 86 00 82 C0 00 00
-        HEX A8 80 00 00 AA 81 EC 00
-        HEX A8 D7 F6 00 82 D7 D2 00
-        HEX 8A D7 F6 00 8B D5 EC 00
-        HEX AE D5 AA 00 AA D5 AA 00
-        HEX AA D5 A2 00 AB D7 88 00
-        HEX AF DF A8 00 8E DD A0 00
-        HEX 8E DD AC 00 9F BE BE 00
-        HEX 9B B6 B6 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 80 D7 00 00
-        HEX 82 D5 E0 00 82 D5 F0 00
-        HEX 88 D7 F0 00 AA 80 F8 00
-        HEX AA C0 98 00 8A 80 00 81
-        HEX A0 80 00 81 A8 87 B0 81
-        HEX A2 DF D8 00 8A DE C8 00
-        HEX AA DF D8 00 AE D7 B0 81
-        HEX BA D5 A8 81 AA D5 A8 81
-        HEX AA D5 88 81 AE DC A0 81
-        HEX BE FD A0 00 BA F5 00 00
-        HEX BA F5 B0 80 FD F9 F8 80
-        HEX ED D9 D8 00 00 00 00 00
+        HEX 00 81 AE 00 00 85 AB C0
+        HEX 00 85 AB E0 00 91 AF E0
+        HEX 80 D4 81 F0 80 D5 80 B0
+        HEX 00 94 80 00 82 C0 00 00
+        HEX 82 D0 8E E0 82 C5 BF B0
+        HEX 00 95 BD 90 80 D5 BF B0
+        HEX 80 DD AE E0 82 F5 AA D0
+        HEX 82 D5 AA D0 82 D5 AA 90
+        HEX 82 DD B8 C0 82 FD FA C0
+        HEX 80 F5 EA 00 80 F5 EA E0
+        HEX 81 FB F3 F0 81 DB B3 B0
+RESCUE_SPR_NEG_END_DATA_3:
+        ; RESCUE_SPR_NEG_END frame 3 (104 bytes, W=3 H=$1A) at $A4FB.
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 82 DC 00 00
-        HEX 8A D7 00 00 8A D7 C0 00
-        HEX A2 DF C0 81 A8 83 E0 81
-        HEX AA 80 E0 00 A8 80 00 85
-        HEX 80 80 00 85 A0 9D C0 85
-        HEX 8A FE E0 00 AA FA A0 81
-        HEX AA FE E0 81 BA DD C0 85
-        HEX EA D5 A0 85 AA D5 A0 85
-        HEX AA D4 A0 85 BA F1 00 85
-        HEX FB F5 00 81 EB D4 00 81
-        HEX EB D5 C0 83 F7 E7 E0 83
-        HEX B6 E6 E0 00 00 00 00 00
-        HEX 00 00 00 00 00 8A F0 00
-        HEX 80 AA DC 00 80 AA DE 00
-        HEX 81 8A FE 00 85 A0 8F 00
-        HEX 85 A8 83 00 85 A8 00 00
-        HEX 81 A0 00 00 84 80 00 00
-        HEX 95 A0 00 00 95 A0 00 00
-        HEX 95 80 F6 00 84 AB FB 00
-        HEX 81 AB E9 00 85 AB FB 00
-        HEX 85 EA F6 00 97 AA D5 00
-        HEX 95 AA D5 00 95 AA D1 00
-        HEX 95 EB C4 00 97 EF D4 00
-        HEX 87 AE D0 00 87 AE D6 00
-        HEX 8F 9E 9E 00 8D DB 9B 00
-        HEX 81 C3 83 00 00 00 00 00
-        HEX 00 00 00 00 80 AB C0 00
-        HEX 81 AA F0 00 81 AA F8 00
-        HEX 84 AB F8 00 95 80 BC 00
-        HEX 95 A0 8C 00 95 A0 00 00
-        HEX 85 80 00 00 90 80 00 80
-        HEX D5 80 00 80 D5 80 00 80
-        HEX D4 83 D8 00 91 AF EC 00
-        HEX 85 AF A4 00 95 AF EC 00
-        HEX 97 AB D8 80 DD AA D4 80
-        HEX D5 AA D4 80 D5 AA C4 80
-        HEX D7 AE 90 80 DF BE D0 00
-        HEX 9D BA C0 00 9D BA D8 00
-        HEX BC F8 F8 00 B6 EC EC 00
-        HEX 86 8C 8C 00 00 00 00 00
-        HEX 00 00 00 00 81 AE 00 00
-        HEX 85 AB C0 00 85 AB E0 00
-        HEX 91 AF E0 80 D4 81 F0 80
-        HEX D5 80 B0 80 D5 80 00 00
-        HEX 94 80 00 80 C0 80 00 82
-        HEX D4 80 00 82 D4 80 00 82
-        HEX D0 8E E0 80 C5 BF B0 00
-        HEX 95 BD 90 80 D5 BF B0 80
-        HEX DD AE E0 82 F5 AA D0 82
-        HEX D5 AA D0 82 D5 AA 90 82
-        HEX DD B8 C0 82 FD FA C0 80
-        HEX F5 EA 00 80 F5 EA E0 81
-        HEX F3 E3 E0 81 DB B3 B0 00
-        HEX 98 B0 B0 00 00 00 00 00
-        HEX 00 00 00 00 85 B8 00 00
-        HEX 95 AE 00 00 95 AF 00 80
-        HEX C5 BF 00 82 D0 87 C0 82
-        HEX D4 81 C0 82 D4 80 00 80
-        HEX D0 80 00 82 80 80 00 8A
-        HEX D0 80 00 8A D0 80 00 8A
-        HEX C0 BB 00 82 95 FD C0 80
-        HEX D5 F4 C0 82 D5 FD C0 82
-        HEX F5 BB 00 8B D5 AA C0 8A
-        HEX D5 AA C0 8A D5 A8 C0 8A
-        HEX F5 E2 00 8B F7 EA 00 83
-        HEX D7 A8 00 83 D7 AB 00 87
-        HEX CF 8F 00 86 ED CD C0 80
-        HEX E1 C1 C0 00 00 00 00 00
-        HEX 00 00 00 00 80 95 E0 00
-        HEX 80 D5 B8 00 80 D5 BC 00
-        HEX 82 95 FC 00 8A C0 9E 00
-        HEX 8A D0 86 00 8A D0 00 00
-        HEX 82 C0 00 00 88 80 00 00
-        HEX AA C0 00 00 AA C0 00 00
-        HEX AA 81 EC 00 88 D7 F6 00
-        HEX 82 D7 D2 00 8A D7 F6 00
-        HEX 8B D5 EC 00 AE D5 AA 00
-        HEX AA D5 AA 00 AA D5 A2 00
-        HEX AB D7 88 00 AF DF A8 00
-        HEX 8E DD A0 00 8E DD AC 00
-        HEX 9E BC BC 00 9B B6 B6 00
-        HEX 83 86 86 00 00 00 00 00
-        HEX 00 00 00 00 80 D7 00 00
-        HEX 82 D5 E0 00 82 D5 F0 00
-        HEX 88 D7 F0 00 AA 80 F8 00
-        HEX AA C0 98 00 AA C0 00 00
-        HEX 8A 80 00 00 A0 80 00 81
-        HEX AA 80 00 81 AA 80 00 81
-        HEX A8 87 B0 00 A2 DF D8 00
-        HEX 8A DE C8 00 AA DF D8 00
-        HEX AE D7 B0 81 BA D5 A8 81
-        HEX AA D5 A8 81 AA D5 88 81
-        HEX AE DC A0 81 BE FD A0 00
-        HEX BA F5 00 00 BA F5 B0 80
-        HEX F9 F1 F0 80 ED D9 D8 00
-        HEX 8C 98 98 00 00 00 00 00
-        HEX 00 00 00 00 82 DC 00 00
-        HEX 8A D7 00 00 8A D7 C0 00
-        HEX A2 DF C0 81 A8 83 E0 81
-        HEX AA 80 E0 81 AA 80 00 00
-        HEX A8 80 00 81 80 80 00 85
-        HEX A8 80 00 85 A8 80 00 85
-        HEX A0 9D C0 81 8A FE E0 00
-        HEX AA FA A0 81 AA FE E0 81
-        HEX BA DD C0 85 EA D5 A0 85
-        HEX AA D5 A0 85 AA D4 A0 85
-        HEX BA F1 00 85 FB F5 00 81
-        HEX EB D4 00 81 EB D5 C0 83
-        HEX E7 C7 C0 83 B6 E6 E0 00
-        HEX B0 E0 E0 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 81 EA 00 00
-        HEX 87 AA C0 00 8F AA C0 00
-        HEX 8F EA 90 00 9E 80 D4 00
-        HEX 98 82 D4 00 80 80 D0 00
-        HEX 80 80 85 00 8D E0 95 00
-        HEX 9B FA C5 00 92 FA D0 00
-        HEX 9B FA D4 00 8D EA F4 00
-        HEX 95 AA DD 00 95 AA D5 00
-        HEX 91 AA D5 00 84 BA F5 00
-        HEX 85 BE FD 00 81 AE DC 00
-        HEX 8D AE DC 00 9F 9F BE 00
-        HEX 9B 9B B6 00 00 00 00 00
+        HEX 00 85 B8 00 00 95 AE 00
+        HEX 00 95 AF 00 80 C5 BF 00
+        HEX 82 D0 87 C0 82 D4 81 C0
+        HEX 80 D0 80 00 8A 80 00 00
+        HEX 8A C0 BB 00 8A 95 FD C0
+        HEX 80 D5 F4 C0 82 D5 FD C0
+        HEX 82 F5 BB 00 8B D5 AA C0
+        HEX 8A D5 AA C0 8A D5 A8 C0
+        HEX 8A F5 E2 00 8B F7 EA 00
+        HEX 83 D7 A8 00 83 D7 AB 00
+        HEX 87 EF CF C0 86 ED CD C0
+RESCUE_SPR_NEG_END_DATA_4:
+        ; RESCUE_SPR_NEG_END frame 4 (104 bytes, W=3 H=$1A) at $A563.
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 87 A8 00 00
-        HEX 9D AA 00 00 BD AA 00 00
-        HEX BF A8 C0 80 F8 82 D0 80
-        HEX E0 8A D0 00 80 82 C0 00
-        HEX 80 80 94 00 B7 80 D4 80
-        HEX EF EA 94 80 CB EA C0 80
-        HEX EF EA D0 00 B7 AB D0 80
-        HEX D5 AA F4 80 D5 AA D4 80
-        HEX C5 AA D4 00 91 EB D4 00
-        HEX 95 FB F4 00 85 BA F0 00
-        HEX B5 BA F0 80 FC FD F8 80
-        HEX EC ED D8 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 9D A0 00 80
-        HEX F5 A8 00 81 F5 A8 00 81
-        HEX FD A2 00 83 E0 8A C0 83
-        HEX 80 AA C0 00 80 8A 00 00
-        HEX 80 80 D0 81 DC 82 D0 83
-        HEX BF A8 D0 82 AF AA 00 83
-        HEX BF AA C0 81 DD AE C0 82
-        HEX D5 AB D0 82 D5 AA D0 82
-        HEX 95 AA D0 80 C7 AE D0 80
-        HEX D7 EF D0 00 95 EB C0 81
-        HEX D5 EB C0 83 F3 F7 E0 83
-        HEX B3 B6 E0 00 00 00 00 00
+        HEX 00 80 95 E0 00 80 D5 B8
+        HEX 00 80 D5 BC 00 82 95 FC
+        HEX 00 8A C0 9E 00 8A D0 86
+        HEX 00 82 C0 00 00 A8 80 00
+        HEX 00 AA 81 EC 00 A8 D7 F6
+        HEX 00 82 D7 D2 00 8A D7 F6
+        HEX 00 8B D5 EC 00 AE D5 AA
+        HEX 00 AA D5 AA 00 AA D5 A2
+        HEX 00 AB D7 88 00 AF DF A8
+        HEX 00 8E DD A0 00 8E DD AC
+        HEX 00 9F BE BE 00 9B B6 B6
+RESCUE_SPR_NEG_END_DATA_5:
+        ; RESCUE_SPR_NEG_END frame 5 (104 bytes, W=3 H=$1A) at $A5CB.
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 80 F5 80 00 83
-        HEX D5 A0 00 87 D5 A0 00 87
-        HEX F5 88 00 8F 80 AA 00 8C
-        HEX 81 AA 00 00 80 A8 00 00
-        HEX 80 82 C0 86 F0 8A C0 8D
-        HEX FD A2 C0 89 BD A8 00 8D
-        HEX FD AA 00 86 F5 BA 00 8A
-        HEX D5 AE C0 8A D5 AA C0 88
-        HEX D5 AA C0 82 9D BA C0 82
-        HEX DF BE C0 80 D7 AE 00 86
-        HEX D7 AE 00 8F CF DF 00 8D
-        HEX CD DB 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 83 D4 00 00
-        HEX 8E D5 00 00 9E D5 00 00
-        HEX 9F D4 A0 00 BC 81 A8 00
-        HEX B0 85 A8 00 80 81 A0 00
-        HEX 80 80 8A 00 9B C0 AA 00
-        HEX B7 F5 8A 00 A5 F5 A0 00
-        HEX B7 F5 A8 00 9B D5 E8 00
-        HEX AA D5 BA 00 AA D5 AA 00
-        HEX A2 D5 AA 00 88 F5 EA 00
-        HEX 8A FD FA 00 82 DD B8 00
-        HEX 9A DD B8 00 BE BE FC 00
-        HEX B6 B6 EC 00 00 00 00 00
+        HEX 00 80 D7 00 00 82 D5 E0
+        HEX 00 82 D5 F0 00 88 D7 F0
+        HEX 00 AA 80 F8 00 AA C0 98
+        HEX 00 8A 80 00 81 A0 80 00
+        HEX 81 A8 87 B0 81 A2 DF D8
+        HEX 00 8A DE C8 00 AA DF D8
+        HEX 00 AE D7 B0 81 BA D5 A8
+        HEX 81 AA D5 A8 81 AA D5 88
+        HEX 81 AE DC A0 81 BE FD A0
+        HEX 00 BA F5 00 00 BA F5 B0
+        HEX 80 FD F9 F8 80 ED D9 D8
+RESCUE_SPR_NEG_END_DATA_6:
+        ; RESCUE_SPR_NEG_END frame 6 (104 bytes, W=3 H=$1A) at $A633.
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 8E D0 00 00
-        HEX BA D4 00 80 FA D4 00 80
-        HEX FE D1 00 81 F0 85 A0 81
-        HEX C0 95 A0 00 80 85 00 00
-        HEX 80 80 A8 80 EE 81 A8 81
-        HEX DF D4 A8 81 97 D5 00 81
-        HEX DF D5 A0 80 EE D7 A0 81
-        HEX AA D5 E8 81 AA D5 A8 81
-        HEX 8A D5 A8 00 A3 D7 A8 00
-        HEX AB F7 E8 00 8A F5 E0 80
-        HEX EA F5 E0 81 F9 FB F0 81
-        HEX D9 DB B0 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 BA C0 00 81
-        HEX EA D0 00 83 EA D0 00 83
-        HEX FA C4 00 87 C0 95 00 86
-        HEX 80 D5 00 00 80 94 00 00
-        HEX 80 81 A0 83 B8 85 A0 86
-        HEX FE D1 A0 84 DE D4 00 86
-        HEX FE D5 00 83 BA DD 00 85
-        HEX AA D7 A0 85 AA D5 A0 84
-        HEX AA D5 A0 81 8E DD A0 81
-        HEX AF DF A0 00 AB D7 00 83
-        HEX AB D7 00 87 E7 EF C0 86
-        HEX E6 ED C0 00 00 00 00 00
-        HEX 00 00 00 00 81 EA 00 00
-        HEX 87 AA C0 00 8F AA C0 00
-        HEX 8F EA 90 00 9E 80 D4 00
-        HEX 98 82 D4 00 80 82 D4 00
-        HEX 80 80 D0 00 80 80 84 00
-        HEX 00 80 D5 00 80 80 D5 00
-        HEX 8D E0 95 00 9B FA C4 00
-        HEX 92 FA D0 00 9B FA D4 00
-        HEX 8D EA F4 00 95 AA DD 00
-        HEX 95 AA D5 00 91 AA D5 00
-        HEX 84 BA F5 00 85 BE FD 00
-        HEX 81 AE DC 00 8D AE DC 00
-        HEX 8F 8F 9E 00 9B 9B B6 00
-        HEX 98 98 B0 00 00 00 00 00
-        HEX 00 00 00 00 87 A8 00 00
-        HEX 9D AA 00 00 BD AA 00 00
-        HEX BF A8 C0 80 F8 82 D0 80
-        HEX E0 8A D0 00 80 8A D0 00
-        HEX 80 82 C0 00 80 80 90 00
-        HEX 80 82 D4 00 80 82 D4 00
-        HEX B7 80 D4 80 EF EA 90 80
-        HEX CB EA C0 80 EF EA D0 00
-        HEX B7 AB D0 80 D5 AA F4 80
-        HEX D5 AA D4 80 C5 AA D4 00
-        HEX 91 EB D4 00 95 FB F4 00
-        HEX 85 BA F0 00 B5 BA F0 00
-        HEX BC BC F8 80 EC ED D8 80
-        HEX E0 E1 C0 00 00 00 00 00
-        HEX 00 00 00 00 9D A0 00 80
-        HEX F5 A8 00 81 F5 A8 00 81
-        HEX FD A2 00 83 E0 8A C0 83
-        HEX 80 AA C0 00 80 AA C0 00
-        HEX 80 8A 00 00 80 80 C0 00
-        HEX 80 8A D0 00 80 8A D0 81
-        HEX DC 82 D0 83 BF A8 C0 82
-        HEX AF AA 00 83 BF AA C0 81
-        HEX DD AE C0 82 D5 AB D0 82
-        HEX D5 AA D0 82 95 AA D0 80
-        HEX C7 AE D0 80 D7 EF D0 00
-        HEX 95 EB C0 81 D5 EB C0 81
-        HEX F1 F3 E0 83 B3 B6 E0 83
-        HEX 83 86 00 00 00 00 00 00
-        HEX 00 00 00 80 F5 80 00 83
-        HEX D5 A0 00 87 D5 A0 00 87
-        HEX F5 88 00 8F 80 AA 00 8C
-        HEX 81 AA 00 00 81 AA 00 00
-        HEX 80 A8 00 00 80 82 00 00
-        HEX 80 AA C0 00 80 AA C0 86
-        HEX F0 8A C0 8D FD A2 00 89
-        HEX BD A8 00 8D FD AA 00 86
-        HEX F5 BA 00 8A D5 AE C0 8A
-        HEX D5 AA C0 88 D5 AA C0 82
-        HEX 9D BA C0 82 DF BE C0 80
-        HEX D7 AE 00 86 D7 AE 00 87
-        HEX C7 CF 00 8D CD DB 00 8C
-        HEX 8C 98 00 00 00 00 00 00
-        HEX 00 00 00 00 83 D4 00 00
-        HEX 8E D5 00 00 9E D5 00 00
-        HEX 9F D4 A0 00 BC 81 A8 00
-        HEX B0 85 A8 00 80 85 A8 00
-        HEX 80 81 A0 00 80 80 88 00
-        HEX 80 81 AA 00 80 81 AA 00
-        HEX 9B C0 AA 00 B7 F5 88 00
-        HEX A5 F5 A0 00 B7 F5 A8 00
-        HEX 9B D5 E8 00 AA D5 BA 00
-        HEX AA D5 AA 00 A2 D5 AA 00
-        HEX 88 F5 EA 00 8A FD FA 00
-        HEX 82 DD B8 00 9A DD B8 00
-        HEX 9E 9E BC 00 B6 B6 EC 00
-        HEX B0 B0 E0 00 00 00 00 00
-        HEX 00 00 00 00 8E D0 00 00
-        HEX BA D4 00 80 FA D4 00 80
-        HEX FE D1 00 81 F0 85 A0 81
-        HEX C0 95 A0 00 80 95 A0 00
-        HEX 80 85 00 00 80 80 A0 00
-        HEX 80 85 A8 00 80 85 A8 80
-        HEX EE 81 A8 81 DF D4 A0 81
-        HEX 97 D5 00 81 DF D5 A0 80
-        HEX EE D7 A0 81 AA D5 E8 81
-        HEX AA D5 A8 81 8A D5 A8 00
-        HEX A3 D7 A8 00 AB F7 E8 00
-        HEX 8A F5 E0 80 EA F5 E0 80
-        HEX F8 F9 F0 81 D9 DB B0 81
-        HEX C1 C3 00 00 00 00 00 00
-        HEX 00 00 00 00 BA C0 00 81
-        HEX EA D0 00 83 EA D0 00 83
-        HEX FA C4 00 87 C0 95 00 86
-        HEX 80 D5 00 00 80 D5 00 00
-        HEX 80 94 00 00 80 81 00 00
-        HEX 80 95 A0 00 80 95 A0 83
-        HEX B8 85 A0 86 FE D1 00 84
-        HEX DE D4 00 86 FE D5 00 83
-        HEX BA DD 00 85 AA D7 A0 85
-        HEX AA D5 A0 84 AA D5 A0 81
-        HEX 8E DD A0 81 AF DF A0 00
-        HEX AB D7 00 83 AB D7 00 83
-        HEX E3 E7 C0 86 E6 ED C0 86
-        HEX 86 8C 00 00 00 1F 00 00
-        HEX 3E 00 00 38 00 00 7C 00
-        HEX 01 78 00 01 60 00 03 70
-        HEX 00 07 60 00 07 00 00 0F
-        HEX 40 00 1F 00 00 1C 00 00
-        HEX 00 3E 00 00 7C 00 00 70
+        HEX 00 82 DC 00 00 8A D7 00
+        HEX 00 8A D7 C0 00 A2 DF C0
+        HEX 81 A8 83 E0 81 AA 80 E0
+        HEX 00 A8 80 00 85 80 80 00
+        HEX 85 A0 9D C0 85 8A FE E0
+        HEX 00 AA FA A0 81 AA FE E0
+        HEX 81 BA DD C0 85 EA D5 A0
+        HEX 85 AA D5 A0 85 AA D4 A0
+        HEX 85 BA F1 00 85 FB F5 00
+        HEX 81 EB D4 00 81 EB D5 C0
+        HEX 83 F7 E7 E0 83 B6 E6 E0
+RESCUE_SPR_NEG_MID_DATA_0:
+        ; RESCUE_SPR_NEG_MID frame 0 (112 bytes, W=3 H=$1C) at $A69B.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 8A F0 00 80 AA DC
+        HEX 00 80 AA DE 00 81 8A FE
+        HEX 00 85 A0 8F 00 85 A8 83
+        HEX 00 85 A8 00 00 81 A0 00
+        HEX 00 84 80 00 00 95 A0 00
+        HEX 00 95 A0 00 00 95 80 F6
+        HEX 00 84 AB FB 00 81 AB E9
+        HEX 00 85 AB FB 00 85 EA F6
+        HEX 00 97 AA D5 00 95 AA D5
+        HEX 00 95 AA D1 00 95 EB C4
+        HEX 00 97 EF D4 00 87 AE D0
+        HEX 00 87 AE D6 00 8F 9E 9E
+        HEX 00 8D DB 9B 00 81 C3 83
+RESCUE_SPR_NEG_MID_DATA_1:
+        ; RESCUE_SPR_NEG_MID frame 1 (112 bytes, W=3 H=$1C) at $A70B.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 80 AB C0 00 81 AA F0
+        HEX 00 81 AA F8 00 84 AB F8
+        HEX 00 95 80 BC 00 95 A0 8C
+        HEX 00 95 A0 00 00 85 80 00
+        HEX 00 90 80 00 80 D5 80 00
+        HEX 80 D5 80 00 80 D4 83 D8
+        HEX 00 91 AF EC 00 85 AF A4
+        HEX 00 95 AF EC 00 97 AB D8
+        HEX 80 DD AA D4 80 D5 AA D4
+        HEX 80 D5 AA C4 80 D7 AE 90
+        HEX 80 DF BE D0 00 9D BA C0
+        HEX 00 9D BA D8 00 BC F8 F8
+        HEX 00 B6 EC EC 00 86 8C 8C
+RESCUE_SPR_NEG_MID_DATA_2:
+        ; RESCUE_SPR_NEG_MID frame 2 (112 bytes, W=3 H=$1C) at $A77B.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 81 AE 00 00 85 AB C0
+        HEX 00 85 AB E0 00 91 AF E0
+        HEX 80 D4 81 F0 80 D5 80 B0
+        HEX 80 D5 80 00 00 94 80 00
+        HEX 80 C0 80 00 82 D4 80 00
+        HEX 82 D4 80 00 82 D0 8E E0
+        HEX 80 C5 BF B0 00 95 BD 90
+        HEX 80 D5 BF B0 80 DD AE E0
+        HEX 82 F5 AA D0 82 D5 AA D0
+        HEX 82 D5 AA 90 82 DD B8 C0
+        HEX 82 FD FA C0 80 F5 EA 00
+        HEX 80 F5 EA E0 81 F3 E3 E0
+        HEX 81 DB B3 B0 00 98 B0 B0
+RESCUE_SPR_NEG_MID_DATA_3:
+        ; RESCUE_SPR_NEG_MID frame 3 (112 bytes, W=3 H=$1C) at $A7EB.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 85 B8 00 00 95 AE 00
+        HEX 00 95 AF 00 80 C5 BF 00
+        HEX 82 D0 87 C0 82 D4 81 C0
+        HEX 82 D4 80 00 80 D0 80 00
+        HEX 82 80 80 00 8A D0 80 00
+        HEX 8A D0 80 00 8A C0 BB 00
+        HEX 82 95 FD C0 80 D5 F4 C0
+        HEX 82 D5 FD C0 82 F5 BB 00
+        HEX 8B D5 AA C0 8A D5 AA C0
+        HEX 8A D5 A8 C0 8A F5 E2 00
+        HEX 8B F7 EA 00 83 D7 A8 00
+        HEX 83 D7 AB 00 87 CF 8F 00
+        HEX 86 ED CD C0 80 E1 C1 C0
+RESCUE_SPR_NEG_MID_DATA_4:
+        ; RESCUE_SPR_NEG_MID frame 4 (112 bytes, W=3 H=$1C) at $A85B.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 80 95 E0 00 80 D5 B8
+        HEX 00 80 D5 BC 00 82 95 FC
+        HEX 00 8A C0 9E 00 8A D0 86
+        HEX 00 8A D0 00 00 82 C0 00
+        HEX 00 88 80 00 00 AA C0 00
+        HEX 00 AA C0 00 00 AA 81 EC
+        HEX 00 88 D7 F6 00 82 D7 D2
+        HEX 00 8A D7 F6 00 8B D5 EC
+        HEX 00 AE D5 AA 00 AA D5 AA
+        HEX 00 AA D5 A2 00 AB D7 88
+        HEX 00 AF DF A8 00 8E DD A0
+        HEX 00 8E DD AC 00 9E BC BC
+        HEX 00 9B B6 B6 00 83 86 86
+RESCUE_SPR_NEG_MID_DATA_5:
+        ; RESCUE_SPR_NEG_MID frame 5 (112 bytes, W=3 H=$1C) at $A8CB.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 80 D7 00 00 82 D5 E0
+        HEX 00 82 D5 F0 00 88 D7 F0
+        HEX 00 AA 80 F8 00 AA C0 98
+        HEX 00 AA C0 00 00 8A 80 00
+        HEX 00 A0 80 00 81 AA 80 00
+        HEX 81 AA 80 00 81 A8 87 B0
+        HEX 00 A2 DF D8 00 8A DE C8
+        HEX 00 AA DF D8 00 AE D7 B0
+        HEX 81 BA D5 A8 81 AA D5 A8
+        HEX 81 AA D5 88 81 AE DC A0
+        HEX 81 BE FD A0 00 BA F5 00
+        HEX 00 BA F5 B0 80 F9 F1 F0
+        HEX 80 ED D9 D8 00 8C 98 98
+RESCUE_SPR_NEG_MID_DATA_6:
+        ; RESCUE_SPR_NEG_MID frame 6 (112 bytes, W=3 H=$1C) at $A93B.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 82 DC 00 00 8A D7 00
+        HEX 00 8A D7 C0 00 A2 DF C0
+        HEX 81 A8 83 E0 81 AA 80 E0
+        HEX 81 AA 80 00 00 A8 80 00
+        HEX 81 80 80 00 85 A8 80 00
+        HEX 85 A8 80 00 85 A0 9D C0
+        HEX 81 8A FE E0 00 AA FA A0
+        HEX 81 AA FE E0 81 BA DD C0
+        HEX 85 EA D5 A0 85 AA D5 A0
+        HEX 85 AA D4 A0 85 BA F1 00
+        HEX 85 FB F5 00 81 EB D4 00
+        HEX 81 EB D5 C0 83 E7 C7 C0
+        HEX 83 B6 E6 E0 00 B0 E0 E0
+RESCUE_SPR_POS_END_DATA_0:
+        ; RESCUE_SPR_POS_END frame 0 (104 bytes, W=3 H=$1A) at $A9AB.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 81 EA 00 00 87 AA C0
+        HEX 00 8F AA C0 00 8F EA 90
+        HEX 00 9E 80 D4 00 98 82 D4
+        HEX 00 80 80 D0 00 80 80 85
+        HEX 00 8D E0 95 00 9B FA C5
+        HEX 00 92 FA D0 00 9B FA D4
+        HEX 00 8D EA F4 00 95 AA DD
+        HEX 00 95 AA D5 00 91 AA D5
+        HEX 00 84 BA F5 00 85 BE FD
+        HEX 00 81 AE DC 00 8D AE DC
+        HEX 00 9F 9F BE 00 9B 9B B6
+RESCUE_SPR_POS_END_DATA_1:
+        ; RESCUE_SPR_POS_END frame 1 (104 bytes, W=3 H=$1A) at $AA13.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 87 A8 00 00 9D AA 00
+        HEX 00 BD AA 00 00 BF A8 C0
+        HEX 80 F8 82 D0 80 E0 8A D0
+        HEX 00 80 82 C0 00 80 80 94
+        HEX 00 B7 80 D4 80 EF EA 94
+        HEX 80 CB EA C0 80 EF EA D0
+        HEX 00 B7 AB D0 80 D5 AA F4
+        HEX 80 D5 AA D4 80 C5 AA D4
+        HEX 00 91 EB D4 00 95 FB F4
+        HEX 00 85 BA F0 00 B5 BA F0
+        HEX 80 FC FD F8 80 EC ED D8
+RESCUE_SPR_POS_END_DATA_2:
+        ; RESCUE_SPR_POS_END frame 2 (104 bytes, W=3 H=$1A) at $AA7B.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 9D A0 00 80 F5 A8 00
+        HEX 81 F5 A8 00 81 FD A2 00
+        HEX 83 E0 8A C0 83 80 AA C0
+        HEX 00 80 8A 00 00 80 80 D0
+        HEX 81 DC 82 D0 83 BF A8 D0
+        HEX 82 AF AA 00 83 BF AA C0
+        HEX 81 DD AE C0 82 D5 AB D0
+        HEX 82 D5 AA D0 82 95 AA D0
+        HEX 80 C7 AE D0 80 D7 EF D0
+        HEX 00 95 EB C0 81 D5 EB C0
+        HEX 83 F3 F7 E0 83 B3 B6 E0
+RESCUE_SPR_POS_END_DATA_3:
+        ; RESCUE_SPR_POS_END frame 3 (104 bytes, W=3 H=$1A) at $AAE3.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 F5 80 00 83 D5 A0 00
+        HEX 87 D5 A0 00 87 F5 88 00
+        HEX 8F 80 AA 00 8C 81 AA 00
+        HEX 00 80 A8 00 00 80 82 C0
+        HEX 86 F0 8A C0 8D FD A2 C0
+        HEX 89 BD A8 00 8D FD AA 00
+        HEX 86 F5 BA 00 8A D5 AE C0
+        HEX 8A D5 AA C0 88 D5 AA C0
+        HEX 82 9D BA C0 82 DF BE C0
+        HEX 80 D7 AE 00 86 D7 AE 00
+        HEX 8F CF DF 00 8D CD DB 00
+RESCUE_SPR_POS_END_DATA_4:
+        ; RESCUE_SPR_POS_END frame 4 (104 bytes, W=3 H=$1A) at $AB4B.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 83 D4 00 00 8E D5 00
+        HEX 00 9E D5 00 00 9F D4 A0
+        HEX 00 BC 81 A8 00 B0 85 A8
+        HEX 00 80 81 A0 00 80 80 8A
+        HEX 00 9B C0 AA 00 B7 F5 8A
+        HEX 00 A5 F5 A0 00 B7 F5 A8
+        HEX 00 9B D5 E8 00 AA D5 BA
+        HEX 00 AA D5 AA 00 A2 D5 AA
+        HEX 00 88 F5 EA 00 8A FD FA
+        HEX 00 82 DD B8 00 9A DD B8
+        HEX 00 BE BE FC 00 B6 B6 EC
+RESCUE_SPR_POS_END_DATA_5:
+        ; RESCUE_SPR_POS_END frame 5 (104 bytes, W=3 H=$1A) at $ABB3.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 8E D0 00 00 BA D4 00
+        HEX 80 FA D4 00 80 FE D1 00
+        HEX 81 F0 85 A0 81 C0 95 A0
+        HEX 00 80 85 00 00 80 80 A8
+        HEX 80 EE 81 A8 81 DF D4 A8
+        HEX 81 97 D5 00 81 DF D5 A0
+        HEX 80 EE D7 A0 81 AA D5 E8
+        HEX 81 AA D5 A8 81 8A D5 A8
+        HEX 00 A3 D7 A8 00 AB F7 E8
+        HEX 00 8A F5 E0 80 EA F5 E0
+        HEX 81 F9 FB F0 81 D9 DB B0
+RESCUE_SPR_POS_END_DATA_6:
+        ; RESCUE_SPR_POS_END frame 6 (104 bytes, W=3 H=$1A) at $AC1B.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 BA C0 00 81 EA D0 00
+        HEX 83 EA D0 00 83 FA C4 00
+        HEX 87 C0 95 00 86 80 D5 00
+        HEX 00 80 94 00 00 80 81 A0
+        HEX 83 B8 85 A0 86 FE D1 A0
+        HEX 84 DE D4 00 86 FE D5 00
+        HEX 83 BA DD 00 85 AA D7 A0
+        HEX 85 AA D5 A0 84 AA D5 A0
+        HEX 81 8E DD A0 81 AF DF A0
+        HEX 00 AB D7 00 83 AB D7 00
+        HEX 87 E7 EF C0 86 E6 ED C0
+RESCUE_SPR_POS_MID_DATA_0:
+        ; RESCUE_SPR_POS_MID frame 0 (112 bytes, W=3 H=$1C) at $AC83.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 81 EA 00 00 87 AA C0
+        HEX 00 8F AA C0 00 8F EA 90
+        HEX 00 9E 80 D4 00 98 82 D4
+        HEX 00 80 82 D4 00 80 80 D0
+        HEX 00 80 80 84 00 00 80 D5
+        HEX 00 80 80 D5 00 8D E0 95
+        HEX 00 9B FA C4 00 92 FA D0
+        HEX 00 9B FA D4 00 8D EA F4
+        HEX 00 95 AA DD 00 95 AA D5
+        HEX 00 91 AA D5 00 84 BA F5
+        HEX 00 85 BE FD 00 81 AE DC
+        HEX 00 8D AE DC 00 8F 8F 9E
+        HEX 00 9B 9B B6 00 98 98 B0
+RESCUE_SPR_POS_MID_DATA_1:
+        ; RESCUE_SPR_POS_MID frame 1 (112 bytes, W=3 H=$1C) at $ACF3.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 87 A8 00 00 9D AA 00
+        HEX 00 BD AA 00 00 BF A8 C0
+        HEX 80 F8 82 D0 80 E0 8A D0
+        HEX 00 80 8A D0 00 80 82 C0
+        HEX 00 80 80 90 00 80 82 D4
+        HEX 00 80 82 D4 00 B7 80 D4
+        HEX 80 EF EA 90 80 CB EA C0
+        HEX 80 EF EA D0 00 B7 AB D0
+        HEX 80 D5 AA F4 80 D5 AA D4
+        HEX 80 C5 AA D4 00 91 EB D4
+        HEX 00 95 FB F4 00 85 BA F0
+        HEX 00 B5 BA F0 00 BC BC F8
+        HEX 80 EC ED D8 80 E0 E1 C0
+RESCUE_SPR_POS_MID_DATA_2:
+        ; RESCUE_SPR_POS_MID frame 2 (112 bytes, W=3 H=$1C) at $AD63.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 9D A0 00 80 F5 A8 00
+        HEX 81 F5 A8 00 81 FD A2 00
+        HEX 83 E0 8A C0 83 80 AA C0
+        HEX 00 80 AA C0 00 80 8A 00
+        HEX 00 80 80 C0 00 80 8A D0
+        HEX 00 80 8A D0 81 DC 82 D0
+        HEX 83 BF A8 C0 82 AF AA 00
+        HEX 83 BF AA C0 81 DD AE C0
+        HEX 82 D5 AB D0 82 D5 AA D0
+        HEX 82 95 AA D0 80 C7 AE D0
+        HEX 80 D7 EF D0 00 95 EB C0
+        HEX 81 D5 EB C0 81 F1 F3 E0
+        HEX 83 B3 B6 E0 83 83 86 00
+RESCUE_SPR_POS_MID_DATA_3:
+        ; RESCUE_SPR_POS_MID frame 3 (112 bytes, W=3 H=$1C) at $ADD3.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 F5 80 00 83 D5 A0 00
+        HEX 87 D5 A0 00 87 F5 88 00
+        HEX 8F 80 AA 00 8C 81 AA 00
+        HEX 00 81 AA 00 00 80 A8 00
+        HEX 00 80 82 00 00 80 AA C0
+        HEX 00 80 AA C0 86 F0 8A C0
+        HEX 8D FD A2 00 89 BD A8 00
+        HEX 8D FD AA 00 86 F5 BA 00
+        HEX 8A D5 AE C0 8A D5 AA C0
+        HEX 88 D5 AA C0 82 9D BA C0
+        HEX 82 DF BE C0 80 D7 AE 00
+        HEX 86 D7 AE 00 87 C7 CF 00
+        HEX 8D CD DB 00 8C 8C 98 00
+RESCUE_SPR_POS_MID_DATA_4:
+        ; RESCUE_SPR_POS_MID frame 4 (112 bytes, W=3 H=$1C) at $AE43.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 83 D4 00 00 8E D5 00
+        HEX 00 9E D5 00 00 9F D4 A0
+        HEX 00 BC 81 A8 00 B0 85 A8
+        HEX 00 80 85 A8 00 80 81 A0
+        HEX 00 80 80 88 00 80 81 AA
+        HEX 00 80 81 AA 00 9B C0 AA
+        HEX 00 B7 F5 88 00 A5 F5 A0
+        HEX 00 B7 F5 A8 00 9B D5 E8
+        HEX 00 AA D5 BA 00 AA D5 AA
+        HEX 00 A2 D5 AA 00 88 F5 EA
+        HEX 00 8A FD FA 00 82 DD B8
+        HEX 00 9A DD B8 00 9E 9E BC
+        HEX 00 B6 B6 EC 00 B0 B0 E0
+RESCUE_SPR_POS_MID_DATA_5:
+        ; RESCUE_SPR_POS_MID frame 5 (112 bytes, W=3 H=$1C) at $AEB3.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 8E D0 00 00 BA D4 00
+        HEX 80 FA D4 00 80 FE D1 00
+        HEX 81 F0 85 A0 81 C0 95 A0
+        HEX 00 80 95 A0 00 80 85 00
+        HEX 00 80 80 A0 00 80 85 A8
+        HEX 00 80 85 A8 80 EE 81 A8
+        HEX 81 DF D4 A0 81 97 D5 00
+        HEX 81 DF D5 A0 80 EE D7 A0
+        HEX 81 AA D5 E8 81 AA D5 A8
+        HEX 81 8A D5 A8 00 A3 D7 A8
+        HEX 00 AB F7 E8 00 8A F5 E0
+        HEX 80 EA F5 E0 80 F8 F9 F0
+        HEX 81 D9 DB B0 81 C1 C3 00
+RESCUE_SPR_POS_MID_DATA_6:
+        ; RESCUE_SPR_POS_MID frame 6 (112 bytes, W=3 H=$1C) at $AF23.
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 BA C0 00 81 EA D0 00
+        HEX 83 EA D0 00 83 FA C4 00
+        HEX 87 C0 95 00 86 80 D5 00
+        HEX 00 80 D5 00 00 80 94 00
+        HEX 00 80 81 00 00 80 95 A0
+        HEX 00 80 95 A0 83 B8 85 A0
+        HEX 86 FE D1 00 84 DE D4 00
+        HEX 86 FE D5 00 83 BA DD 00
+        HEX 85 AA D7 A0 85 AA D5 A0
+        HEX 84 AA D5 A0 81 8E DD A0
+        HEX 81 AF DF A0 00 AB D7 00
+        HEX 83 AB D7 00 83 E3 E7 C0
+        HEX 86 E6 ED C0 86 86 8C 00
+PROJ_SPR_R_DATA_0:
+        ; PROJ_SPR_R frame 0 (9 bytes, W=2 H=3) at $AF93.
+        HEX 00 00 1F 00 00 3E 00 00
+        HEX 38
+PROJ_SPR_R_DATA_1:
+        ; PROJ_SPR_R frame 1 (9 bytes, W=2 H=3) at $AF9C.
+        HEX 00 00 7C 00 01 78 00 01
+        HEX 60
+PROJ_SPR_R_DATA_2:
+        ; PROJ_SPR_R frame 2 (9 bytes, W=2 H=3) at $AFA5.
+        HEX 00 03 70 00 07 60 00 07
+        HEX 00
+PROJ_SPR_R_DATA_3:
+        ; PROJ_SPR_R frame 3 (9 bytes, W=2 H=3) at $AFAE.
+        HEX 00 0F 40 00 1F 00 00 1C
+        HEX 00
+PROJ_SPR_R_DATA_4:
+        ; PROJ_SPR_R frame 4 (9 bytes, W=2 H=3) at $AFB7.
+        HEX 00 00 3E 00 00 7C 00 00
+        HEX 70
+PROJ_SPR_R_DATA_5:
+        ; PROJ_SPR_R frame 5 (9 bytes, W=2 H=3) at $AFC0.
         HEX 00 01 78 00 03 70 00 03
-        HEX 40 00 07 60 00 0F 40 00
-        HEX 0E 00 00 00 09 12 1B 24
-        HEX 2D 36 3F 8A D5 20 6B B6
-        HEX 01 4C 6D 8E AF D0 F1 12
-        HEX 33 3C 45 4E 57 60 69 72
-        HEX 7B 84 8D 96 9F A8 B1 BD
-        HEX C9 D5 E1 ED F9 05 11 1D
-        HEX 29 35 71 9B C5 E1 FD 65
-        HEX 7D DF 2B 77 C3 0F 5B A7
-        HEX F3 03 13 23 33 43 53 63
-        HEX 6F 7B 87 93 9F AB B7 C7
-        HEX D7 E7 F7 07 17 27 8D F3
-        HEX 59 BF 25 8B F1 93 EF 55
-        HEX BB 21 87 ED 8F F7 0F 27
-        HEX 3F 57 6F 87 9F B7 CF E7
-        HEX FF 17 2F 47 5F 77 8F A7
-        HEX BF ED 09 25 8D A5 07 3D
-        HEX C9 55 E1 B1 B1 B1 B1 B1
-        HEX B1 B1 B1 B1 B1 B2 B2 B2
-        HEX B3 B3 B3 B3 B3 B3 B3 B4
+        HEX 40
+PROJ_SPR_R_DATA_6:
+        ; PROJ_SPR_R frame 6 (9 bytes, W=2 H=3) at $AFC9.
+        HEX 00 07 60 00 0F 40 00 0E
+        HEX 00
+PROJ_SPR_R_DATA_7_RESIDUE:
+        ; Unused PROJ_SPR_R 'frame 7' lead byte at $AFD2.  The rest
+        ; of the nominal 9-byte frame ($AFD3-$AFDA) overlaps with
+        ; PROJ_SPR_L_LO / SPECIAL_PUFF_LO[0], kept as raw HEX below.
+        HEX 00
+SPRITE_POINTER_TABLES_TAIL:
+        ; $AFD3-$B0FF: level-data pointer tables (EQU-only labels;
+        ; see PROJ_SPR_L_LO/HI, SPECIAL_PUFF_LO/HI, SPRITE_TABLE_C_LO/HI,
+        ; SCROLL_EDGE_L/R_SPR_LO/HI, DIGIT_TILE_LO/HI, SPRITE_TABLE_LO/HI).
+        HEX 00 09 12 1B 24 2D 36 3F
+        HEX 8A D5 20 6B B6 01 4C 6D
+        HEX 8E AF D0 F1 12 33 3C 45
+        HEX 4E 57 60 69 72 7B 84 8D
+        HEX 96 9F A8 B1 BD C9 D5 E1
+        HEX ED F9 05 11 1D 29 35 71
+        HEX 9B C5 E1 FD 65 7D DF 2B
+        HEX 77 C3 0F 5B A7 F3 03 13
+        HEX 23 33 43 53 63 6F 7B 87
+        HEX 93 9F AB B7 C7 D7 E7 F7
+        HEX 07 17 27 8D F3 59 BF 25
+        HEX 8B F1 93 EF 55 BB 21 87
+        HEX ED 8F F7 0F 27 3F 57 6F
+        HEX 87 9F B7 CF E7 FF 17 2F
+        HEX 47 5F 77 8F A7 BF ED 09
+        HEX 25 8D A5 07 3D C9 55 E1
+        HEX B1 B1 B1 B1 B1 B1 B1 B1
+        HEX B1 B1 B2 B2 B2 B3 B3 B3
+        HEX B3 B3 B3 B3 B4 B4 B4 B4
         HEX B4 B4 B4 B4 B4 B4 B4 B4
         HEX B4 B4 B4 B4 B4 B4 B4 B4
-        HEX B4 B4 B4 B4 B4 B5 B5 B5
-        HEX B5 B5 B5 B5 B5 B5 B5 B6
-        HEX B6 B6 B7 B7 B7 B8 B8 B8
-        HEX B8 B9 B9 B9 B9 B9 B9 B9
+        HEX B4 B4 B5 B5 B5 B5 B5 B5
+        HEX B5 B5 B5 B5 B6 B6 B6 B7
+        HEX B7 B7 B8 B8 B8 B8 B9 B9
         HEX B9 B9 B9 B9 B9 B9 B9 B9
-        HEX B9 B9 B9 BA BA BA BA BA
-        HEX BB BB BC BC BC BD BB BC
-        HEX BC BD BD BD BE BC BD BD
-        HEX BD BD BD BD BD BD BD BD
-        HEX BD BE BE BE BE BE BE BE
-        HEX BE BD BE BE BE BE BF CA
-        HEX CA CB CB CC CC CD CE CE
-        HEX CF CF D0 D0 D1 D1 D2 D2
-        HEX D3 D4 D4 D5 D5 D6 D6 D7
+        HEX B9 B9 B9 B9 B9 B9 B9 B9
+        HEX BA BA BA BA BA BB BB BC
+        HEX BC BC BD BB BC BC BD BD
+        HEX BD BE BC BD BD BD BD BD
+        HEX BD BD BD BD BD BD BE BE
+        HEX BE BE BE BE BE BE BD BE
+        HEX BE BE BE BF CA CA CB CB
+        HEX CC CC CD CE CE CF CF D0
+        HEX D0 D1 D1 D2 D2 D3 D4 D4
+        HEX D5 D5 D6 D6 D7 D7 D7 D7
         HEX D7 D7 D7 D7 D7 D7 D7 D7
-        HEX D7 D7 D7 D7 D7 D7 D7 D7
-        HEX D8 D8 D8 D8 D8 D8 D8 D8
+        HEX D7 D7 D7 D7 D7 D8 D8 D8
+        HEX D8 D8 D8 D8 D8
+PROJ_SPR_L_DATA_0:
+        ; PROJ_SPR_L frame 0 (9 bytes, W=2 H=3) at $B100.
         HEX 00 00 3E 00 00 1F 00 00
-        HEX 07 00 01 78 00 00 7C 00
-        HEX 00 1C 00 07 60 00 03 70
-        HEX 00 00 70 00 1F 00 00 0F
-        HEX 40 00 03 40 00 00 7C 00
-        HEX 00 3E 00 00 0E 00 03 70
-        HEX 00 01 78 00 00 38 00 0F
-        HEX 40 00 07 60 00 01 60 80
-        HEX F0 00 00 00 81 F8 8A C0
-        HEX 00 81 F8 AA D0 00 81 F4
-        HEX AA F4 00 80 F5 8A DD 00
-        HEX 00 85 A0 D5 00 00 81 AA
-        HEX 95 A0 00 81 AE C5 B8 00
-        HEX 84 AA C5 BC 00 84 AA C5
-        HEX BC 00 85 8A 95 B0 00 81
-        HEX A0 D5 80 00 9F FF FF F8
-        HEX 00 8B D7 EB D0 00 83 FF
-        HEX FF C0 83 C0 00 00 00 87
-        HEX E0 AA 80 00 87 E1 AA C0
-        HEX 00 87 D1 AB D0 00 83 D4
-        HEX AA F4 00 80 95 82 D4 00
-        HEX 80 85 A8 D5 80 80 85 BA
-        HEX 95 E0 80 91 AA 95 F0 80
-        HEX 91 AA 95 F0 80 94 A8 D5
-        HEX C0 80 85 82 D4 80 80 FF
-        HEX FF FF E0 80 AE DF AE C0
-        HEX 80 8F FF FE 80 8E 80 00
-        HEX 00 00 9F 81 A8 80 00 9F
-        HEX 85 AA 80 00 9E C5 AE C0
-        HEX 00 8E D1 AB D0 00 80 D4
-        HEX 8A D0 00 80 95 A2 D4 80
-        HEX 80 95 E8 D7 80 80 C5 A8
-        HEX D7 C0 80 C5 A8 D7 C0 80
-        HEX D1 A2 D6 80 80 94 8A D0
-        HEX 80 83 FF FF FF 80 81 BA
-        HEX FD BA 80 80 BF FF F8 80
+        HEX 07
+PROJ_SPR_L_DATA_1:
+        ; PROJ_SPR_L frame 1 (9 bytes, W=2 H=3) at $B109.
+        HEX 00 01 78 00 00 7C 00 00
+        HEX 1C
+PROJ_SPR_L_DATA_2:
+        ; PROJ_SPR_L frame 2 (9 bytes, W=2 H=3) at $B112.
+        HEX 00 07 60 00 03 70 00 00
+        HEX 70
+PROJ_SPR_L_DATA_3:
+        ; PROJ_SPR_L frame 3 (9 bytes, W=2 H=3) at $B11B.
+        HEX 00 1F 00 00 0F 40 00 03
+        HEX 40
+PROJ_SPR_L_DATA_4:
+        ; PROJ_SPR_L frame 4 (9 bytes, W=2 H=3) at $B124.
+        HEX 00 00 7C 00 00 3E 00 00
+        HEX 0E
+PROJ_SPR_L_DATA_5:
+        ; PROJ_SPR_L frame 5 (9 bytes, W=2 H=3) at $B12D.
+        HEX 00 03 70 00 01 78 00 00
+        HEX 38
+PROJ_SPR_L_DATA_6:
+        ; PROJ_SPR_L frame 6 (9 bytes, W=2 H=3) at $B136.
+        HEX 00 0F 40 00 07 60 00 01
+        HEX 60
+SPECIAL_PUFF_DATA_0:
+        ; SPECIAL_PUFF frame 0 ($4B=75 bytes, W=4 H=$0F) at $B13F.
+        HEX 80 F0 00 00 00 81 F8 8A
+        HEX C0 00 81 F8 AA D0 00 81
+        HEX F4 AA F4 00 80 F5 8A DD
+        HEX 00 00 85 A0 D5 00 00 81
+        HEX AA 95 A0 00 81 AE C5 B8
+        HEX 00 84 AA C5 BC 00 84 AA
+        HEX C5 BC 00 85 8A 95 B0 00
+        HEX 81 A0 D5 80 00 9F FF FF
+        HEX F8 00 8B D7 EB D0 00 83
+        HEX FF FF C0
+SPECIAL_PUFF_DATA_1:
+        ; SPECIAL_PUFF frame 1 ($4B=75 bytes, W=4 H=$0F) at $B18A.
+        HEX 83 C0 00 00 00 87 E0 AA
+        HEX 80 00 87 E1 AA C0 00 87
+        HEX D1 AB D0 00 83 D4 AA F4
+        HEX 00 80 95 82 D4 00 80 85
+        HEX A8 D5 80 80 85 BA 95 E0
+        HEX 80 91 AA 95 F0 80 91 AA
+        HEX 95 F0 80 94 A8 D5 C0 80
+        HEX 85 82 D4 80 80 FF FF FF
+        HEX E0 80 AE DF AE C0 80 8F
+        HEX FF FE 80
+SPECIAL_PUFF_DATA_2:
+        ; SPECIAL_PUFF frame 2 ($4B=75 bytes, W=4 H=$0F) at $B1D5.
+        HEX 8E 80 00 00 00 9F 81 A8
+        HEX 80 00 9F 85 AA 80 00 9E
+        HEX C5 AE C0 00 8E D1 AB D0
+        HEX 00 80 D4 8A D0 00 80 95
+        HEX A2 D4 80 80 95 E8 D7 80
+        HEX 80 C5 A8 D7 C0 80 C5 A8
+        HEX D7 C0 80 D1 A2 D6 80 80
+        HEX 94 8A D0 80 83 FF FF FF
+        HEX 80 81 BA FD BA 80 80 BF
+        HEX FF F8 80
+SPECIAL_PUFF_DATA_3:
+        ; SPECIAL_PUFF frame 3 ($4B=75 bytes, W=4 H=$0F) at $B220.
         HEX B8 80 00 00 00 FC 85 A0
         HEX 80 00 FC 95 A8 80 00 FA
         HEX 95 BA 80 00 BA C5 AE C0
@@ -22155,81 +22645,149 @@ SPECIAL_PEEK_DATA:
         HEX DE 80 82 C5 8A D8 80 80
         HEX D0 AA C0 80 8F FF FF FC
         HEX 80 85 EB F5 E8 80 81 FF
-        HEX FF E0 80 81 E0 80 00 00
-        HEX 83 F0 95 80 80 83 F0 D5
-        HEX A0 80 83 E8 D5 E8 80 81
-        HEX EA 95 BA 80 80 8A C1 AA
-        HEX 80 80 82 D4 AA C0 80 82
-        HEX DD 8A F0 80 88 D5 8A F8
-        HEX 80 88 D5 8A F8 80 8A 94
-        HEX AA E0 80 82 C1 AA 80 80
-        HEX BF FF FF F0 80 97 AF D7
-        HEX A0 80 87 FF FF 80 87 80
-        HEX 80 00 00 8F C0 D4 80 80
-        HEX 8F C2 D5 80 80 8F A2 D7
-        HEX A0 80 87 A8 D5 E8 80 80
-        HEX AA 85 A8 80 80 8A D1 AA
-        HEX 80 80 8A F4 AB C0 80 A2
-        HEX D4 AB E0 80 A2 D4 AB E0
-        HEX 80 A8 D1 AB 80 80 8A 85
-        HEX A8 80 81 FF FF FF C0 80
-        HEX DD BE DD 80 80 9F FF FC
-        HEX 80 9C 80 80 00 00 BE 82
-        HEX D0 80 80 BE 8A D4 80 80
-        HEX BD 8A DD 80 80 9D A2 D7
-        HEX A0 80 81 A8 95 A0 80 80
-        HEX AA C5 A8 80 80 AB D1 AE
-        HEX 80 81 8A D1 AF 80 81 8A
-        HEX D1 AF 80 81 A2 C5 AC 80
-        HEX 80 A8 95 A0 80 87 FF FF
-        HEX FE 80 82 F5 FA F4 80 80
-        HEX FF FF F0 80 00 05 30 00
-        HEX 15 2C 00 15 2C 00 55 2B
-        HEX 00 55 2B 00 5D 2B 00 5D
-        HEX 2B 00 57 2B 00 15 2C 00
-        HEX 15 2C 00 05 30 00 15 40
-        HEX 00 55 30 00 55 30 02 55
-        HEX 2C 02 55 2C 02 75 2C 02
-        HEX 75 2C 02 5D 2C 00 55 30
-        HEX 00 55 30 00 15 40 00 56
-        HEX 00 02 55 40 02 55 40 0A
-        HEX 55 30 0A 55 30 0B 55 30
-        HEX 0B 55 30 0A 75 30 02 55
-        HEX 40 02 55 40 00 56 00 02
-        HEX 58 00 0A 56 00 0A 56 00
-        HEX 2A 55 40 2A 55 40 2E 55
-        HEX 40 2E 55 40 2B 55 40 0A
-        HEX 56 00 0A 56 00 02 58 00
+        HEX FF E0 80
+SPECIAL_PUFF_DATA_4:
+        ; SPECIAL_PUFF frame 4 ($4B=75 bytes, W=4 H=$0F) at $B26B.
+        HEX 81 E0 80 00 00 83 F0 95
+        HEX 80 80 83 F0 D5 A0 80 83
+        HEX E8 D5 E8 80 81 EA 95 BA
+        HEX 80 80 8A C1 AA 80 80 82
+        HEX D4 AA C0 80 82 DD 8A F0
+        HEX 80 88 D5 8A F8 80 88 D5
+        HEX 8A F8 80 8A 94 AA E0 80
+        HEX 82 C1 AA 80 80 BF FF FF
+        HEX F0 80 97 AF D7 A0 80 87
+        HEX FF FF 80
+SPECIAL_PUFF_DATA_5:
+        ; SPECIAL_PUFF frame 5 ($4B=75 bytes, W=4 H=$0F) at $B2B6.
+        HEX 87 80 80 00 00 8F C0 D4
+        HEX 80 80 8F C2 D5 80 80 8F
+        HEX A2 D7 A0 80 87 A8 D5 E8
+        HEX 80 80 AA 85 A8 80 80 8A
+        HEX D1 AA 80 80 8A F4 AB C0
+        HEX 80 A2 D4 AB E0 80 A2 D4
+        HEX AB E0 80 A8 D1 AB 80 80
+        HEX 8A 85 A8 80 81 FF FF FF
+        HEX C0 80 DD BE DD 80 80 9F
+        HEX FF FC 80
+SPECIAL_PUFF_DATA_6:
+        ; SPECIAL_PUFF frame 6 ($4B=75 bytes, W=4 H=$0F) at $B301.
+        HEX 9C 80 80 00 00 BE 82 D0
+        HEX 80 80 BE 8A D4 80 80 BD
+        HEX 8A DD 80 80 9D A2 D7 A0
+        HEX 80 81 A8 95 A0 80 80 AA
+        HEX C5 A8 80 80 AB D1 AE 80
+        HEX 81 8A D1 AF 80 81 8A D1
+        HEX AF 80 81 A2 C5 AC 80 80
+        HEX A8 95 A0 80 87 FF FF FE
+        HEX 80 82 F5 FA F4 80 80 FF
+        HEX FF F0 80
+SPRITE_TABLE_C_DATA_0:
+        ; SPRITE_TABLE_C frame 0 ($21=33 bytes, W=2 H=$0B) at $B34C.
+        HEX 00 05 30 00 15 2C 00 15
+        HEX 2C 00 55 2B 00 55 2B 00
+        HEX 5D 2B 00 5D 2B 00 57 2B
+        HEX 00 15 2C 00 15 2C 00 05
+        HEX 30
+SPRITE_TABLE_C_DATA_1:
+        ; SPRITE_TABLE_C frame 1 ($21=33 bytes, W=2 H=$0B) at $B36D.
+        HEX 00 15 40 00 55 30 00 55
+        HEX 30 02 55 2C 02 55 2C 02
+        HEX 75 2C 02 75 2C 02 5D 2C
+        HEX 00 55 30 00 55 30 00 15
+        HEX 40
+SPRITE_TABLE_C_DATA_2:
+        ; SPRITE_TABLE_C frame 2 ($21=33 bytes, W=2 H=$0B) at $B38E.
+        HEX 00 56 00 02 55 40 02 55
+        HEX 40 0A 55 30 0A 55 30 0B
+        HEX 55 30 0B 55 30 0A 75 30
+        HEX 02 55 40 02 55 40 00 56
+        HEX 00
+SPRITE_TABLE_C_DATA_3:
+        ; SPRITE_TABLE_C frame 3 ($21=33 bytes, W=2 H=$0B) at $B3AF.
+        HEX 02 58 00 0A 56 00 0A 56
+        HEX 00 2A 55 40 2A 55 40 2E
+        HEX 55 40 2E 55 40 2B 55 40
+        HEX 0A 56 00 0A 56 00 02 58
+        HEX 00
+SPRITE_TABLE_C_DATA_4:
+        ; SPRITE_TABLE_C frame 4 ($21=33 bytes, W=2 H=$0B) at $B3D0.
         HEX 00 0A 60 00 2A 58 00 2A
         HEX 58 01 2A 56 01 2A 56 01
         HEX 3A 56 01 3A 56 01 2E 56
         HEX 00 2A 58 00 2A 58 00 0A
-        HEX 60 00 2B 00 01 2A 60 01
-        HEX 2A 60 05 2A 58 05 2A 58
-        HEX 05 6A 58 05 6A 58 05 3A
-        HEX 58 01 2A 60 01 2A 60 00
-        HEX 2B 00 01 2C 00 05 2B 00
-        HEX 05 2B 00 15 2A 60 15 2A
-        HEX 60 17 2A 60 17 2A 60 15
-        HEX 6A 60 05 2B 00 05 2B 00
-        HEX 01 2C 00 00 00 01 3F 7F
-        HEX 7F 7F 7F 7F 01 03 07 7F
-        HEX 7F 7F 7F 7F 7F 07 0F 1F
-        HEX 7F 7F 7F 7F 7F 7F 1F 3F
-        HEX 7F 7F 7F 7F 7F 7F 7F 00
-        HEX 01 03 7F 7F 7F 7F 7F 7F
+        HEX 60
+SPRITE_TABLE_C_DATA_5:
+        ; SPRITE_TABLE_C frame 5 ($21=33 bytes, W=2 H=$0B) at $B3F1.
+        HEX 00 2B 00 01 2A 60 01 2A
+        HEX 60 05 2A 58 05 2A 58 05
+        HEX 6A 58 05 6A 58 05 3A 58
+        HEX 01 2A 60 01 2A 60 00 2B
+        HEX 00
+SPRITE_TABLE_C_DATA_6:
+        ; SPRITE_TABLE_C frame 6 ($21=33 bytes, W=2 H=$0B) at $B412.
+        HEX 01 2C 00 05 2B 00 05 2B
+        HEX 00 15 2A 60 15 2A 60 17
+        HEX 2A 60 17 2A 60 15 6A 60
+        HEX 05 2B 00 05 2B 00 01 2C
+        HEX 00
+SCROLL_EDGE_L_SPR_DATA_0:
+        ; SCROLL_EDGE_L_SPR frame 0 (9 bytes, W=2 H=3) at $B433.
+        HEX 00 00 01 3F 7F 7F 7F 7F
+        HEX 7F
+SCROLL_EDGE_L_SPR_DATA_1:
+        ; SCROLL_EDGE_L_SPR frame 1 (9 bytes, W=2 H=3) at $B43C.
+        HEX 01 03 07 7F 7F 7F 7F 7F
+        HEX 7F
+SCROLL_EDGE_L_SPR_DATA_2:
+        ; SCROLL_EDGE_L_SPR frame 2 (9 bytes, W=2 H=3) at $B445.
+        HEX 07 0F 1F 7F 7F 7F 7F 7F
+        HEX 7F
+SCROLL_EDGE_L_SPR_DATA_3:
+        ; SCROLL_EDGE_L_SPR frame 3 (9 bytes, W=2 H=3) at $B44E.
+        HEX 1F 3F 7F 7F 7F 7F 7F 7F
+        HEX 7F
+SCROLL_EDGE_L_SPR_DATA_4:
+        ; SCROLL_EDGE_L_SPR frame 4 (9 bytes, W=2 H=3) at $B457.
+        HEX 00 01 03 7F 7F 7F 7F 7F
+        HEX 7F
+SCROLL_EDGE_L_SPR_DATA_5:
+        ; SCROLL_EDGE_L_SPR frame 5 (9 bytes, W=2 H=3) at $B460.
         HEX 03 07 0F 7F 7F 7F 7F 7F
-        HEX 7F 0F 1F 3F 7F 7F 7F 7F
-        HEX 7F 7F 7F 7F 7F 7F 7F 7F
-        HEX 7C 7E 7F 7F 7F 7F 7F 7F
-        HEX 7F 70 78 7C 7F 7F 7F 7F
-        HEX 7F 7F 40 60 70 7F 7F 7F
-        HEX 7E 7F 7F 00 00 40 7F 7F
-        HEX 7F 7F 7F 7F 78 7C 7E 7F
-        HEX 7F 7F 7F 7F 7F 60 70 78
+        HEX 7F
+SCROLL_EDGE_L_SPR_DATA_6:
+        ; SCROLL_EDGE_L_SPR frame 6 (9 bytes, W=2 H=3) at $B469.
+        HEX 0F 1F 3F 7F 7F 7F 7F 7F
+        HEX 7F
+SCROLL_EDGE_R_SPR_DATA_0:
+        ; SCROLL_EDGE_R_SPR frame 0 (9 bytes, W=2 H=3) at $B472.
+        HEX 7F 7F 7F 7F 7F 7F 7C 7E
+        HEX 7F
+SCROLL_EDGE_R_SPR_DATA_1:
+        ; SCROLL_EDGE_R_SPR frame 1 (9 bytes, W=2 H=3) at $B47B.
+        HEX 7F 7F 7F 7F 7F 7F 70 78
+        HEX 7C
+SCROLL_EDGE_R_SPR_DATA_2:
+        ; SCROLL_EDGE_R_SPR frame 2 (9 bytes, W=2 H=3) at $B484.
+        HEX 7F 7F 7F 7F 7F 7F 40 60
+        HEX 70
+SCROLL_EDGE_R_SPR_DATA_3:
+        ; SCROLL_EDGE_R_SPR frame 3 (9 bytes, W=2 H=3) at $B48D.
+        HEX 7F 7F 7F 7E 7F 7F 00 00
+        HEX 40
+SCROLL_EDGE_R_SPR_DATA_4:
+        ; SCROLL_EDGE_R_SPR frame 4 (9 bytes, W=2 H=3) at $B496.
+        HEX 7F 7F 7F 7F 7F 7F 78 7C
+        HEX 7E
+SCROLL_EDGE_R_SPR_DATA_5:
+        ; SCROLL_EDGE_R_SPR frame 5 (9 bytes, W=2 H=3) at $B49F.
+        HEX 7F 7F 7F 7F 7F 7F 60 70
+        HEX 78
+SCROLL_EDGE_R_SPR_DATA_6:
+        ; SCROLL_EDGE_R_SPR frame 6 (9 bytes, W=2 H=3) at $B4A8.
         HEX 7F 7F 7F 7F 7F 7F 00 40
         HEX 60
-@ %def PLAYER_GRID_SPR_A_DATA_5 PLAYER_GRID_SPR_A_DATA_6 ENEMY_C_TAIL_DATA_0 ENEMY_C_TAIL_DATA_1 ENEMY_C_TAIL_DATA_2 ENEMY_C_TAIL_DATA_3 ENEMY_C_TAIL_DATA_4 ENEMY_C_TAIL_DATA_5 ENEMY_C_TAIL_DATA_6 ENEMY_C_TAIL_DATA_7 ENEMY_C_TAIL_DATA_8 PLAYER_GRID_SPR_B_DATA_0 PLAYER_GRID_SPR_B_DATA_1 PLAYER_GRID_SPR_B_DATA_2 PLAYER_GRID_SPR_B_DATA_3 PLAYER_GRID_SPR_B_DATA_4 PLAYER_GRID_SPR_B_DATA_5 PLAYER_GRID_SPR_B_DATA_6 ENEMY_C_PUFF_DATA ENEMY_B_PUFF_DATA SPECIAL_PEEK_DATA
+@ %def PLAYER_GRID_SPR_A_DATA_5 PLAYER_GRID_SPR_A_DATA_6 ENEMY_C_TAIL_DATA_0 ENEMY_C_TAIL_DATA_1 ENEMY_C_TAIL_DATA_2 ENEMY_C_TAIL_DATA_3 ENEMY_C_TAIL_DATA_4 ENEMY_C_TAIL_DATA_5 ENEMY_C_TAIL_DATA_6 ENEMY_C_TAIL_DATA_7 ENEMY_C_TAIL_DATA_8 PLAYER_GRID_SPR_B_DATA_0 PLAYER_GRID_SPR_B_DATA_1 PLAYER_GRID_SPR_B_DATA_2 PLAYER_GRID_SPR_B_DATA_3 PLAYER_GRID_SPR_B_DATA_4 PLAYER_GRID_SPR_B_DATA_5 PLAYER_GRID_SPR_B_DATA_6 ENEMY_C_PUFF_DATA ENEMY_B_PUFF_DATA SPECIAL_PEEK_DATA FLOOR_ENEMY_SPR_S3_DATA_0 FLOOR_ENEMY_SPR_S3_DATA_1 FLOOR_ENEMY_SPR_S3_DATA_2 FLOOR_ENEMY_SPR_S3_DATA_3 FLOOR_ENEMY_SPR_S3_DATA_4 FLOOR_ENEMY_SPR_S3_DATA_5 FLOOR_ENEMY_SPR_S3_DATA_6 FLOOR_ENEMY_SPR_S2_DATA_0 FLOOR_ENEMY_SPR_S2_DATA_1 FLOOR_ENEMY_SPR_S2_DATA_2 FLOOR_ENEMY_SPR_S2_DATA_3 FLOOR_ENEMY_SPR_S2_DATA_4 FLOOR_ENEMY_SPR_S2_DATA_5 FLOOR_ENEMY_SPR_S2_DATA_6 FLOOR_ENEMY_SPR_S1_DATA_0 FLOOR_ENEMY_SPR_S1_DATA_1 FLOOR_ENEMY_SPR_S1_DATA_2 FLOOR_ENEMY_SPR_S1_DATA_3 FLOOR_ENEMY_SPR_S1_DATA_4 FLOOR_ENEMY_SPR_S1_DATA_5 FLOOR_ENEMY_SPR_S1_DATA_6 FLOOR_ENEMY_SPR_S0_DATA_0 FLOOR_ENEMY_SPR_S0_DATA_1 FLOOR_ENEMY_SPR_S0_DATA_2 FLOOR_ENEMY_SPR_S0_DATA_3 FLOOR_ENEMY_SPR_S0_DATA_4 FLOOR_ENEMY_SPR_S0_DATA_5 FLOOR_ENEMY_SPR_S0_DATA_6 SPECIAL_BODY_POSE0_DATA_0 SPECIAL_BODY_POSE0_DATA_1 SPECIAL_BODY_POSE0_DATA_2 SPECIAL_BODY_POSE0_DATA_3 SPECIAL_BODY_POSE0_DATA_4 SPECIAL_BODY_POSE0_DATA_5 SPECIAL_BODY_POSE0_DATA_6 SPECIAL_BODY_POSE1_DATA_0 SPECIAL_BODY_POSE1_DATA_1 SPECIAL_BODY_POSE1_DATA_2 SPECIAL_BODY_POSE1_DATA_3 SPECIAL_BODY_POSE1_DATA_4 SPECIAL_BODY_POSE1_DATA_5 SPECIAL_BODY_POSE1_DATA_6 SPECIAL_BODY_POSE2_DATA_0 SPECIAL_BODY_POSE2_DATA_1 SPECIAL_BODY_POSE2_DATA_2 SPECIAL_BODY_POSE2_DATA_3 SPECIAL_BODY_POSE2_DATA_4 SPECIAL_BODY_POSE2_DATA_5 SPECIAL_BODY_POSE2_DATA_6 SPECIAL_BODY_POSE3_DATA_0 SPECIAL_BODY_POSE3_DATA_1 SPECIAL_BODY_POSE3_DATA_2 SPECIAL_BODY_POSE3_DATA_3 SPECIAL_BODY_POSE3_DATA_4 SPECIAL_BODY_POSE3_DATA_5 SPECIAL_BODY_POSE3_DATA_6 SPECIAL_GRID_SPR_A_DATA_0 SPECIAL_GRID_SPR_A_DATA_1 SPECIAL_GRID_SPR_A_DATA_2 SPECIAL_GRID_SPR_A_DATA_3 SPECIAL_GRID_SPR_A_DATA_4 SPECIAL_GRID_SPR_A_DATA_5 SPECIAL_GRID_SPR_A_DATA_6 SPECIAL_GRID_SPR_B_DATA_0 SPECIAL_GRID_SPR_B_DATA_1 SPECIAL_GRID_SPR_B_DATA_2 SPECIAL_GRID_SPR_B_DATA_3 SPECIAL_GRID_SPR_B_DATA_4 SPECIAL_GRID_SPR_B_DATA_5 SPECIAL_GRID_SPR_B_DATA_6 COMPANION_NEG_POSE1_DATA_0 COMPANION_NEG_POSE1_DATA_1 COMPANION_NEG_POSE1_DATA_2 COMPANION_NEG_POSE1_DATA_3 COMPANION_NEG_POSE1_DATA_4 COMPANION_NEG_POSE1_DATA_5 COMPANION_NEG_POSE1_DATA_6 COMPANION_NEG_POSE2_DATA_0 COMPANION_NEG_POSE2_DATA_1 COMPANION_NEG_POSE2_DATA_2 COMPANION_NEG_POSE2_DATA_3 COMPANION_NEG_POSE2_DATA_4 COMPANION_NEG_POSE2_DATA_5 COMPANION_NEG_POSE2_DATA_6 COMPANION_NEG_POSE3_DATA_0 COMPANION_NEG_POSE3_DATA_1 COMPANION_NEG_POSE3_DATA_2 COMPANION_NEG_POSE3_DATA_3 COMPANION_NEG_POSE3_DATA_4 COMPANION_NEG_POSE3_DATA_5 COMPANION_NEG_POSE3_DATA_6 COMPANION_POS_POSE1_DATA_0 COMPANION_POS_POSE1_DATA_1 COMPANION_POS_POSE1_DATA_2 COMPANION_POS_POSE1_DATA_3 COMPANION_POS_POSE1_DATA_4 COMPANION_POS_POSE1_DATA_5 COMPANION_POS_POSE1_DATA_6 COMPANION_POS_POSE2_DATA_0 COMPANION_POS_POSE2_DATA_1 COMPANION_POS_POSE2_DATA_2 COMPANION_POS_POSE2_DATA_3 COMPANION_POS_POSE2_DATA_4 COMPANION_POS_POSE2_DATA_5 COMPANION_POS_POSE2_DATA_6 COMPANION_POS_POSE3_DATA_0 COMPANION_POS_POSE3_DATA_1 COMPANION_POS_POSE3_DATA_2 COMPANION_POS_POSE3_DATA_3 COMPANION_POS_POSE3_DATA_4 COMPANION_POS_POSE3_DATA_5 COMPANION_POS_POSE3_DATA_6 COMPANION_GRID_SPR_DATA_0 COMPANION_GRID_SPR_DATA_1 COMPANION_GRID_SPR_DATA_2 COMPANION_GRID_SPR_DATA_3 COMPANION_GRID_SPR_DATA_4 COMPANION_GRID_SPR_DATA_5 COMPANION_GRID_SPR_DATA_6 HUD_STRIP_SRC_DATA ENTITY_GRID_SPR_DATA_0 ENTITY_GRID_SPR_DATA_1 ENTITY_GRID_SPR_DATA_2 ENTITY_GRID_SPR_DATA_3 ENTITY_GRID_SPR_DATA_4 ENTITY_GRID_SPR_DATA_5 ENTITY_GRID_SPR_DATA_6 RESCUE_SPR_NEG_END_DATA_0 RESCUE_SPR_NEG_END_DATA_1 RESCUE_SPR_NEG_END_DATA_2 RESCUE_SPR_NEG_END_DATA_3 RESCUE_SPR_NEG_END_DATA_4 RESCUE_SPR_NEG_END_DATA_5 RESCUE_SPR_NEG_END_DATA_6 RESCUE_SPR_NEG_MID_DATA_0 RESCUE_SPR_NEG_MID_DATA_1 RESCUE_SPR_NEG_MID_DATA_2 RESCUE_SPR_NEG_MID_DATA_3 RESCUE_SPR_NEG_MID_DATA_4 RESCUE_SPR_NEG_MID_DATA_5 RESCUE_SPR_NEG_MID_DATA_6 RESCUE_SPR_POS_END_DATA_0 RESCUE_SPR_POS_END_DATA_1 RESCUE_SPR_POS_END_DATA_2 RESCUE_SPR_POS_END_DATA_3 RESCUE_SPR_POS_END_DATA_4 RESCUE_SPR_POS_END_DATA_5 RESCUE_SPR_POS_END_DATA_6 RESCUE_SPR_POS_MID_DATA_0 RESCUE_SPR_POS_MID_DATA_1 RESCUE_SPR_POS_MID_DATA_2 RESCUE_SPR_POS_MID_DATA_3 RESCUE_SPR_POS_MID_DATA_4 RESCUE_SPR_POS_MID_DATA_5 RESCUE_SPR_POS_MID_DATA_6 PROJ_SPR_R_DATA_0 PROJ_SPR_R_DATA_1 PROJ_SPR_R_DATA_2 PROJ_SPR_R_DATA_3 PROJ_SPR_R_DATA_4 PROJ_SPR_R_DATA_5 PROJ_SPR_R_DATA_6 PROJ_SPR_R_DATA_7_RESIDUE SPRITE_POINTER_TABLES_TAIL PROJ_SPR_L_DATA_0 PROJ_SPR_L_DATA_1 PROJ_SPR_L_DATA_2 PROJ_SPR_L_DATA_3 PROJ_SPR_L_DATA_4 PROJ_SPR_L_DATA_5 PROJ_SPR_L_DATA_6 SPECIAL_PUFF_DATA_0 SPECIAL_PUFF_DATA_1 SPECIAL_PUFF_DATA_2 SPECIAL_PUFF_DATA_3 SPECIAL_PUFF_DATA_4 SPECIAL_PUFF_DATA_5 SPECIAL_PUFF_DATA_6 SPRITE_TABLE_C_DATA_0 SPRITE_TABLE_C_DATA_1 SPRITE_TABLE_C_DATA_2 SPRITE_TABLE_C_DATA_3 SPRITE_TABLE_C_DATA_4 SPRITE_TABLE_C_DATA_5 SPRITE_TABLE_C_DATA_6 SCROLL_EDGE_L_SPR_DATA_0 SCROLL_EDGE_L_SPR_DATA_1 SCROLL_EDGE_L_SPR_DATA_2 SCROLL_EDGE_L_SPR_DATA_3 SCROLL_EDGE_L_SPR_DATA_4 SCROLL_EDGE_L_SPR_DATA_5 SCROLL_EDGE_L_SPR_DATA_6 SCROLL_EDGE_R_SPR_DATA_0 SCROLL_EDGE_R_SPR_DATA_1 SCROLL_EDGE_R_SPR_DATA_2 SCROLL_EDGE_R_SPR_DATA_3 SCROLL_EDGE_R_SPR_DATA_4 SCROLL_EDGE_R_SPR_DATA_5 SCROLL_EDGE_R_SPR_DATA_6
 
 <<digit tile data>>=
 

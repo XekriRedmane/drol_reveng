@@ -63,3 +63,4 @@
 - [WALL_L_SPR + WALL_SPR_DATA decomposition](drol-wall-spr-decomposition.md) — 7+7 wall frames $7DA4-$854B share pillar format; RESIDUE_1/_2 bracket the decomposed span; green-palette (0..3) vs purple (4..6)
 - [SPRITE_PIXEL_DATA_RESIDUE_2 decomposition](drol-sprite-pixel-data-residue-2.md) — $854C-$8BFF split into PLAYER_SPR_IDLE/ACTIVE_DATA_0..8, HIT_SPR_POS_DATA_0..6, PLAYER_GRID_SPR_A_DATA_0..4; gotcha: per-frame leading/trailing zero pads, not uniform padding
 - [ENEMY_C_TAIL unused frames 7-8](drol-enemy-c-tail-residue.md) — 9-entry pointer table; ENEMY_C_DRAW only indexes 0..6; frames 7/8 are labelled residue at $8C72/$8C79
+- [Level-1 $8CF5-$B4B0 sprite-data blob decomp](drol-level1-sprite-blob-decomp.md) — 10172-byte monolithic blob split into ~200 labeled sub-chunks (FLOOR_ENEMY/SPECIAL_BODY/COMPANION/HUD_STRIP/ENTITY_GRID/RESCUE/PROJ_SPR/SPECIAL_PUFF/SPRITE_TABLE_C/SCROLL_EDGE families)

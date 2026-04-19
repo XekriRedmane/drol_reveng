@@ -3876,9 +3876,10 @@ SMC_PAGE_SWITCH = *+1
 \section{Pseudo-random number generator}
 
 [[PRNG]] generates an 8-bit pseudo-random value using a
-two-byte state in ZP~[[$1F]] and~[[$5F]]. The algorithm shifts [[$1F]] right one
-bit, rotates the result into [[$5F]], XORs with the old [[$1F]], then swaps
-the two state bytes. The result is returned in~A.
+two-byte state in [[ZP_ANIM_COUNTER]] and [[ZP_PRNG_A]]. The
+algorithm shifts [[ZP_ANIM_COUNTER]] right one bit, rotates the
+result into [[ZP_PRNG_A]], XORs with the old [[ZP_ANIM_COUNTER]],
+then swaps the two state bytes. The result is returned in~A.
 
 <<prng defines>>=
 
@@ -3977,14 +3978,15 @@ level-state flag ([[$5E]]) is also drawn as two digits.
 
 Two helper sub-entries exist:
 \begin{itemize}
-\item [[$1150]] ([[DRAW_DIGIT_SHORT]]) sets width/height/row to 1/6/[[$0C]]
+\item [[DRAW_DIGIT_SHORT]] sets width/height/row to 1/6/[[$0C]]
   before falling through.
-\item [[$115C]] ([[DRAW_DIGIT]]) looks up digit tile data from tables at
-  [[$AFF6]] (low) and [[$B076]] (high), stores it at [[SMC_TILE_SRC_LO]]/[[HI]]
-  ([[$6662]]/[[$6663]]), and calls [[DRAW_SPRITE_OPAQUE]].
+\item [[DRAW_DIGIT]] looks up digit tile data from tables at
+  [[DIGIT_TILE_LO]] (low) and [[DIGIT_TILE_HI]] (high), stores it at
+  [[SMC_TILE_SRC_LO]]/[[SMC_TILE_SRC_HI]], and calls
+  [[DRAW_SPRITE_OPAQUE]].
 \end{itemize}
 
-The digit positions (column values stored in~[[$5D]]) are:
+The digit positions (column values stored in~[[ZP_SPRITE_X]]) are:
 2, 4, 6, 8, and~10 for the five nibbles of D1--D3; columns~6 and~4
 for the level-state digits.
 
@@ -4376,9 +4378,10 @@ INIT_LEVEL_STATE:
 \section{Score add}
 
 [[SCORE_ADD]] adds a BCD value to the 3-byte score. The
-addend's low byte is in ZP~[[$1A]] and high byte in ZP~[[$1B]]; these are added
-to [[$D3]] and [[$D2]] respectively, with carry propagating into [[$D1]]. All
-arithmetic is performed in BCD mode.
+addend's low byte is in [[ZP_SCORE_ADD_LO]] and high byte in
+[[ZP_SCORE_ADD_HI]]; these are added to [[ZP_SCORE_LO]] and
+[[ZP_SCORE_MID]] respectively, with carry propagating into
+[[ZP_SCORE_HI]]. All arithmetic is performed in BCD mode.
 
 <<score add defines>>=
 
@@ -4444,10 +4447,10 @@ before jumping into [[RESUME_GAMEPLAY_SMC]].
 \paragraph{What [[RESUME_GAMEPLAY_SMC]] actually does.}  Despite its address landing
 inside the [[SPECIAL_TICK]]--[[DIFFICULTY_UPDATE]] game-engine region, [[RESUME_GAMEPLAY_SMC]]
 is a short 13-byte routine that re-patches main-loop self-modifying
-bytes: [[SMC_SR_YSRC]] \gets [[$06]] (i.e.\ the operand of
-[[LDA ZP_PLAYER_COL]]), [[SMC_INPUT]] \gets [[$20]] (JSR opcode),
-[[SMC_RENDER]] \gets [[$20]], and [[SMC_SR_HEIGHT]]
-\gets [[$13]] (default sprite height).  These are the exact three/four
+bytes: [[SMC_SR_YSRC]] $\gets$ [[$06]] (i.e.\ the operand of
+[[LDA ZP_PLAYER_COL]]), [[SMC_INPUT]] $\gets$ [[$20]] (JSR opcode),
+[[SMC_RENDER]] $\gets$ [[$20]], and [[SMC_SR_HEIGHT]]
+$\gets$ [[$13]] (default sprite height).  These are the exact three/four
 SMC slots [[LEVEL_INTRO_TICK]] inlines the stores to when it flips
 from intro to gameplay; the only difference is that
 [[RESUME_GAMEPLAY_SMC]] is a callable entry used by cold-start and
@@ -4790,8 +4793,8 @@ not re-enter attract animation callbacks.
 
 If the ``extras'' stash [[ZP_EXTRA_LIVES]] is positive, the
 handler draws one extra-life sprite, polls for input, and calls
-[[MAIN_LOOP]] once.  [[MAIN_LOOP]] itself terminates via [[JMP
-LIFE_LOST_HANDLER]] (not RTS), so each ``iteration'' of the extras
+[[MAIN_LOOP]] once.  [[MAIN_LOOP]] itself terminates via
+[[JMP LIFE_LOST_HANDLER]] (not RTS), so each ``iteration'' of the extras
 animation is a fresh entry from [[MAIN_LOOP]]'s BCD-underflow branch with a slowly-growing stack;
 the JSR/JMP loop structure here is only a local fallback in case
 [[MAIN_LOOP]] ever did return normally.
@@ -5542,17 +5545,54 @@ each table's semantic role):
   pitch table.
 \item [[ROW_COPY_BUFFER]] ([[$024C]]) --- 40 bytes, title/restore
   wipe pattern consumed by [[SCREEN_ROW_COPY]].
-\item [[$0274]]--[[$02B4]] --- miscellaneous initial seeds for
-  further subsystems; not yet decomposed into labelled sub-tables.
-  The sub-range [[$029A]]--[[$02B4]] inside this span is consumed by
-  [[INIT_LEVEL_STATE]] as [[LVL_INIT_HIT_Y]] and the [[LVL_INIT_ENTITY]]
-  block.
+\item [[PAGE2_DEAD_ZEROS]] ([[$0274]]) --- 13 bytes of [[$00]]; tail
+  of the [[ROW_COPY_BUFFER]] sector.
+\item [[PAGE2_DEAD_DITHER]] ([[$0281]]) --- 10 bytes of the
+  [[$D4]]/[[$82]] hi-res stripe pattern repeated five times;
+  an alternate-look wipe/dither sample that the shipped game never
+  reads.
+\item [[PAGE2_DEAD_SEP]] ([[$028B]]) --- one [[$2A]] byte; looks like
+  a record-terminator between [[PAGE2_DEAD_DITHER]] and the 14-byte
+  record pair that follows.
+\item [[PAGE2_DEAD_RECORDS]] ([[$028C]]) --- 14 bytes arranged as two
+  7-byte records
+  ([[$00]]\,[[$07]]\,[[$00]]\,[[$40]]\,[[$03]]\,[[$00]]\,[[$60]]
+  then [[$41]]\,[[$02]]\,[[$07]]\,[[$00]]\,[[$40]]\,[[$03]]\,[[$00]]).
+  Shape matches a pre-release entity-init record
+  (state / col-lo / col-hi / row-hi / row-lo / ? / ?) but nothing
+  in any shipped binary consumes them.
+\item [[LVL_INIT_HIT_Y]] ([[$029A]]) --- 2-byte Y-window pair copied
+  into [[ZP_HIT_Y_OFFSET]] / [[ZP_HIT_Y_SPAN]] by [[INIT_LEVEL_STATE]].
+\item [[LVL_INIT_ENTITY]] ([[$029C]]) --- 25-byte entity block copied
+  into [[ZP_ENTITY_BLOCK]] ([[$D4]]--[[$EC]]) by [[INIT_LEVEL_STATE]].
+  Seeds the three enemy slots and attract-mode entity Y positions.
+\item [[LVL_INIT_SPRITE_HEAD]] ([[$02B5]]) --- 5 bytes, the head of
+  the 45-byte [[LVL_INIT_SPRITE]] block copied into
+  [[ZP_SPRITE_BLOCK]] by [[INIT_LEVEL_STATE]].
 \item [[LVL_INIT_ENTITY_HIT_STATE]] ([[$02BA]]) --- 12 bytes of [[$FF]]
   forming the [[LVL_INIT_SPRITE]]\([[$05]]..[[$10]]\) seed for the
   12-slot [[ENTITY_HIT_STATE]] array at ZP [[$8D]]--[[$98]].
   Seeds every hit-entity slot to [[$FF]] (``inactive'') on every level
   restart.
 \end{itemize}
+
+\paragraph{Dead-residue span [[$0274]]--[[$0299]].}  The 38~bytes
+between [[ROW_COPY_BUFFER]] and [[LVL_INIT_HIT_Y]] split into four
+labeled sub-blocks: [[PAGE2_DEAD_ZEROS]] / [[PAGE2_DEAD_DITHER]] /
+[[PAGE2_DEAD_SEP]] / [[PAGE2_DEAD_RECORDS]].  An exhaustive scan of
+[[boot1.bin]], [[loader.bin]], [[rwts.bin]], [[drol.bin]] and
+[[level1.bin]] finds no absolute opcode (LDA/STA/CMP/BIT/... in any
+addressing mode) targeting any byte in this span; [[INIT_LEVEL_STATE]]
+starts reading at [[$029A]] (just past the span).  The same 38 bytes
+in [[reference/level1.bin]] (built by replaying the loader's phase-0
+track-5 read) are all [[$00]], whereas in [[reference/drol.bin]] (the
+cold-start image) they carry the non-zero pattern shown in the
+sub-chunks.  Two readings are consistent with both observations: the
+bytes are (i)~stale source-file residue from the sector image that
+ships on track~1 but never gets re-loaded, and (ii)~zeroed on the
+first per-level swap.  Either way the bytes are dead as shipped ---
+the non-zero pattern only exists at cold boot and vanishes after the
+first level transition.
 
 <<row copy data>>=
 
@@ -5594,32 +5634,100 @@ each table's semantic role):
         HEX 2B 55 2A 55 2A 55 2A 5D
         HEX 2A 55 2A 55 2E 55 2A 57
         HEX 6A 55 6B 7D
-        ; --- $0274-$0299: miscellaneous initial data (not yet per-consumer RE'd).
-        ;     Not copied to ZP by INIT_LEVEL_STATE (which starts reading at $029A).
-        HEX 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 D4 82 D4 82 D4 82 D4
-        HEX 82 D4 82 2A 00 07 00 40
-        HEX 03 00 60 41 02 07 00 40
-        HEX 03 00
-        ; --- LVL_INIT_HIT_Y ($029A-$029B, 2 bytes): Y-window pair copied
-        ;     into ZP_HIT_Y_OFFSET/ZP_HIT_Y_SPAN by INIT_LEVEL_STATE.
+@
+
+<<page2 dead zeros>>=
+
+        ORG $0274
+PAGE2_DEAD_ZEROS:
+        ; 13 bytes of $00 ($0274-$0280).  Tail of the sector image that
+        ; ships on track 1; not read by any shipped routine, and
+        ; overwritten with $00 by the first level-swap phase-0 reload.
+        DS 13,$00
+@ %def PAGE2_DEAD_ZEROS
+
+<<page2 dead dither>>=
+
+        ORG $0281
+PAGE2_DEAD_DITHER:
+        ; 10 bytes of $D4/$82 hi-res stripe pattern ($0281-$028A).
+        ; $D4 encodes pixels "..#.#.#" and $82 encodes ".#....." in the
+        ; 7-dot-per-byte hi-res cell (green palette, bit 7 set); the
+        ; 5-time repeat looks like a vertical sprite strip or an
+        ; alternate title-wipe dither.  No runtime reference; overwritten
+        ; to $00 on the first level swap (see level1.bin).
+        HEX D4 82 D4 82 D4 82 D4 82
+        HEX D4 82
+@ %def PAGE2_DEAD_DITHER
+
+<<page2 dead sep>>=
+
+        ORG $028B
+PAGE2_DEAD_SEP:
+        ; Single $2A separator byte ($028B) between PAGE2_DEAD_DITHER
+        ; and PAGE2_DEAD_RECORDS.  $2A is the shared dither-pair byte
+        ; used by TEXT_STRIP_SRC at $0300, possibly a record-boundary
+        ; marker; no runtime reference.
+        HEX 2A
+@ %def PAGE2_DEAD_SEP
+
+<<page2 dead records>>=
+
+        ORG $028C
+PAGE2_DEAD_RECORDS:
+        ; Two 7-byte records ($028C-$0299, 14 bytes) that look like a
+        ; pre-release entity-init payload: state / col-lo / col-hi /
+        ; row-hi / row-lo / sprite-w / anim-seed or similar.
+        ;   Record 0:  00 07 00 40 03 00 60
+        ;   Record 1:  41 02 07 00 40 03 00
+        ; Record 1's first two bytes differ from record 0's, but the
+        ; rest of record 1 is a 5-byte shift of record 0 --- as if the
+        ; data was memmove'd during an early-draft edit and the shifted
+        ; copy never got cleaned up.  No runtime reference; overwritten
+        ; to $00 on the first level swap.
+        HEX 00 07 00 40 03 00 60
+        HEX 41 02 07 00 40 03 00
+@ %def PAGE2_DEAD_RECORDS
+
+<<lvl init hit y data>>=
+
+        ORG $029A
+LVL_INIT_HIT_Y_DATA:
+        ; LVL_INIT_HIT_Y ($029A-$029B, 2 bytes): the Y-window pair
+        ; copied into ZP_HIT_Y_OFFSET / ZP_HIT_Y_SPAN by
+        ; INIT_LEVEL_STATE.  Addressed by the LVL_INIT_HIT_Y EQU
+        ; (declared in the init-level-state defines chunk).
         HEX 0A 0F
-        ; --- LVL_INIT_ENTITY ($029C-$02B4, 25 bytes): copied into
-        ;     ZP_ENTITY_BLOCK ($D4-$EC) by INIT_LEVEL_STATE.  Seeds the
-        ;     three enemy slots (A/B/C state+pos+row) and attract-mode
-        ;     entity Y positions at ZP $E9-$EC.
+@ %def LVL_INIT_HIT_Y_DATA
+
+<<lvl init entity data>>=
+
+        ORG $029C
+LVL_INIT_ENTITY_DATA:
+        ; LVL_INIT_ENTITY ($029C-$02B4, 25 bytes): copied into
+        ; ZP_ENTITY_BLOCK ($D4-$EC) by INIT_LEVEL_STATE.  Seeds the
+        ; three enemy slots (A/B/C state+pos+row) and attract-mode
+        ; entity Y positions at ZP $E9-$EC.  Addressed by the
+        ; LVL_INIT_ENTITY EQU (declared in the init-level-state
+        ; defines chunk).
         HEX 01 3C 00 A0
         HEX 00 88 CC EE 01 3E 00 A5
         HEX 01 5A 03 80 FF 11 14 16
         HEX 18 6A 6A 6A 6A
-        ; --- LVL_INIT_SPRITE head ($02B5-$02B9, 5 bytes): first 5 bytes
-        ;     of the 45-byte block copied into ZP_SPRITE_BLOCK ($88-$B4).
-        ;     The 12-byte $FF span at $02BA-$02C5 (ENTITY_HIT_STATE seed)
-        ;     is emitted by LVL_INIT_ENTITY_HIT_STATE, and the 28-byte
-        ;     tail at $02C6-$02E1 is emitted by LVL_INIT_SPRITE_TAIL_DATA.
+@ %def LVL_INIT_ENTITY_DATA
+
+<<lvl init sprite head data>>=
+
+        ORG $02B5
+LVL_INIT_SPRITE_HEAD:
+        ; Head of LVL_INIT_SPRITE ($02B5-$02B9, 5 bytes).  First 5
+        ; bytes of the 45-byte block copied into ZP_SPRITE_BLOCK
+        ; ($88-$B4).  The 12-byte $FF span at $02BA-$02C5
+        ; (ENTITY_HIT_STATE seed) is emitted by
+        ; LVL_INIT_ENTITY_HIT_STATE, and the 28-byte tail at
+        ; $02C6-$02E1 is emitted by LVL_INIT_SPRITE_TAIL_DATA.
         HEX 01 01 01 01 00
-@
+@ %def LVL_INIT_SPRITE_HEAD
 
 \section{Playfield dither source}
 
@@ -7804,7 +7912,7 @@ keeps the stripe within the 40-column visible window.
 
 \paragraph{3-byte-per-column source, 7-frame animation.}  Each routine
 loads a 16-bit pointer from a 7-entry (Y~=~0..6) table indexed by
-[[ZP_SPRITE_XREF]] ([[$4C]]), the sub-frame pacing counter advanced by
+[[ZP_SPRITE_XREF]], the sub-frame pacing counter advanced by
 [[PLAYER_TICK_MOVE_LEFT/RIGHT]].  The resulting pointer addresses a
 9-byte sprite frame laid out as 3~consecutive bytes per column for 3
 columns, giving 7~distinct sub-pixel-shifted frames of a 3-column
@@ -11020,11 +11128,12 @@ game-code address space but serves two distinct roles:
   [[SCREEN_ROW_COPY]], [[JOYSTICK_HANDLER]], [[KEY_HANDLER_EXT]], and
   [[ROW_COPY_CLICK]]; and the vector page with [[TEXT_STRIP_SRC]]
   plus various small data tables.  After the copy, the original
-  bytes at [[$5C00]] and [[$5D00]] are no longer referenced by the
-  FIRST\_BOOT path.
+  bytes at [[STAGE_STACK]] and [[STAGE_VECTORS]] are no longer
+  referenced by the FIRST\_BOOT path.
 \item \textbf{Stable screen-wipe callback} --- the loader's
-  [[SCREEN_PRE_RESTORE]] (at [[$58A0]] in loader.bin and relocated to
-  [[$BEA0]] in the language card) calls [[JSR]] [[STAGE_STACK]]
+  [[SCREEN_PRE_RESTORE]] (at loader.bin offset [[$58A0]] before
+  relocation, live at [[SCREEN_PRE_RESTORE]] after it) calls [[JSR]]
+  [[STAGE_STACK]]
   before restoring the hi-res display.  Because the [[$0100]] stack
   page gets overwritten by 6502 stack operations during normal play,
   the [[STAGE_STACK]] copy of [[SCREEN_ROW_COPY]] is the
@@ -11607,6 +11716,15 @@ STAGE_DEAD_LDR_TRACK:
         HEX 00 60 FF
 @ %def STAGE_DEAD_LDR_TRACK
 
+<<stage dead scroll defines>>=
+
+; --- Cross-target reference: SCREEN_ADDR_TBL is defined as a label in
+; rwts.asm at $BFC0.  Both stage-dead scroll-up/down twins read
+; through this live table even though they are dead code here, so we
+; introduce a local EQU for drol.asm's assembly pass.
+SCREEN_ADDR_TBL = $BFC0         ; 32 pairs of hi-res page-2 row addresses
+@
+
 <<stage dead scroll up>>=
 
 STAGE_DEAD_SCROLL_UP_PRE:
@@ -11631,9 +11749,9 @@ STAGE_DEAD_SCROLL_UP = STAGE_DEAD_SCROLL_UP_PRE + 5
         STA $A1
         LDX #$00
 .copy_line:
-        LDA $BFC0,X                     ; SCREEN_ADDR_TBL (post-relocation, live copy)
+        LDA SCREEN_ADDR_TBL,X           ; post-relocation live table (not this chunk's local twin)
         STA $A2
-        LDA $BFC1,X
+        LDA SCREEN_ADDR_TBL+1,X
         STA $A3
         LDY #$27
 .copy_byte:
@@ -11669,9 +11787,9 @@ STAGE_DEAD_SCROLL_DN:
         STA $A1
         LDX #$3E
 .copy_line:
-        LDA $BFC0,X                     ; SCREEN_ADDR_TBL (live copy)
+        LDA SCREEN_ADDR_TBL,X           ; post-relocation live table
         STA $A2
-        LDA $BFC1,X
+        LDA SCREEN_ADDR_TBL+1,X
         STA $A3
         LDY #$27
 .copy_byte:
@@ -11988,8 +12106,8 @@ bounds:
 \paragraph{Shared tail.}  All four cases fall through to [[$624C]],
 the shared three-instruction tail that loads the wall sprite pointer
 from the level-data tables at [[WALL_SPR_LO]] (lo) and [[WALL_SPR_HI]] (hi)
-indexed by [[$4C]] (the walking-animation / X-reference slot), then
-page-gates the paired restore+blit on [[ZP_PAGE_FLAG]].
+indexed by [[ZP_SPRITE_XREF]] (the walking-animation / X-reference
+slot), then page-gates the paired restore+blit on [[ZP_PAGE_FLAG]].
 
 <<playfield refresh defines>>=
 
@@ -12151,8 +12269,9 @@ bound.
 
 \paragraph{Shared tail.}  At [[$62AC]] the routine loads the wall
 sprite pointer from the level-data tables at [[WALL_L_SPR_LO]] (lo) /
-[[WALL_L_SPR_HI]] (hi) indexed by [[$4C]], then page-gates the paired
-[[INTERLACE_RESTORE]] + [[INTERLACE_BLIT]] call on [[ZP_PAGE_FLAG]].
+[[WALL_L_SPR_HI]] (hi) indexed by [[ZP_SPRITE_XREF]], then page-gates
+the paired [[INTERLACE_RESTORE]] + [[INTERLACE_BLIT]] call on
+[[ZP_PAGE_FLAG]].
 The [[WALL_L_SPR_LO]]/[[WALL_L_SPR_HI]] table is immediately before the [[WALL_SPR_LO]]/
 [[WALL_SPR_HI]] table used by the right-wall path; the [[$07]]-byte offset
 between them suggests two adjacent animation-frame banks in the same
@@ -12357,10 +12476,10 @@ REFRESH_FLOOR_LINES:
 
 [[REFRESH_PILLARS]] is the third
 [[INTERLACE_BLIT]]-calling playfield-refresh routine.  It iterates
-through a 6-slot table at ZP [[$60]]--[[$65]] of fixed world-Y
-pillar positions; for each entry it checks whether the pillar's
-screen column ($\Delta=[\mathtt{\$60,X}]-[\mathtt{\$4A}]$) is
-on-screen (in [[$00..$2A]]) and, if so, paints a 4-column-wide
+through the 6-slot table [[PILLAR_SLOT_Y]] ([[$60]]--[[$65]]) of fixed
+world-Y pillar positions; for each entry it checks whether the pillar's
+screen column (delta~=~[[PILLAR_SLOT_Y]]$[X]$~-~[[ZP_PLAYER_Y]]) is
+on-screen (in [[$00]]..[[$2A]]) and, if so, paints a 4-column-wide
 pillar sprite centred at that column.
 
 Unlike [[REFRESH_LEFT_WALL]] and [[REFRESH_RIGHT_WALL]], this
@@ -12374,8 +12493,8 @@ background for them.
 
 \paragraph{Sprite-pointer table.}  The per-frame sprite is loaded
 from [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]]
-indexed by [[$4C]] (the walking-animation / X-reference slot, same
-as the wall routines).  Each loaded sprite is then used for
+indexed by [[ZP_SPRITE_XREF]] (the walking-animation / X-reference
+slot, same as the wall routines).  Each loaded sprite is then used for
 \emph{all six} slots in a single pass --- the loop reloads
 [[ZP_BLIT_SRC]] inside the outer per-slot gate, but the 4-column
 width produces the same artwork at each of the 6 screen columns.
@@ -12395,9 +12514,9 @@ table stride changes to [[$28]] bytes per entry starting at
 index~[[$08]]), so its decoded bytes partially overlap the next
 table and render as garbage --- in practice the walking-animation
 state machine at [[PLAYER_TICK_MOVE_LEFT]]/\texttt{\_MOVE\_RIGHT}
-clamps [[$4C]] to [[$02]]--[[$07]], which suggests index~[[$07]]
-may represent a shorter 1-column sprite variant rather than a
-genuine 4-column frame.
+clamps [[ZP_SPRITE_XREF]] to [[$02]]--[[$07]], which suggests
+index~[[$07]] may represent a shorter 1-column sprite variant rather
+than a genuine 4-column frame.
 
 \begin{figure}
 \centering
@@ -12408,19 +12527,33 @@ routines: [[PILLAR_SPR_LO]]/[[PILLAR_SPR_HI]] ([[REFRESH_PILLARS]]),
 [[WALL_R_SPR_LO]]/[[WALL_R_SPR_HI]] ([[REFRESH_RIGHT_WALL]]).  Each
 tile is a 4-column $\times$ 35-row column-major sprite decoded to
 band~0 of hi-res page~1.  Columns are the frame index stored in
-[[$4C]] (the walking-animation slot, range [[$02]]--[[$07]]).  See
-also Figure~\ref{fig:interlace-blit-demo} for how the single-band
+[[ZP_SPRITE_XREF]] (the walking-animation slot, range [[$02]]--[[$07]]).
+See also Figure~\ref{fig:interlace-blit-demo} for how the single-band
 artwork is replicated into the 3-band perspective playfield.}
 \label{fig:playfield-refresh}
 \end{figure}
 
-\paragraph{The six slots at $60$--$65$.}  ZP [[$60]]--[[$65]] are
-never written by any code in [[drol.bin]] or [[level1.bin]]; they
-are either left-over from post-boot ZP state or set by one of the
-level-data overlays during setup.  Functionally they define six
-world-Y landmark positions where the pillar sprite should appear;
-each loop iteration paints at most one pillar, and invalid slots
-(where [[$\Delta < 0$]] or [[$\Delta \ge \$2B$]]) are skipped.
+\paragraph{The six slots in [[PILLAR_SLOT_Y]].}  ZP [[$60]]--[[$65]]
+are never written by any code in [[drol.bin]] or [[level1.bin]]; they
+are either left-over from post-boot ZP state (the [[ZP_SAVE]] cold
+image) or set by one of the level-data overlays during setup.
+Functionally they define six world-Y landmark positions where the
+pillar sprite should appear; each loop iteration paints at most one
+pillar, and invalid slots (where $\Delta < 0$ or $\Delta \ge$
+[[$2B]]) are skipped.
+
+<<refresh pillars defines>>=
+
+; --- Landmark-pillar slot table (ZP $60-$65, 6 bytes) ---
+; Six world-Y landmark positions where REFRESH_PILLARS paints its
+; 4-column pillar sprite.  Read-only from the engine's point of view ---
+; the live drol.bin / level1.bin binaries never write these slots.  The
+; resident values (inherited from the loader's cold-start ZP image at
+; ZP_SAVE) place the landmarks in the playfield frame.  REFRESH_PILLARS
+; reads each slot, subtracts ZP_PLAYER_Y to get the screen column, and
+; paints the pillar sprite there if the column is in $00..$2A.
+PILLAR_SLOT_Y   = $60           ; 6-byte landmark world-Y slots (read-only)
+@ %def PILLAR_SLOT_Y
 
 <<refresh pillars>>=
 
@@ -12436,32 +12569,32 @@ REFRESH_PILLARS:
         ; drawing page.
         ;
         ; Inputs:
-        ;   ZP_PLAYER_Y --- player world-Y.
-        ;   ZP_PAGE_FLAG --- drawing-page selector (BMI = page 2).
-        ;   $4C                --- sprite-pointer index.
-        ;   $60..$65           --- 6 world-Y landmark positions.
-        ;   PILLAR_SPR_LO/HI --- sprite-pointer tables.
+        ;   ZP_PLAYER_Y       --- player world-Y.
+        ;   ZP_PAGE_FLAG      --- drawing-page selector (BMI = page 2).
+        ;   ZP_SPRITE_XREF    --- sprite-pointer index.
+        ;   PILLAR_SLOT_Y[0..5] --- 6 world-Y landmark positions.
+        ;   PILLAR_SPR_LO/HI    --- sprite-pointer tables.
         ;
         ; Behavior:
         ;   X := 5; loop:
-        ;     delta := [$60,X] - ZP_PLAYER_Y
+        ;     delta := PILLAR_SLOT_Y[X] - ZP_PLAYER_Y
         ;     if delta < 0 or delta >= $2B, skip paint.
         ;     else store delta as ZP_BLIT_X_START, set
         ;         ZP_BLIT_X_END := delta - 4 (4-column-wide paint),
-        ;         save X in ZP_DIFF_TMP, load sprite pointer from
-        ;         $7500/$7600[$4C] into ZP_BLIT_SRC, BIT ZP_PAGE_FLAG,
-        ;         JSR INTERLACE_BLIT_P1 or P2, reload X from ZP_DIFF_TMP.
+        ;         save X in ZP_DRAW_LOOP_IDX, load sprite pointer from
+        ;         PILLAR_SPR_LO/HI[ZP_SPRITE_XREF] into ZP_BLIT_SRC,
+        ;         BIT ZP_PAGE_FLAG, JSR INTERLACE_BLIT_P1 or P2, reload X.
         ;     X := X - 1; if X >= 0, loop.
         ;
         ; Modifies:
         ;   ZP_BLIT_X_START, ZP_BLIT_X_END,
-        ;   ZP_BLIT_SRC ($FE/$FF), $5C (loop-index save),
+        ;   ZP_BLIT_SRC, ZP_DRAW_LOOP_IDX,
         ;   hi-res page 1/2 framebuffer (via INTERLACE_BLIT_P*).
         ; Clobbers: A, X, Y
 
         LDX #$05                        ; start at top slot
 .slot_loop:
-        LDA $60,X                       ; world-Y of pillar slot X
+        LDA PILLAR_SLOT_Y,X             ; world-Y of pillar slot X
         SEC
         SBC ZP_PLAYER_Y                 ; A = world-Y - player-Y
         BCC .next                       ; slot behind player -> skip
@@ -12530,9 +12663,9 @@ inverted variant).  Positive state values select the sprite pointer
 table pair [[HIT_SPR_POS_LO]]/[[HIT_SPR_POS_HI]] and negative values
 select [[HIT_SPR_NEG_LO]]/[[HIT_SPR_NEG_HI]].  Both
 pointer pairs live in the swappable level-data region and are indexed
-by [[ZP_SPRITE_XREF]] ([[$4C]], the 0..7 walking-frame index shared
+by [[ZP_SPRITE_XREF]] (the 0..7 walking-frame index shared
 with the other playfield-refresh routines).  The loaded pointer is
-written directly into [[SMC_TILE_SRC_LO]]/[[HI]] ([[$6662]]/[[$6663]])
+written directly into [[SMC_TILE_SRC_LO]]/[[SMC_TILE_SRC_HI]]
 --- the self-modifying source operand inside
 [[DRAW_SPRITE_OPAQUE]].
 
@@ -12594,7 +12727,7 @@ REFRESH_HIT_ENTITIES:
         ;     skip if delta < 0 or delta >= $2F
         ;     ZP_SPRITE_X := delta; ZP_SPRITE_W := 7; ZP_SPRITE_H := 5
         ;     pick HIT_SPR_POS/NEG pair by ENTITY_HIT_STATE,X sign
-        ;     patch SMC_TILE_SRC_LO/HI at $6662/$6663
+        ;     patch SMC_TILE_SRC_LO/SMC_TILE_SRC_HI inside DRAW_SPRITE_OPAQUE
         ;     ZP_SPRITE_Y := ENTITY_HIT_ROW,X
         ;     JSR DRAW_SPRITE_OPAQUE
         ;
@@ -13201,7 +13334,7 @@ PLAYER_MOVE_TICK:
 [[DRAW_PLAYER]] is the main-loop routine that draws the player
 character onto the hidden hi-res page every frame.  It is the
 [[JSR SPRITE_RENDER]] slot in [[MAIN_LOOP]] --- the
-[[SMC_RENDER]] self-modifying byte at [[$67EF]] is toggled between
+[[SMC_RENDER]] self-modifying byte is toggled between
 \texttt{JSR} ([[$20]]) and \texttt{BIT} ([[$2C]]) to enable/disable the call
 during attract mode and level transitions.  Despite being called from
 the \emph{main loop} rather than from [[DRAW_ENTITIES]], [[DRAW_PLAYER]]
@@ -13525,7 +13658,7 @@ byte is fetched; if it is zero the source byte is skipped (transparency);
 otherwise the byte is OR'd into the screen memory at the row/column
 position.
 
-\paragraph{Live flicker slot at [[$65B7]] / [[$65B8]].}  Immediately before
+\paragraph{Live flicker slot at [[SMC_SPRITE_MASK_OP]] / [[SMC_SPRITE_MASK_ARG]].}  Immediately before
 the inner-loop [[ORA]] instruction there are two bytes --- [[$24 $00]]
 --- that on the disk image encode [[BIT $00]] and act as a 2-byte NOP
 in the normal draw path.  This is \emph{not} dead padding: at runtime
@@ -13536,8 +13669,8 @@ counter before being OR'd into the screen.  This makes the intro
 sprite flash on every other frame without needing a separate draw
 routine.  After each intro draw the two bytes are restored to [[$24
 $00]] so the regular draw path sees a 2-byte NOP again.  The two slots
-are labelled [[SMC_SPRITE_MASK_OP]] ([[$65B7]], opcode byte) and
-[[SMC_SPRITE_MASK_ARG]] ([[$65B8]], operand byte) and are declared in the
+are labelled [[SMC_SPRITE_MASK_OP]] (opcode byte) and
+[[SMC_SPRITE_MASK_ARG]] (operand byte) and are declared in the
 level-intro defines chunk.
 
 There is a short dead-code tail inside [[DRAW_SPRITE]] that is only reachable
@@ -13697,9 +13830,10 @@ the playfield goes through this routine rather than through
 The two routines share almost every byte: the same row-high-table
 selection based on [[ZP_PAGE_FLAG]], the same outer row loop, the
 same self-modifying [[ORA]]/[[STA]] operands on the inner write, the
-same sprite-parameter quartet ([[ZP_SPRITE_W]]/[[\_H]]/[[\_Y]]/[[\_X]]
-at [[$56]]/[[$57]]/[[$5B]]/[[$5D]]).  They differ only in the inner-loop column
-check and in what tail code they carry.
+same sprite-parameter quartet
+([[ZP_SPRITE_W]]/[[ZP_SPRITE_H]]/[[ZP_SPRITE_Y]]/[[ZP_SPRITE_X]]).  They
+differ only in the inner-loop column check and in what tail code they
+carry.
 
 \paragraph{Column clip window.}  Where [[DRAW_SPRITE]] accepts every
 column $0 \le X < 40$ (reject $X \ge [[$28]]$), this routine rejects
@@ -13853,7 +13987,7 @@ plain [[STA]] that \emph{overwrites} the screen byte unconditionally
 there is no source-transparency test.
 
 The routine shares the same sprite-parameter quartet
-([[ZP_SPRITE_W]]/[[\_H]]/[[\_Y]]/[[\_X]] at [[$56]]/[[$57]]/[[$5B]]/[[$5D]]) and
+([[ZP_SPRITE_W]]/[[ZP_SPRITE_H]]/[[ZP_SPRITE_Y]]/[[ZP_SPRITE_X]]) and
 the same [[ZP_PAGE_FLAG]]-driven row-high-table selection, so all
 three blitters are drop-in compatible from the caller's point of
 view.  They differ only in (1) the inner column-clip check, (2)
@@ -17296,9 +17430,9 @@ pads are never indexed at runtime.
   [[RESCUE_SPR_NEG_MID_LO]]/[[HI]], [[RESCUE_SPR_POS_END_LO]]/[[HI]],
   [[RESCUE_SPR_POS_MID_LO]]/[[HI]] (7 each) for [[RESCUE_DRAW]].
 \item \emph{Projectiles (right-moving only)} ---
-  [[PROJ_SPR_R_LO]]/[[HI]] (8) for [[HAZARD_CHECK]]; the left-moving
-  twin [[PROJ_SPR_L_LO]]/[[HI]] lives in the swappable region at
-  [[$AFD3]]/[[$B053]].
+  [[PROJ_SPR_R_LO]]/[[PROJ_SPR_R_HI]] (8) for [[HAZARD_CHECK]]; the
+  left-moving twin [[PROJ_SPR_L_LO]]/[[PROJ_SPR_L_HI]] lives in the
+  swappable region.
 \end{itemize}
 
 \paragraph{Targets of the pointers.}  Every pointer entry targets
@@ -18284,6 +18418,20 @@ SPRITE_PIXEL_DATA:
 <<row copy click dead>>
 ; --- ORG $0200: Initial data tables on page 2 ---
 <<row copy data>>
+; --- ORG $0274: Dead residue zeros ---
+<<page2 dead zeros>>
+; --- ORG $0281: Dead residue dither pattern ---
+<<page2 dead dither>>
+; --- ORG $028B: Dead residue separator byte ---
+<<page2 dead sep>>
+; --- ORG $028C: Dead residue record pair ---
+<<page2 dead records>>
+; --- ORG $029A: LVL_INIT_HIT_Y (Y-window pair) ---
+<<lvl init hit y data>>
+; --- ORG $029C: LVL_INIT_ENTITY (25-byte entity block) ---
+<<lvl init entity data>>
+; --- ORG $02B5: LVL_INIT_SPRITE head ---
+<<lvl init sprite head data>>
 ; --- ORG $02BA: LVL_INIT_SPRITE entity-hit-state seed (12 bytes of $FF) ---
 <<lvl init entity hit state data>>
 ; --- ORG $02C6: LVL_INIT_SPRITE tail ---
@@ -18444,6 +18592,7 @@ SPRITE_PIXEL_DATA:
 ; --- ORG $5F48: Dead twin of LDR_TRACK/SLOT/PHASE trio ---
 <<stage dead ldr slots>>
 ; --- ORG $5F4B: Dead twin of SCROLL_UP_PRE ---
+<<stage dead scroll defines>>
 <<stage dead scroll up>>
 ; --- ORG $5F7F: Dead twin of SCROLL_DN ---
 <<stage dead scroll dn>>
@@ -18467,6 +18616,7 @@ SPRITE_PIXEL_DATA:
 ; --- ORG $62CA: Floor-line refresh ---
 <<refresh floor lines>>
 ; --- ORG $62E2: Landmark-pillar refresh ---
+<<refresh pillars defines>>
 <<refresh pillars>>
 ; --- ORG $631D: Hit-entity refresh ---
 <<refresh hit entities defines>>

@@ -350,8 +350,12 @@ After the main RE work, pass over `main.nw` and apply the style rules in
 - **TODO-SYM elimination.** Every round must try to clear as many existing
   `TODO-SYM` markers as possible — not just the ones this round introduced.
   Grep `main.nw` for `TODO-SYM` and for each hit, decide:
-  - If a label/EQU now exists for that address, replace the raw `[[$XXXX]]`
-    with `[[SYMBOL]]` and remove the marker.
+  - If a label/EQU now exists for that address, replace the raw
+    `[[$XXXX]]` / `[[$XXX]]` / `[[$XX]]` with `[[SYMBOL]]` and remove the
+    marker. The rule applies to addresses of any width — 2-digit
+    zero-page (`[[$5B]]`), 3-digit (`[[$1FF]]`), and 4-digit (`[[$629E]]`)
+    alike. Do not skip the 2-digit zero-page cases: they are often the
+    easiest to symbolize because a ZP EQU frequently exists already.
   - If the number is not actually needed to communicate the sentence's
     point (e.g. the prose already says what the address is, or the
     surrounding sentence refers to a region that's now a labeled chunk),
@@ -360,6 +364,13 @@ After the main RE work, pass over `main.nw` and apply the style rules in
     leave the marker in place — but document in the round summary why it
     couldn't be resolved this round. Uninvestigated `TODO-SYM`s are not
     acceptable; every marker must have been looked at.
+
+  Also do a second sweep for **unflagged raw-hex prose addresses** —
+  `[[$XX]]` / `[[$XXX]]` / `[[$XXXX]]` occurrences that lack a
+  `TODO-SYM` marker but where a symbol now exists. These are common
+  because earlier rounds introduced labels after the prose was written.
+  Symbol-replace them too.
+
   The round summary must include a `TODO-SYM` count delta (before vs.
   after) so regressions are visible.
 - **Code comments.** Remove comments that merely restate the instruction or

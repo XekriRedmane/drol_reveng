@@ -157,13 +157,20 @@ def compose_sprite_grid(
     columns: int = 0,
     padding: int = 12,
     label_height: int = 18,
-    background: tuple[int, int, int] = (24, 24, 24),
+    background: tuple[int, int, int] = (240, 240, 240),
+    label_fill: tuple[int, int, int] = (40, 40, 40),
 ) -> Image.Image:
     """Tile sprite images into a single labelled grid image.
 
     If columns is 0 or <= len(sprites), lay them out in a single row.
     Otherwise wrap to multiple rows. All cells are sized to the max sprite
     dimensions so non-uniform sprite sizes still line up.
+
+    The default background is a near-white light grey so that each sprite
+    cell (rendered with a black backdrop by render_sprite_image) visually
+    pops — a dark backdrop makes cell-to-cell boundaries invisible against
+    the dark-grey sprite pixels. Override `background` + `label_fill` to
+    invert for dark-theme images.
     """
     if not sprites:
         raise ValueError("no sprites to compose")
@@ -188,7 +195,7 @@ def compose_sprite_grid(
             ly = y + spr.height + 2
             # Centre the label under the cell.
             tw = draw.textlength(lbl)
-            draw.text((lx - tw // 2, ly), lbl, fill=(200, 200, 200))
+            draw.text((lx - tw // 2, ly), lbl, fill=label_fill)
     return out
 
 

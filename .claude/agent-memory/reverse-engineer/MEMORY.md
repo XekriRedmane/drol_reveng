@@ -61,3 +61,4 @@
 - [HIT_SPR_POS/NEG sprite data](drol-hit-sprite-data.md) — 7-frame hit-entity sprites W=7/H=5 $28-stride; POS in drol.bin $8AC0; NEG split swap $7AD4 / persistent $7AFC
 - [PILLAR_SPR_DATA decomposition](drol-pillar-spr-decomposition.md) — 7 pillar frames at $7700-$7AD3, 4col x 35row column-major, shared INTERLACE_BLIT format with WALL_L/WALL_R; single @ %def per chunk gotcha
 - [WALL_L_SPR + WALL_SPR_DATA decomposition](drol-wall-spr-decomposition.md) — 7+7 wall frames $7DA4-$854B share pillar format; RESIDUE_1/_2 bracket the decomposed span; green-palette (0..3) vs purple (4..6)
+- [SPRITE_PIXEL_DATA_RESIDUE_2 decomposition](drol-sprite-pixel-data-residue-2.md) — $854C-$8BFF split into PLAYER_SPR_IDLE/ACTIVE_DATA_0..8, HIT_SPR_POS_DATA_0..6, PLAYER_GRID_SPR_A_DATA_0..4; gotcha: per-frame leading/trailing zero pads, not uniform padding

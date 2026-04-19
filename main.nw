@@ -17773,18 +17773,21 @@ WALL_SPR_LO:
         ; pointers: $8178 $8204 $8290 $831C $83A8 $8434 $84C0
         HEX 78 04 90 1C A8 34 C0
 PLAYER_SPR_IDLE_LO:
-        ; pointers: $854C $8598 $85E4 $8598 $8630 $867C $86C8 $8714 $8760 $87AC
+        ; -> IDLE_DATA_{0,1,2,1,3,4,5,6,7,8} ($854C $8598 $85E4 $8598
+        ;    $8630 $867C $86C8 $8714 $8760 $87AC); entries 1 and 3 alias.
         HEX 4C 98 E4 98 30 7C C8 14
         HEX 60 AC
 PLAYER_SPR_ACTIVE_LO:
-        ; pointers: $87F8 $87AC $8844 $8890 $88E0 $8930 $8980 $89D0 $8A20 $8A70
+        ; -> ACTIVE_DATA_0, IDLE_DATA_8 (alias), ACTIVE_DATA_{1..8}
+        ;    ($87F8 $87AC $8844 $8890 $88E0 $8930 $8980 $89D0 $8A20 $8A70).
         HEX F8 AC 44 90 E0 30 80 D0
         HEX 20 70
 HIT_SPR_POS_LO:
-        ; pointers: $8AC0 $8AE8 $8B10 $8B38 $8B60 $8B88 $8BB0
+        ; -> HIT_SPR_POS_DATA_0..6 ($8AC0 $8AE8 $8B10 $8B38 $8B60 $8B88 $8BB0).
         HEX C0 E8 10 38 60 88 B0
 PLAYER_GRID_SPR_A_LO:
-        ; pointers: $8BD8 $8BE0 $8BE8 $8BF0 $8BF8 $8C00 $8C08
+        ; -> GRID_A_DATA_0..4 ($8BD8 $8BE0 $8BE8 $8BF0 $8BF8) then
+        ;    level-swappable pair at $8C00 $8C08.
         HEX D8 E0 E8 F0 F8 00 08
 ENEMY_C_TAIL_LO:
         ; pointers: $8C10 $8C1E $8C2C $8C3A $8C48 $8C56 $8C64 $8C72 $8C79
@@ -17989,20 +17992,27 @@ See the individual [[DRAW_SPRITE*]]-ing routines for the
 exact [[ZP_SPRITE_W]] / [[ZP_SPRITE_H]] values each caller sets before
 the blit.
 
-\paragraph{Decomposition progress.}  Per-frame rendering is being
-tackled one sub-table at a time.  Three sub-tables share the same
-$\$8\mathrm{C}$-byte, 4-column $\times$ 35-row column-major
-[[INTERLACE_BLIT]] format and are now decomposed frame by frame:
+\paragraph{Decomposition progress.}  Per-frame rendering is now
+complete for all sub-tables in the range.  Three playfield-chrome
+sub-tables share the $\$8\mathrm{C}$-byte, 4-column $\times$ 35-row
+column-major [[INTERLACE_BLIT]] format:
 [[PILLAR_SPR_DATA]] ([[$7700]]--[[$7AD3]], 7 frames),
 [[WALL_L_SPR_DATA]] ([[$7DA4]]--[[$8177]], 7 frames) and
-[[WALL_SPR_DATA]] ([[$8178]]--[[$854B]], 7 frames).  Two residue
-bands remain as undecoded [[HEX]] blobs: [[SPRITE_PIXEL_DATA_RESIDUE_1]]
-([[$7AD4]]--[[$7DA3]], holds [[HIT_SPR_NEG]] and [[FLOOR_SPR]]) and
-[[SPRITE_PIXEL_DATA_RESIDUE_2]] ([[$854C]]--[[$8BFF]], holds the
-player-body, [[HIT_SPR_POS]] and grid-tail frames).  Each residue
-uses a different $\$28$- or $\$4\mathrm{C}$-byte stride consumed by
-[[DRAW_SPRITE_OPAQUE]] rather than the wall/pillar tri-band
-[[INTERLACE_BLIT]] format.
+[[WALL_SPR_DATA]] ([[$8178]]--[[$854B]], 7 frames).  The
+hit/floor/player sub-tables in between and after use the
+[[DRAW_SPRITE_OPAQUE]] stride format instead:
+[[HIT_SPR_NEG_DATA_0]]--[[HIT_SPR_NEG_DATA_6]] and
+[[FLOOR_SPR_DATA_0]]--[[FLOOR_SPR_DATA_10]] ([[$7AD4]]--[[$7DA3]], both
+$\$28$ bytes per frame),
+[[PLAYER_SPR_IDLE_DATA_0]]--[[PLAYER_SPR_IDLE_DATA_8]] ([[$854C]]--
+[[$87F7]], 9~unique frames at $\$4\mathrm{C}$ bytes each),
+[[PLAYER_SPR_ACTIVE_DATA_0]]--[[PLAYER_SPR_ACTIVE_DATA_8]]
+([[$87F8]]--[[$8ABF]], 2~frames at $\$4\mathrm{C}$ plus 7~frames at
+$\$50$ bytes), [[HIT_SPR_POS_DATA_0]]--[[HIT_SPR_POS_DATA_6]]
+([[$8AC0]]--[[$8BD7]], $\$28$ bytes per frame) and
+[[PLAYER_GRID_SPR_A_DATA_0]]--[[PLAYER_GRID_SPR_A_DATA_4]]
+([[$8BD8]]--[[$8BFF]], first 5 entries of the grid-A table before the
+persistent/level-swap boundary).
 
 <<pillar spr data>>=
 
@@ -18701,12 +18711,9 @@ WALL_SPR_DATA_6:
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00
 
-SPRITE_PIXEL_DATA_RESIDUE_2:
-        ; Remaining sprite pixel data ($854C-$8BFF, 1716 bytes).
-        ; Holds PLAYER_SPR_IDLE/ACTIVE frames ($854C-$8ABF, $4C-byte
-        ; stride), HIT_SPR_POS frames ($8AC0-$8BD7, $28-byte stride) and
-        ; the small grid-body tails from $8BD8 onward.  Per-frame
-        ; decomposition pending.
+PLAYER_SPR_IDLE_DATA_0:
+        ; PLAYER_SPR_IDLE frame 0 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_IDLE_LO/HI[0].
         HEX 00 82 D0 00 00 8A D4 00
         HEX 00 8A D6 00 00 AA DF 00
         HEX 00 EA FD 00 81 EA F9 00
@@ -18716,16 +18723,25 @@ SPRITE_PIXEL_DATA_RESIDUE_2:
         HEX 87 EB F5 00 00 89 E4 00
         HEX 00 94 AA 00 00 BE BF E0
         HEX 00 EB BD B0 00 8A B5 00
-        HEX 00 82 B4 00 00 00 00 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 8A D6 00 00 AA DF 00
-        HEX 00 EA FD 00 81 EA F9 00
-        HEX 82 EA FF 00 82 AA D5 00
-        HEX 86 DD AA 00 8A E9 E5 00
-        HEX 8A EB B5 00 8A EB B5 00
-        HEX 87 EB F5 00 00 89 E4 00
-        HEX 00 85 A0 00 00 8F F8 00
-        HEX 00 9A DC 00 00 9A DE 00
+        HEX 00 82 B4 00
+
+PLAYER_SPR_IDLE_DATA_1:
+        ; PLAYER_SPR_IDLE frame 1 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_IDLE_LO/HI[1] and [3] (stances 4 and 6 share this frame).
+        HEX 00 00 00 00 00 82 D0 00
+        HEX 00 8A D4 00 00 8A D6 00
+        HEX 00 AA DF 00 00 EA FD 00
+        HEX 81 EA F9 00 82 EA FF 00
+        HEX 82 AA D5 00 86 DD AA 00
+        HEX 8A E9 E5 00 8A EB B5 00
+        HEX 8A EB B5 00 87 EB F5 00
+        HEX 00 89 E4 00 00 85 A0 00
+        HEX 00 8F F8 00 00 9A DC 00
+        HEX 00 9A DE 00
+
+PLAYER_SPR_IDLE_DATA_2:
+        ; PLAYER_SPR_IDLE frame 2 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_IDLE_LO/HI[2].
         HEX 00 82 D0 00 00 8A D4 00
         HEX 00 8A D6 00 00 AA DF 00
         HEX 00 EA FD 00 81 EA F9 00
@@ -18735,16 +18751,25 @@ SPRITE_PIXEL_DATA_RESIDUE_2:
         HEX 87 EB F5 00 00 89 E4 00
         HEX 00 95 8A 00 00 BF 9F E0
         HEX 00 EB CD B0 00 8A E5 00
-        HEX 00 82 E4 00 00 00 00 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 8A DE 00 00 AA FF 00
-        HEX 00 AB F6 00 81 EB E6 00
-        HEX 82 AB FF 00 82 AA D5 00
-        HEX 81 D5 AA 00 82 C7 95 00
-        HEX 82 CD D5 00 82 CD D5 00
-        HEX 81 EF D5 00 00 87 94 00
-        HEX 00 95 8A 00 00 BF CF 00
-        HEX 00 EA E5 C0 00 EA F5 E0
+        HEX 00 82 E4 00
+
+PLAYER_SPR_IDLE_DATA_3:
+        ; PLAYER_SPR_IDLE frame 3 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_IDLE_LO/HI[4].
+        HEX 00 00 00 00 00 82 D0 00
+        HEX 00 8A D4 00 00 8A DE 00
+        HEX 00 AA FF 00 00 AB F6 00
+        HEX 81 EB E6 00 82 AB FF 00
+        HEX 82 AA D5 00 81 D5 AA 00
+        HEX 82 C7 95 00 82 CD D5 00
+        HEX 82 CD D5 00 81 EF D5 00
+        HEX 00 87 94 00 00 95 8A 00
+        HEX 00 BF CF 00 00 EA E5 C0
+        HEX 00 EA F5 E0
+
+PLAYER_SPR_IDLE_DATA_4:
+        ; PLAYER_SPR_IDLE frame 4 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_IDLE_LO/HI[5].
         HEX 00 00 00 00 00 82 D0 00
         HEX 00 8A D4 00 00 8A FC 00
         HEX 00 AB FF 00 00 AF CB 00
@@ -18754,16 +18779,25 @@ SPRITE_PIXEL_DATA_RESIDUE_2:
         HEX 81 DA D5 E0 81 FA D5 E0
         HEX 00 F2 D4 00 00 95 8A 00
         HEX 00 BF DF 00 00 AF EF C0
-        HEX 00 AB EF C0 00 00 00 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 8B F4 00 00 AF FD 00
-        HEX 00 BC CF 00 00 B8 C7 00
-        HEX 00 BF FF 00 00 AA D5 00
-        HEX 80 95 AA 00 81 CA D4 E0
+        HEX 00 AB EF C0
+
+PLAYER_SPR_IDLE_DATA_5:
+        ; PLAYER_SPR_IDLE frame 5 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_IDLE_LO/HI[6].
+        HEX 00 00 00 00 00 82 D0 00
+        HEX 00 8A D4 00 00 8B F4 00
+        HEX 00 AF FD 00 00 BC CF 00
+        HEX 00 B8 C7 00 00 BF FF 00
+        HEX 00 AA D5 00 80 95 AA 00
+        HEX 81 CA D4 E0 83 EA D5 F0
         HEX 83 EA D5 F0 83 EA D5 F0
-        HEX 83 EA D5 F0 81 CA D4 E0
-        HEX 00 94 8A 80 00 BE 9F 80
-        HEX 00 BF BF 80 00 BF BF 80
+        HEX 81 CA D4 E0 00 94 8A 80
+        HEX 00 BE 9F 80 00 BF BF 80
+        HEX 00 BF BF 80
+
+PLAYER_SPR_IDLE_DATA_6:
+        ; PLAYER_SPR_IDLE frame 6 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_IDLE_LO/HI[7].
         HEX 00 00 00 00 00 82 D0 00
         HEX 00 8A D4 00 00 8F D4 00
         HEX 00 BF F5 00 00 B4 F5 00
@@ -18773,16 +18807,25 @@ SPRITE_PIXEL_DATA_RESIDUE_2:
         HEX 81 EA D6 E0 81 EA D7 E0
         HEX 00 8A D3 C0 00 94 AA 00
         HEX 00 BE FF 00 00 FD FD 00
-        HEX 00 FD F5 00 00 00 00 00
-        HEX 00 82 D0 00 00 8A D4 00
-        HEX 00 9E D4 00 00 BF D5 00
-        HEX 00 9B F5 00 00 99 F5 E0
-        HEX 00 BF F5 90 00 AA D5 90
-        HEX 00 95 AA E0 00 AA B8 D0
-        HEX 00 AA EC D0 00 AA EC D0
-        HEX 00 AA FD E0 00 8A B8 00
-        HEX 00 94 AA 00 80 BC FF 00
-        HEX 80 E9 D5 C0 81 EB D5 C0
+        HEX 00 FD F5 00
+
+PLAYER_SPR_IDLE_DATA_7:
+        ; PLAYER_SPR_IDLE frame 7 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_IDLE_LO/HI[8].
+        HEX 00 00 00 00 00 82 D0 00
+        HEX 00 8A D4 00 00 9E D4 00
+        HEX 00 BF D5 00 00 9B F5 00
+        HEX 00 99 F5 E0 00 BF F5 90
+        HEX 00 AA D5 90 00 95 AA E0
+        HEX 00 AA B8 D0 00 AA EC D0
+        HEX 00 AA EC D0 00 AA FD E0
+        HEX 00 8A B8 00 00 94 AA 00
+        HEX 80 BC FF 00 80 E9 D5 C0
+        HEX 81 EB D5 C0
+
+PLAYER_SPR_IDLE_DATA_8:
+        ; PLAYER_SPR_IDLE frame 8 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_IDLE_LO/HI[9] (also aliased by PLAYER_SPR_ACTIVE_LO/HI[1] at $87AC).
         HEX 00 00 00 00 00 82 D0 00
         HEX 00 8A D4 00 00 9A D4 00
         HEX 00 BE D5 00 00 AF D5 C0
@@ -18792,16 +18835,25 @@ SPRITE_PIXEL_DATA_RESIDUE_2:
         HEX 00 AB B5 D4 00 AB F5 F8
         HEX 00 89 E4 00 00 81 A8 00
         HEX 00 87 FC 00 00 8E D6 00
-        HEX 00 9E D6 00 00 82 D0 00
-        HEX 00 8A D4 00 00 9A D4 00
-        HEX 00 BE D5 00 00 AF D5 C0
-        HEX 00 A7 D5 E0 00 BF D5 D0
-        HEX 00 AA D5 90 00 95 AE D8
-        HEX 00 A9 E5 D4 00 AB B5 D4
-        HEX 00 AB B5 D4 00 AB F5 F8
-        HEX 00 89 E4 00 00 95 8A 00
-        HEX 81 FF 9F 00 83 AF B5 C0
-        HEX 00 AB 94 00 00 8B 90 00
+        HEX 00 9E D6 00
+
+PLAYER_SPR_ACTIVE_DATA_0:
+        ; PLAYER_SPR_ACTIVE frame 0 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_ACTIVE_LO/HI[0].
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 9A D4 00 00 BE D5 00
+        HEX 00 AF D5 C0 00 A7 D5 E0
+        HEX 00 BF D5 D0 00 AA D5 90
+        HEX 00 95 AE D8 00 A9 E5 D4
+        HEX 00 AB B5 D4 00 AB B5 D4
+        HEX 00 AB F5 F8 00 89 E4 00
+        HEX 00 95 8A 00 81 FF 9F 00
+        HEX 83 AF B5 C0 00 AB 94 00
+        HEX 00 8B 90 00
+
+PLAYER_SPR_ACTIVE_DATA_1:
+        ; PLAYER_SPR_ACTIVE frame 1 (76 bytes, W=3 H=$13=19).
+        ; Pointed to by PLAYER_SPR_ACTIVE_LO/HI[2].
         HEX 00 82 D0 00 00 8A D4 00
         HEX 00 9A D4 00 00 BE D5 00
         HEX 00 AF D5 C0 00 A7 D5 E0
@@ -18811,118 +18863,198 @@ SPRITE_PIXEL_DATA_RESIDUE_2:
         HEX 00 AB F5 F8 00 89 E4 00
         HEX 00 94 AA 00 81 FE BF 00
         HEX 83 AC F5 C0 00 A9 D4 00
-        HEX 00 89 D0 00 00 82 D0 00
-        HEX 00 8A D4 00 00 8A D6 00
-        HEX 00 AA DF 00 00 EA FD 00
-        HEX 81 EA F9 00 82 EA FF 00
-        HEX 82 AA D5 00 86 DD AA 00
-        HEX 8A E9 E5 00 8A EB B5 00
-        HEX 8A EB B5 00 87 EB F5 00
-        HEX 00 89 E4 00 00 85 A0 00
-        HEX 00 8F E0 00 00 9A F0 00
-        HEX 00 82 D8 00 00 00 D8 00
-        HEX 00 00 98 00 00 82 D0 00
-        HEX 00 8A D4 00 00 8A DE 00
-        HEX 00 AA FF 00 00 AB F6 00
-        HEX 81 EB E6 00 82 AB FF 00
-        HEX 82 AA D5 00 81 D5 AA 00
-        HEX 82 C7 95 00 82 CD D5 00
-        HEX 82 CD D5 00 81 EF D5 00
-        HEX 00 87 94 00 00 95 8A 00
-        HEX 00 BF 9E 00 00 EB D7 00
-        HEX 00 8A E5 C0 00 82 E5 C0
-        HEX 00 00 E1 C0 00 82 D0 00
-        HEX 00 8A D4 00 00 8A FC 00
-        HEX 00 AB FF 00 00 AF 9B 00
-        HEX 00 EE 99 00 00 EF FF 00
-        HEX 00 EA D5 00 81 95 AA 00
-        HEX 00 F2 D5 00 81 DA D5 E0
-        HEX 81 DA D5 E0 81 FA D5 E0
-        HEX 00 F2 D4 00 00 95 8A 00
-        HEX 00 BF DF 00 00 AF DF 00
-        HEX 00 8B EF C0 00 8B EF C0
-        HEX 00 87 CF 00 00 82 D0 00
-        HEX 00 8A D4 00 00 8B F4 00
-        HEX 00 AF FD 00 00 BC CF 00
-        HEX 00 B8 C7 00 00 BF FF 00
-        HEX 00 AA D5 00 00 95 AA 00
-        HEX 81 CA D4 E0 83 EA D5 F0
+        HEX 00 89 D0 00
+
+PLAYER_SPR_ACTIVE_DATA_2:
+        ; PLAYER_SPR_ACTIVE frame 2 (80 bytes, W=3 H=$14=20).
+        ; Pointed to by PLAYER_SPR_ACTIVE_LO/HI[3] (stance 3 active body, top floor).
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8A D6 00 00 AA DF 00
+        HEX 00 EA FD 00 81 EA F9 00
+        HEX 82 EA FF 00 82 AA D5 00
+        HEX 86 DD AA 00 8A E9 E5 00
+        HEX 8A EB B5 00 8A EB B5 00
+        HEX 87 EB F5 00 00 89 E4 00
+        HEX 00 85 A0 00 00 8F E0 00
+        HEX 00 9A F0 00 00 82 D8 00
+        HEX 00 00 D8 00 00 00 98 00
+
+PLAYER_SPR_ACTIVE_DATA_3:
+        ; PLAYER_SPR_ACTIVE frame 3 (80 bytes, W=3 H=$14=20).
+        ; Pointed to by PLAYER_SPR_ACTIVE_LO/HI[4].
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8A DE 00 00 AA FF 00
+        HEX 00 AB F6 00 81 EB E6 00
+        HEX 82 AB FF 00 82 AA D5 00
+        HEX 81 D5 AA 00 82 C7 95 00
+        HEX 82 CD D5 00 82 CD D5 00
+        HEX 81 EF D5 00 00 87 94 00
+        HEX 00 95 8A 00 00 BF 9E 00
+        HEX 00 EB D7 00 00 8A E5 C0
+        HEX 00 82 E5 C0 00 00 E1 C0
+
+PLAYER_SPR_ACTIVE_DATA_4:
+        ; PLAYER_SPR_ACTIVE frame 4 (80 bytes, W=3 H=$14=20).
+        ; Pointed to by PLAYER_SPR_ACTIVE_LO/HI[5].
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8A FC 00 00 AB FF 00
+        HEX 00 AF 9B 00 00 EE 99 00
+        HEX 00 EF FF 00 00 EA D5 00
+        HEX 81 95 AA 00 00 F2 D5 00
+        HEX 81 DA D5 E0 81 DA D5 E0
+        HEX 81 FA D5 E0 00 F2 D4 00
+        HEX 00 95 8A 00 00 BF DF 00
+        HEX 00 AF DF 00 00 8B EF C0
+        HEX 00 8B EF C0 00 87 CF 00
+
+PLAYER_SPR_ACTIVE_DATA_5:
+        ; PLAYER_SPR_ACTIVE frame 5 (80 bytes, W=3 H=$14=20).
+        ; Pointed to by PLAYER_SPR_ACTIVE_LO/HI[6].
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8B F4 00 00 AF FD 00
+        HEX 00 BC CF 00 00 B8 C7 00
+        HEX 00 BF FF 00 00 AA D5 00
+        HEX 00 95 AA 00 81 CA D4 E0
         HEX 83 EA D5 F0 83 EA D5 F0
-        HEX 81 CA D4 E0 00 92 D2 00
+        HEX 83 EA D5 F0 81 CA D4 E0
+        HEX 00 92 D2 00 00 BF BF 00
         HEX 00 BF BF 00 00 BF BF 00
-        HEX 00 BF BF 00 00 BF BF 00
-        HEX 00 9E 9E 00 00 82 D0 00
-        HEX 00 8A D4 00 00 8F D4 00
-        HEX 00 BF F5 00 00 B6 BD 00
-        HEX 00 A6 9D C0 00 BF FD C0
-        HEX 00 AA D5 C0 00 95 AA A0
-        HEX 00 AA D3 C0 81 EA D6 E0
-        HEX 81 EA D6 E0 81 EA D7 E0
-        HEX 00 8A D3 C0 00 94 AA 00
-        HEX 00 BE FF 00 00 BE FD 00
-        HEX 00 FD F4 00 00 FD F4 00
-        HEX 00 BC F8 00 00 82 D0 00
-        HEX 00 8A D4 00 00 9E D4 00
-        HEX 00 BF D5 00 00 9B F5 00
-        HEX 00 99 F5 E0 00 BF F5 90
-        HEX 00 AA D5 90 00 95 AA E0
-        HEX 00 AA B8 D0 00 AA EC D0
-        HEX 00 AA EC D0 00 AA FD E0
-        HEX 00 8A B8 00 00 94 AA 00
-        HEX 00 9E BF 00 00 BA F5 C0
-        HEX 00 E9 D4 00 00 E9 D0 00
-        HEX 00 E1 C0 00 00 82 D0 00
-        HEX 00 8A D4 00 00 9A D4 00
-        HEX 00 BE D5 00 00 AF D5 C0
-        HEX 00 A7 D5 E0 00 BF D5 D0
-        HEX 00 AA D5 90 00 95 AE D8
-        HEX 00 A9 E5 D4 00 AB B5 D4
-        HEX 00 AB B5 D4 00 AB F5 F8
-        HEX 00 89 E4 00 00 81 A8 00
-        HEX 00 81 FC 00 00 83 D6 00
-        HEX 00 86 D0 00 00 86 C0 00
-        HEX 00 86 00 00 7F 55 70 00
-        HEX 00 00 01 75 2A 55 38 00
-        HEX 00 00 03 55 2A 55 38 00
-        HEX 00 00 03 55 2A 55 38 00
-        HEX 00 00 03 55 2A 55 70 00
-        HEX 00 00 01 75 7E 57 40 00
-        HEX 00 00 07 55 2A 55 60 00
-        HEX 00 00 0E 55 2A 55 60 00
-        HEX 00 00 0E 55 2A 55 60 00
-        HEX 00 00 0E 55 2A 57 40 00
-        HEX 00 00 07 55 7A 5E 00 00
-        HEX 00 00 1E 57 2A 57 00 00
-        HEX 00 00 3A 55 2A 57 00 00
-        HEX 00 00 3A 55 2A 57 00 00
-        HEX 00 00 3A 55 2A 5E 00 00
-        HEX 00 00 1E 55 6A 78 00 00
-        HEX 00 00 7A 5F 2A 5C 00 00
-        HEX 00 01 6A 55 2A 5C 00 00
-        HEX 00 01 6A 55 2A 5C 00 00
-        HEX 00 01 6A 55 2A 78 00 00
-        HEX 00 00 7A 55 7F 2B 60 00
-        HEX 00 00 03 6A 55 2A 70 00
-        HEX 00 00 07 2A 55 2A 70 00
-        HEX 00 00 07 2A 55 2A 70 00
-        HEX 00 00 07 2A 55 2B 60 00
-        HEX 00 00 03 6A 7D 2F 00 00
-        HEX 00 00 0F 2B 55 2B 40 00
-        HEX 00 00 1D 2A 55 2B 40 00
-        HEX 00 00 1D 2A 55 2B 40 00
-        HEX 00 00 1D 2A 55 2F 00 00
-        HEX 00 00 0F 2A 75 3C 00 00
-        HEX 00 00 3D 2F 55 2E 00 00
-        HEX 00 00 75 2A 55 2E 00 00
-        HEX 00 00 75 2A 55 2E 00 00
-        HEX 00 00 75 2A 55 3C 00 00
-        HEX 00 00 3D 2A 00 00 00 8A
-        HEX 00 8A 00 8A 00 00 00 A8
-        HEX 00 A8 00 A8 00 00 81 A0
-        HEX 81 A0 81 A0 00 00 85 00
-        HEX 85 00 85 00 00 00 00 94
-        HEX 00 94 00 94
-@ %def HIT_SPR_NEG_DATA_0 HIT_SPR_NEG_DATA_1 HIT_SPR_NEG_DATA_2 HIT_SPR_NEG_DATA_3 HIT_SPR_NEG_DATA_4 HIT_SPR_NEG_DATA_5 HIT_SPR_NEG_DATA_6 FLOOR_SPR_DATA_0 FLOOR_SPR_DATA_1 FLOOR_SPR_DATA_2 FLOOR_SPR_DATA_3 FLOOR_SPR_DATA_4 FLOOR_SPR_DATA_5 FLOOR_SPR_DATA_6 FLOOR_SPR_DATA_7 FLOOR_SPR_DATA_8 FLOOR_SPR_DATA_9 FLOOR_SPR_DATA_10 SPRITE_PIXEL_DATA_RESIDUE_2 WALL_L_SPR_DATA_0 WALL_L_SPR_DATA_1 WALL_L_SPR_DATA_2 WALL_L_SPR_DATA_3 WALL_L_SPR_DATA_4 WALL_L_SPR_DATA_5 WALL_L_SPR_DATA_6 WALL_SPR_DATA_0 WALL_SPR_DATA_1 WALL_SPR_DATA_2 WALL_SPR_DATA_3 WALL_SPR_DATA_4 WALL_SPR_DATA_5 WALL_SPR_DATA_6
+        HEX 00 BF BF 00 00 9E 9E 00
+
+PLAYER_SPR_ACTIVE_DATA_6:
+        ; PLAYER_SPR_ACTIVE frame 6 (80 bytes, W=3 H=$14=20).
+        ; Pointed to by PLAYER_SPR_ACTIVE_LO/HI[7].
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 8F D4 00 00 BF F5 00
+        HEX 00 B6 BD 00 00 A6 9D C0
+        HEX 00 BF FD C0 00 AA D5 C0
+        HEX 00 95 AA A0 00 AA D3 C0
+        HEX 81 EA D6 E0 81 EA D6 E0
+        HEX 81 EA D7 E0 00 8A D3 C0
+        HEX 00 94 AA 00 00 BE FF 00
+        HEX 00 BE FD 00 00 FD F4 00
+        HEX 00 FD F4 00 00 BC F8 00
+
+PLAYER_SPR_ACTIVE_DATA_7:
+        ; PLAYER_SPR_ACTIVE frame 7 (80 bytes, W=3 H=$14=20).
+        ; Pointed to by PLAYER_SPR_ACTIVE_LO/HI[8].
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 9E D4 00 00 BF D5 00
+        HEX 00 9B F5 00 00 99 F5 E0
+        HEX 00 BF F5 90 00 AA D5 90
+        HEX 00 95 AA E0 00 AA B8 D0
+        HEX 00 AA EC D0 00 AA EC D0
+        HEX 00 AA FD E0 00 8A B8 00
+        HEX 00 94 AA 00 00 9E BF 00
+        HEX 00 BA F5 C0 00 E9 D4 00
+        HEX 00 E9 D0 00 00 E1 C0 00
+
+PLAYER_SPR_ACTIVE_DATA_8:
+        ; PLAYER_SPR_ACTIVE frame 8 (80 bytes, W=3 H=$14=20).
+        ; Pointed to by PLAYER_SPR_ACTIVE_LO/HI[9] (stance 9 active body, bottom floor).
+        HEX 00 82 D0 00 00 8A D4 00
+        HEX 00 9A D4 00 00 BE D5 00
+        HEX 00 AF D5 C0 00 A7 D5 E0
+        HEX 00 BF D5 D0 00 AA D5 90
+        HEX 00 95 AE D8 00 A9 E5 D4
+        HEX 00 AB B5 D4 00 AB B5 D4
+        HEX 00 AB F5 F8 00 89 E4 00
+        HEX 00 81 A8 00 00 81 FC 00
+        HEX 00 83 D6 00 00 86 D0 00
+        HEX 00 86 C0 00 00 86 00 00
+
+HIT_SPR_POS_DATA_0:
+        ; HIT_SPR_POS frame 0 (40 bytes, W=7 H=5, bytes/row=8).
+        ; Pointed to by HIT_SPR_POS_LO[0] / HIT_SPR_POS_HI[0];
+        ; opaque-blitted by REFRESH_HIT_ENTITIES via DRAW_SPRITE_OPAQUE.
+        HEX 7F 55 70 00 00 00 01 75
+        HEX 2A 55 38 00 00 00 03 55
+        HEX 2A 55 38 00 00 00 03 55
+        HEX 2A 55 38 00 00 00 03 55
+        HEX 2A 55 70 00 00 00 01 75
+
+HIT_SPR_POS_DATA_1:
+        ; HIT_SPR_POS frame 1 (40 bytes, W=7 H=5, bytes/row=8).
+        ; Pointed to by HIT_SPR_POS_LO[1] / HIT_SPR_POS_HI[1].
+        HEX 7E 57 40 00 00 00 07 55
+        HEX 2A 55 60 00 00 00 0E 55
+        HEX 2A 55 60 00 00 00 0E 55
+        HEX 2A 55 60 00 00 00 0E 55
+        HEX 2A 57 40 00 00 00 07 55
+
+HIT_SPR_POS_DATA_2:
+        ; HIT_SPR_POS frame 2 (40 bytes, W=7 H=5, bytes/row=8).
+        ; Pointed to by HIT_SPR_POS_LO[2] / HIT_SPR_POS_HI[2].
+        HEX 7A 5E 00 00 00 00 1E 57
+        HEX 2A 57 00 00 00 00 3A 55
+        HEX 2A 57 00 00 00 00 3A 55
+        HEX 2A 57 00 00 00 00 3A 55
+        HEX 2A 5E 00 00 00 00 1E 55
+
+HIT_SPR_POS_DATA_3:
+        ; HIT_SPR_POS frame 3 (40 bytes, W=7 H=5, bytes/row=8).
+        ; Pointed to by HIT_SPR_POS_LO[3] / HIT_SPR_POS_HI[3].
+        HEX 6A 78 00 00 00 00 7A 5F
+        HEX 2A 5C 00 00 00 01 6A 55
+        HEX 2A 5C 00 00 00 01 6A 55
+        HEX 2A 5C 00 00 00 01 6A 55
+        HEX 2A 78 00 00 00 00 7A 55
+
+HIT_SPR_POS_DATA_4:
+        ; HIT_SPR_POS frame 4 (40 bytes, W=7 H=5, bytes/row=8).
+        ; Pointed to by HIT_SPR_POS_LO[4] / HIT_SPR_POS_HI[4].
+        HEX 7F 2B 60 00 00 00 03 6A
+        HEX 55 2A 70 00 00 00 07 2A
+        HEX 55 2A 70 00 00 00 07 2A
+        HEX 55 2A 70 00 00 00 07 2A
+        HEX 55 2B 60 00 00 00 03 6A
+
+HIT_SPR_POS_DATA_5:
+        ; HIT_SPR_POS frame 5 (40 bytes, W=7 H=5, bytes/row=8).
+        ; Pointed to by HIT_SPR_POS_LO[5] / HIT_SPR_POS_HI[5].
+        HEX 7D 2F 00 00 00 00 0F 2B
+        HEX 55 2B 40 00 00 00 1D 2A
+        HEX 55 2B 40 00 00 00 1D 2A
+        HEX 55 2B 40 00 00 00 1D 2A
+        HEX 55 2F 00 00 00 00 0F 2A
+
+HIT_SPR_POS_DATA_6:
+        ; HIT_SPR_POS frame 6 (40 bytes, W=7 H=5, bytes/row=8).
+        ; Pointed to by HIT_SPR_POS_LO[6] / HIT_SPR_POS_HI[6].
+        HEX 75 3C 00 00 00 00 3D 2F
+        HEX 55 2E 00 00 00 00 75 2A
+        HEX 55 2E 00 00 00 00 75 2A
+        HEX 55 2E 00 00 00 00 75 2A
+        HEX 55 3C 00 00 00 00 3D 2A
+
+PLAYER_GRID_SPR_A_DATA_0:
+        ; PLAYER_GRID_SPR_A frame 0 (8 bytes).
+        ; Pointed to by PLAYER_GRID_SPR_A_LO/HI[0].
+        ; Perspective-grid sprite for DRAW_ENTITIES phase 2 when
+        ; ZP_FRAME_COUNTER bit 2 = 0.  Frames 5..6 ($8C00/$8C08) live
+        ; in the swappable level-data region.
+        HEX 00 00 00 8A 00 8A 00 8A
+
+PLAYER_GRID_SPR_A_DATA_1:
+        ; PLAYER_GRID_SPR_A frame 1 (8 bytes).
+        ; Pointed to by PLAYER_GRID_SPR_A_LO/HI[1].
+        HEX 00 00 00 A8 00 A8 00 A8
+
+PLAYER_GRID_SPR_A_DATA_2:
+        ; PLAYER_GRID_SPR_A frame 2 (8 bytes).
+        ; Pointed to by PLAYER_GRID_SPR_A_LO/HI[2].
+        HEX 00 00 81 A0 81 A0 81 A0
+
+PLAYER_GRID_SPR_A_DATA_3:
+        ; PLAYER_GRID_SPR_A frame 3 (8 bytes).
+        ; Pointed to by PLAYER_GRID_SPR_A_LO/HI[3].
+        HEX 00 00 85 00 85 00 85 00
+
+PLAYER_GRID_SPR_A_DATA_4:
+        ; PLAYER_GRID_SPR_A frame 4 (8 bytes).
+        ; Pointed to by PLAYER_GRID_SPR_A_LO/HI[4].
+        HEX 00 00 00 94 00 94 00 94
+@ %def HIT_SPR_NEG_DATA_0 HIT_SPR_NEG_DATA_1 HIT_SPR_NEG_DATA_2 HIT_SPR_NEG_DATA_3 HIT_SPR_NEG_DATA_4 HIT_SPR_NEG_DATA_5 HIT_SPR_NEG_DATA_6 FLOOR_SPR_DATA_0 FLOOR_SPR_DATA_1 FLOOR_SPR_DATA_2 FLOOR_SPR_DATA_3 FLOOR_SPR_DATA_4 FLOOR_SPR_DATA_5 FLOOR_SPR_DATA_6 FLOOR_SPR_DATA_7 FLOOR_SPR_DATA_8 FLOOR_SPR_DATA_9 FLOOR_SPR_DATA_10 WALL_L_SPR_DATA_0 WALL_L_SPR_DATA_1 WALL_L_SPR_DATA_2 WALL_L_SPR_DATA_3 WALL_L_SPR_DATA_4 WALL_L_SPR_DATA_5 WALL_L_SPR_DATA_6 WALL_SPR_DATA_0 WALL_SPR_DATA_1 WALL_SPR_DATA_2 WALL_SPR_DATA_3 WALL_SPR_DATA_4 WALL_SPR_DATA_5 WALL_SPR_DATA_6 PLAYER_SPR_IDLE_DATA_0 PLAYER_SPR_IDLE_DATA_1 PLAYER_SPR_IDLE_DATA_2 PLAYER_SPR_IDLE_DATA_3 PLAYER_SPR_IDLE_DATA_4 PLAYER_SPR_IDLE_DATA_5 PLAYER_SPR_IDLE_DATA_6 PLAYER_SPR_IDLE_DATA_7 PLAYER_SPR_IDLE_DATA_8 PLAYER_SPR_ACTIVE_DATA_0 PLAYER_SPR_ACTIVE_DATA_1 PLAYER_SPR_ACTIVE_DATA_2 PLAYER_SPR_ACTIVE_DATA_3 PLAYER_SPR_ACTIVE_DATA_4 PLAYER_SPR_ACTIVE_DATA_5 PLAYER_SPR_ACTIVE_DATA_6 PLAYER_SPR_ACTIVE_DATA_7 PLAYER_SPR_ACTIVE_DATA_8 HIT_SPR_POS_DATA_0 HIT_SPR_POS_DATA_1 HIT_SPR_POS_DATA_2 HIT_SPR_POS_DATA_3 HIT_SPR_POS_DATA_4 HIT_SPR_POS_DATA_5 HIT_SPR_POS_DATA_6 PLAYER_GRID_SPR_A_DATA_0 PLAYER_GRID_SPR_A_DATA_1 PLAYER_GRID_SPR_A_DATA_2 PLAYER_GRID_SPR_A_DATA_3 PLAYER_GRID_SPR_A_DATA_4
 
 \section{WALL\_L\_SPR frames ([[$7DA4]]--[[$8177]])}
 
@@ -18977,6 +19109,76 @@ simultaneously.  Frame index = [[ZP_SPRITE_XREF]].  Rendered by
 [[.claude/scripts/render_wall_sprites.py]].}
 \label{fig:wall_sprites}
 \end{figure}
+
+\section{PLAYER\_SPR\_IDLE and \_ACTIVE frames ([[$854C]]--[[$8ABF]])}
+
+The player-body sprite art occupies [[$854C]]--[[$8ABF]], 1396 bytes
+total, split between the idle-path and action-path pointer tables.
+Each frame is a $3\times$H column-major bitmap (four bytes per row,
+since [[DRAW_SPRITE]] runs W+1 inner iterations for [[ZP_SPRITE_W]]
+= [[$03]]) and every frame begins with a leading row of zero bytes
+when the alignment requires it; [[DRAW_SPRITE]] reads from a fixed
+source pointer and walks down the rows so the bitmap's apparent
+vertical position inside the frame is chosen to match the
+[[ZP_PLAYER_COL]] row fed via [[SMC_SR_YSRC]].
+
+\paragraph{Idle body frames ([[$854C]]--[[$87F7]]).}
+[[PLAYER_SPR_IDLE_DATA_0]]--[[PLAYER_SPR_IDLE_DATA_8]] are nine
+unique frames, each $\$4\mathrm{C}$ bytes (19~rows $\times$ 4 bytes)
+and selected by [[PLAYER_SPR_IDLE_LO]]/[[PLAYER_SPR_IDLE_HI]] indexed
+by [[ZP_PLAYER_STANCE]] ([[$03]]..[[$09]]).  The pointer table has
+ten entries but entries [[$01]] and [[$03]] both reference
+[[PLAYER_SPR_IDLE_DATA_1]], so a stance change between 4 and 6 shows
+the same silhouette.  [[DRAW_PLAYER]] uses this set when
+[[ZP_ACTION_DIR]] is zero --- player is standing on a floor.
+
+\paragraph{Active body frames ([[$87F8]]--[[$8ABF]]).}
+[[PLAYER_SPR_ACTIVE_DATA_0]]--[[PLAYER_SPR_ACTIVE_DATA_8]] are nine
+unique frames, of which frames 0--1 are $\$4\mathrm{C}$ bytes
+(19~rows) and frames 2--8 are $\$50$ bytes (20~rows).
+[[PLAYER_SPR_ACTIVE_LO]]/[[HI]] has ten pointer entries; entry [[$01]]
+aliases back to [[PLAYER_SPR_IDLE_DATA_8]], so the same bitmap serves
+as both the final idle stance and the first ascent/descent stance.
+The stance 3 ([[PLAYER_SPR_ACTIVE_DATA_2]]) and stance 9
+([[PLAYER_SPR_ACTIVE_DATA_8]]) frames bracket the full-screen
+vertical-motion cycle, drawn by [[DRAW_PLAYER]] after the random
+flicker layer whenever [[ZP_ACTION_DIR]] is non-zero.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/player_sprites_idle.png}
+\caption{The stance-indexed [[PLAYER_SPR_IDLE]] sprites.  Rendered
+by [[.claude/scripts/render_player_sprites.py]].}
+\label{fig:player_sprites_idle_v2}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/player_sprites_active.png}
+\caption{The stance-indexed [[PLAYER_SPR_ACTIVE]] sprites.}
+\label{fig:player_sprites_active_v2}
+\end{figure}
+
+\section{HIT\_SPR\_POS frames ([[$8AC0]]--[[$8BD7]])}
+
+[[HIT_SPR_POS_DATA_0]]--[[HIT_SPR_POS_DATA_6]] are the seven
+positive-parallax frames of the impact sprite drawn by
+[[REFRESH_HIT_ENTITIES]] at the moment a projectile or enemy
+collides with an object on the player's right.  Each frame is
+$\$28$ bytes (5~rows $\times$ 8 bytes), selected by
+[[HIT_SPR_POS_LO]]/[[HIT_SPR_POS_HI]] indexed by the hit-animation
+counter.  The negative-parallax mirror lives in
+[[HIT_SPR_NEG_DATA_0]]--[[HIT_SPR_NEG_DATA_6]] at [[$7AD4]]--[[$7BEB]].
+
+\section{PLAYER\_GRID\_SPR\_A tail ([[$8BD8]]--[[$8BFF]])}
+
+[[PLAYER_GRID_SPR_A_DATA_0]]--[[PLAYER_GRID_SPR_A_DATA_4]] are the
+first five 8-byte frames of the perspective-grid player sprite used
+by [[DRAW_ENTITIES]] phase~2 when [[ZP_FRAME_COUNTER]] bit~2 is
+clear.  The table has seven entries but only the first five live in
+persistent [[drol.bin]]; entries [[$05]]--[[$06]] ([[$8C00]]--[[$8C0F]])
+straddle into the swappable level-data bank so the grid player sprite
+can change per level for the two terminal stance positions.
 
 <<drol.asm>>=
         PROCESSOR 6502
@@ -19286,7 +19488,7 @@ simultaneously.  Frame index = [[ZP_SPRITE_XREF]].  Rendered by
 <<sprite pointer tables hi>>
 ; --- ORG $7700: PILLAR_SPR_DATA frames ---
 <<pillar spr data>>
-; --- ORG $7AD4: SPRITE_PIXEL_DATA_RESIDUE_1 + WALL_L_SPR_DATA + WALL_SPR_DATA + RESIDUE_2 ---
+; --- ORG $7AD4: HIT_SPR_NEG + FLOOR_SPR + WALL_L_SPR + WALL_SPR + PLAYER_SPR_IDLE/ACTIVE + HIT_SPR_POS + PLAYER_GRID_SPR_A tails ---
 <<sprite pixel data>>
 @
 

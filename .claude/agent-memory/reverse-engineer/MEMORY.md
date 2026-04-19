@@ -44,3 +44,4 @@
 - [STAGE_VECTORS decomposition](drol-stage-vectors-decomposition.md) — $5D00-$5DEF now 13 labeled sub-chunks mirroring $0300-$03EF; pitfall: `<<chunk>>` refs in ASM comments get tangled
 - [Drol RWTS ZP symbols](drol-rwts-zp-symbols.md) — ZP_RWTS_PTR ($A0), ZP_RWTS_PTR2 ($A2), ZP_DIV_DIVIDEND/DIVISOR/REMAINDER ($CE/$DA/$E6); generic pointer pairs reused across 6 rwts routines
 - [Drol TIMER_FRAME obfuscation](drol-timer-frame-obfuscation.md) — DISPLAY_UPDATE's $6800/$6900 tables are actually MAIN_LOOP code bytes read as fake sprite-pointer data
+- [Drol GAME_OVER at $BDA0](drol-game-over-bda0.md) — level1.bin end-of-game handler; dissolve+reload+3-way restart dispatch on ZP_RESTART_FLAG; reversed ZP_HGR_SRC/DST roles; level1.asm needs shared EQU defines for cross-target symbols

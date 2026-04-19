@@ -18373,7 +18373,7 @@ hold real bytes; every non-level page stays at [[$00]]:
   sprite tables ([[ATTRACT_SPR]] / [[ATTRACT_SPR2]] at [[$B002]]/[[$B006]]
   with pointers into [[$B500]]--[[$BC]]\textit{xx}), the ``Broderbund''
   attribution strip at [[BRODERBUND_LOGO_SPR]], and the end-of-game
-  handler [[GAME_OVER]] at [[$BDA0]].
+  handler [[GAME_OVER]].
 \end{itemize}
 
 All of the shared pages ([[$0200]], [[$1300]]--[[$18FF]], [[$6700]]--[[$72FF]],
@@ -18443,6 +18443,163 @@ adjacency applies, so the colour of each on-bit depends on both the
 byte's palette bit and pixel-column parity.}
 \label{fig:attract_spr_renders}
 \end{figure}
+
+\section{End-of-game handler}
+
+[[GAME_OVER]] is the tail of [[MAIN_LOOP]] when the per-hit
+credit counter [[ZP_GAME_OVER]] goes negative (the game's ``you got
+hit one too many times'' path).  [[MAIN_LOOP]]'s exit check
+[[JMP]]s here when [[ZP_GAME_OVER]] goes negative.
+
+The routine splits into four phases:
+
+\begin{enumerate}
+\item \textbf{Wipe} and \textbf{reload} --- call [[SCREEN_ROW_COPY]] for
+  the 192-row buffer-to-page copy (the characteristic end-of-game
+  screen dissolve with per-row click track), then [[RWTS_RELOAD]] to
+  fetch the next level's swappable image from disk.
+\item \textbf{Reseed game state} --- zero the three on-screen score
+  digits and the HUD column bounds, reseat [[ZP_PLAYER_Y]] to the
+  starting floor ([[PLAYER_START_Y]]), and call [[INIT_LEVEL_STATE]] +
+  [[PLAYER_MOVE_TICK]] so the reloaded level is in its fresh-start
+  posture.  [[ZP_GAME_OVER]] resets to [[$01]] (one more hit-credit).
+  This is the same set of writes [[GAME_START_INIT]] does for
+  player-Y / score / column bounds, minus the
+  [[ZP_LIVES_BCD]] / [[ZP_SCORE_HI]]..[[LO]] / [[ZP_RESTART_FLAG]]
+  reset trio --- that trio is reached through the conditional
+  [[JSR GAME_RESTART]] below.
+\item \textbf{Page-2 to page-1 dissolve} --- a 192-row loop
+  ([[X]] = [[$BF]] down to [[$00]]) that copies one hi-res row at a
+  time from page~2 to page~1 via indirect [[(ZP_HGR_DST),Y]]
+  ~->~[[(ZP_HGR_SRC),Y]] stores (the [[SRC]]/[[DST]] naming is
+  reversed relative to [[START_ATTRACT]]'s convention: here
+  [[ZP_HGR_SRC]] is the write pointer and [[ZP_HGR_DST]] is the read
+  pointer), using
+  [[SCREEN_ROW_ADDR_LO]] (shared low byte), [[SCREEN_ROW_ADDR_HI]]
+  (page~1 high) and [[SCREEN_ROW_ADDR_HI2]] (page~2 high) to
+  assemble the row pointers.  Between rows it calls the Monitor
+  [[MON_WAIT]] routine with [[A]]~=~[[GAME_OVER_WAIT]] for a brief
+  delay and [[ROW_COPY_CLICK]] for the per-row speaker-click sfx
+  (pitch = [[X]]/4).  The effect is a bottom-up reveal of the reloaded
+  playfield.
+\item \textbf{Continuation dispatch} --- read the dual-role byte
+  [[ZP_RESTART_FLAG]] (also known as [[ZP_JOY_FLAG]]) and branch:
+  \begin{itemize}
+  \item [[ZP_RESTART_FLAG]]~=~0: [[JMP LIFE_LOST_RESUME]] (skipping
+    [[KBDSTROBE]] clear + [[LEVEL_TRANSITION]]).
+  \item [[ZP_RESTART_FLAG]]~<~0 (bit~7 set: joystick detected, or the
+    [[$FF]] left by [[GAME_START_INIT]]): [[JMP MAIN_LOOP]] directly
+    --- the game resumes without resetting score/lives.
+  \item [[ZP_RESTART_FLAG]]~>~0: [[JSR GAME_RESTART]] (which clears
+    [[ZP_LIVES_BCD]], [[ZP_SCORE_HI]]..[[LO]], and sets
+    [[ZP_RESTART_FLAG]]~=~[[$FF]]), then [[JMP MAIN_LOOP]].  The side
+    effect of [[GAME_RESTART]] is that [[ZP_RESTART_FLAG]] leaves the
+    routine bit-7-set, so the next entry into [[GAME_OVER]] takes the
+    joystick-path branch.
+  \end{itemize}
+\end{enumerate}
+
+The routine lives in the level-1 swappable region (outside
+\texttt{drol.bin}), so reaching it requires the bank that
+[[RWTS_RELOAD]] paged in earlier to still be resident --- which it is,
+since [[GAME_OVER]] itself ran the reload before the dispatch.
+
+<<level1 game over defines>>=
+
+; --- End-of-game state reset (see GAME_OVER body) ---
+PLAYER_START_Y  = $6B           ; Floor-2 Y anchor seeded by GAME_OVER
+
+; Monitor delay parameter passed to MON_WAIT inside the wipe loop.
+; At ~60Hz the loop's A=$20 is about 17ms per row, yielding a
+; ~3-second fill for all 192 rows.
+GAME_OVER_WAIT  = $20
+
+; --- Apple II ROM ---
+; (MON_WAIT is already defined in the screen-row-copy defines chunk.)
+
+@
+
+<<level1 game over>>=
+
+        ORG $BDA0
+GAME_OVER:
+        SUBROUTINE
+        ; End-of-game handler: fires from MAIN_LOOP when
+        ; ZP_GAME_OVER goes negative.  Runs a disk-reload,
+        ; reseeds game state, dissolves from page 2 into page 1 with
+        ; per-row sfx, and routes back into either the life-lost
+        ; animation, MAIN_LOOP directly, or MAIN_LOOP via
+        ; GAME_RESTART.
+        ;
+        ; Inputs:
+        ;   ZP_RESTART_FLAG -- three-way continuation dispatch
+        ;                      (see prose for the branch table).
+        ;
+        ; Modifies:
+        ;   ZP_SCORE_0..2, ZP_CLEAR_COL, ZP_PLAYER_Y, ZP_GAME_OVER,
+        ;   ZP_HGR_DST, ZP_HGR_SRC, HUD_SCORE_COL, HUD_LIVES_COL,
+        ;   hi-res page 1 (filled from page 2 via the dissolve),
+        ;   all ZP re-seeded by INIT_LEVEL_STATE.
+        ; Clobbers: A, X, Y
+
+; --- Wipe + reload ---
+        JSR SCREEN_ROW_COPY             ; 192-row buffer dissolve
+        JSR RWTS_RELOAD                 ; fetch next level's swappable pages
+
+; --- Reseed score / HUD columns / player position ---
+        LDA #$00
+        STA ZP_SCORE_0
+        STA ZP_SCORE_1
+        STA ZP_SCORE_2
+        STA HUD_SCORE_COL               ; left playfield bound -> col 0
+        LDA #$27
+        STA ZP_CLEAR_COL                ; clear-loop max column = 39
+        LDA #$28
+        STA HUD_LIVES_COL               ; right playfield bound -> col 40
+        LDA #PLAYER_START_Y
+        STA ZP_PLAYER_Y
+        JSR INIT_LEVEL_STATE            ; restore ZP from master buffers
+        JSR PLAYER_MOVE_TICK            ; settle player sprite
+        LDA #$01
+        STA ZP_GAME_OVER                ; one hit-credit for the new frame
+
+; --- Bottom-up page-2 -> page-1 dissolve, with per-row sfx ---
+; Note: ZP_HGR_SRC and ZP_HGR_DST play the opposite roles from their
+; START_ATTRACT usage here: ZP_HGR_SRC is the write (page-1) pointer
+; and ZP_HGR_DST is the read (page-2) pointer.  Keeping the existing
+; EQU names keeps the ZP symbol table consistent across routines.
+        LDX #$BF                        ; row 191 down to 0
+.wipe_row:
+        LDA SCREEN_ROW_ADDR_LO,X
+        STA ZP_HGR_SRC                  ; page-1 dst lo
+        STA ZP_HGR_DST                  ; page-2 src lo (shared low byte)
+        LDA SCREEN_ROW_ADDR_HI,X
+        STA ZP_HGR_SRC+1                ; page-1 dst hi
+        LDA SCREEN_ROW_ADDR_HI2,X
+        STA ZP_HGR_DST+1                ; page-2 src hi
+        LDY #$27                        ; 40 bytes per row (Y = 0..$27)
+.wipe_byte:
+        LDA (ZP_HGR_DST),Y              ; read page-2 byte
+        STA (ZP_HGR_SRC),Y              ; write page-1 byte
+        DEY
+        BPL .wipe_byte
+        LDA #GAME_OVER_WAIT
+        JSR MON_WAIT                    ; Monitor delay (A clocks)
+        JSR ROW_COPY_CLICK              ; per-row pitch-descending click
+        DEX
+        CPX #$FF
+        BNE .wipe_row                   ; until X wraps past 0
+
+; --- Continuation dispatch on ZP_RESTART_FLAG ---
+        LDA ZP_RESTART_FLAG
+        BEQ .to_life_lost               ; == 0 -> LIFE_LOST_RESUME
+        BMI .to_main_loop               ; < 0  -> MAIN_LOOP direct
+        JSR GAME_RESTART                ; > 0  -> full score/lives reset
+.to_main_loop:
+        JMP MAIN_LOOP
+.to_life_lost:
+        JMP LIFE_LOST_RESUME
+@ %def GAME_OVER
 
 \section{HEX chunks}
 
@@ -20868,21 +21025,60 @@ broken out of these blobs into labelled chunks the same way the
         HEX 3E BA 88 D0 FA AE F8 05
         HEX A0 04 B1 48 20 5A BE 28
         HEX D0 11 A4 47 10 0D A0 12
-        HEX 20 00 01 20 00 BE A9 00
-        HEX 85 2B 85 2C 85 2D 8D AB
-        HEX 65 A9 27 85 2E A9 28 8D
-        HEX A7 65 A9 6B 85 4A 20 B8
-        HEX 11 20 CB 64 A9 01 85 39
-        HEX A2 BF BD 80 73 85 29 85
-        HEX 2F BD C0 72 85 2A BD 40
-        HEX 74 85 30 A0 27 B1 2F 91
-        HEX 29 88 10 F9 A9 20 20 A8
-        HEX FC 20 B7 01 CA E0 FF D0
-        HEX D9 A5 44 F0 08 30 03 20
-        HEX C2 13 4C CB 67 4C 0E 72
 @
 
 \section{Assembly}
+
+Because the [[level1]] target compiles in isolation (it does not inline
+the \texttt{drol} or \texttt{rwts} sources), any cross-target symbol
+used inside a level-1 code chunk must be declared here with an
+[[EQU]].  [[<<level1 defines>>]] is the shared declaration block; keep
+it in sync with the authoritative definitions in the
+\texttt{drol}/\texttt{rwts} chapters.
+
+<<level1 defines>>=
+
+; =========================================================================
+;  Cross-target symbol aliases.
+;  These EQUs redeclare labels whose bodies live in drol.asm / rwts.asm
+;  so the level1 target can reference them by name without pulling the
+;  full code chunks.  Keep in sync with the defining chunks.
+; =========================================================================
+
+; --- Zero page (shared with drol.asm defines) ---
+ZP_HGR_SRC      = $29           ; Hi-res copy source pointer (2 bytes)
+ZP_HGR_DST      = $2F           ; Hi-res copy destination pointer (2 bytes)
+ZP_SCORE_0      = $2B           ; Score HUD digit 0
+ZP_SCORE_1      = $2C           ; Score HUD digit 1
+ZP_SCORE_2      = $2D           ; Score HUD digit 2
+ZP_CLEAR_COL    = $2E           ; Playfield-clear column counter / right edge
+ZP_GAME_OVER    = $39           ; Per-hit credit counter ($FF = game over)
+ZP_RESTART_FLAG = $44           ; Cold-start/joystick dual-role dispatch flag
+ZP_PLAYER_Y     = $4A           ; Player world Y (floor anchor index)
+
+; --- Code in drol.asm ---
+SCREEN_ROW_COPY  = $0100        ; Page-to-page row-wipe routine
+ROW_COPY_CLICK   = $01B7        ; Title-wipe per-row speaker-click sfx
+INIT_LEVEL_STATE = $11B8        ; Restore ZP from master buffers
+GAME_RESTART     = $13C2        ; Lives/score/flag reset sub-entry
+PLAYER_MOVE_TICK = $64CB        ; Player-movement-tick dispatcher
+MAIN_LOOP        = $67CB        ; Main per-frame loop
+LIFE_LOST_RESUME = $720E        ; LIFE_LOST_HANDLER sub-entry (post-transition)
+SCREEN_ROW_ADDR_HI  = $72C0     ; Row-base hi bytes (page 1)
+SCREEN_ROW_ADDR_LO  = $7380     ; Row-base lo bytes (shared)
+SCREEN_ROW_ADDR_HI2 = $7440     ; Row-base hi bytes (page 2)
+
+; --- Code in rwts.asm ---
+RWTS_RELOAD     = $BE00         ; Reload loader and fetch next level
+
+; --- HUD column bounds (in drol.asm, bodies inside GAME_START_INIT) ---
+HUD_SCORE_COL   = $65AB         ; Left-bound column (playfield start)
+HUD_LIVES_COL   = $65A7         ; Right-bound column (playfield end)
+
+; --- Apple II ROM ---
+MON_WAIT        = $FCA8         ; Monitor WAIT (delay loop, A = duration)
+
+@
 
 <<level1 prologue>>=
 
@@ -20912,6 +21108,8 @@ broken out of these blobs into labelled chunks the same way the
 
 <<level1.asm>>=
         PROCESSOR 6502
+<<level1 defines>>
+<<level1 game over defines>>
 <<level1 prologue>>
 ; --- $0200: initial ZP-restore data page ---
 <<level1 page 02>>
@@ -20927,6 +21125,8 @@ broken out of these blobs into labelled chunks the same way the
 <<level1 gap 4>>
 ; --- $8C00-$BDFF: level-only sprites + end-game handler ---
 <<level1 pages 8C-BD>>
+; --- $BDA0-$BDFF: end-of-game handler (GAME_OVER) ---
+<<level1 game over>>
 @
 
 

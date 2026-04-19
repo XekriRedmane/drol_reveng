@@ -17988,12 +17988,19 @@ exact [[ZP_SPRITE_W]] / [[ZP_SPRITE_H]] values each caller sets before
 the blit.
 
 \paragraph{Decomposition progress.}  Per-frame rendering is being
-tackled one sub-table at a time.  The first sub-table ---
-[[PILLAR_SPR_DATA]] ([[$7700]]--[[$7AD3]], 7 frames $\times$ 140
-bytes) --- is described in its own \S{} immediately below.  The
-remaining [[$7AD4]]--[[$8BFF]] bytes are still emitted as an
-undecoded [[SPRITE_PIXEL_DATA]] [[HEX]] blob for byte-perfect match,
-with per-frame decomposition pending.
+tackled one sub-table at a time.  Three sub-tables share the same
+$\$8\mathrm{C}$-byte, 4-column $\times$ 35-row column-major
+[[INTERLACE_BLIT]] format and are now decomposed frame by frame:
+[[PILLAR_SPR_DATA]] ([[$7700]]--[[$7AD3]], 7 frames),
+[[WALL_L_SPR_DATA]] ([[$7DA4]]--[[$8177]], 7 frames) and
+[[WALL_SPR_DATA]] ([[$8178]]--[[$854B]], 7 frames).  Two residue
+bands remain as undecoded [[HEX]] blobs: [[SPRITE_PIXEL_DATA_RESIDUE_1]]
+([[$7AD4]]--[[$7DA3]], holds [[HIT_SPR_NEG]] and [[FLOOR_SPR]]) and
+[[SPRITE_PIXEL_DATA_RESIDUE_2]] ([[$854C]]--[[$8BFF]], holds the
+player-body, [[HIT_SPR_POS]] and grid-tail frames).  Each residue
+uses a different $\$28$- or $\$4\mathrm{C}$-byte stride consumed by
+[[DRAW_SPRITE_OPAQUE]] rather than the wall/pillar tri-band
+[[INTERLACE_BLIT]] format.
 
 <<pillar spr data>>=
 
@@ -18193,12 +18200,13 @@ walking-animation slot).}
 <<sprite pixel data>>=
 
         ORG $7AD4
-SPRITE_PIXEL_DATA:
-        ; Sprite pixel data ($7AD4-$8BFF, 4396 bytes).  Referenced
-        ; via the pointer tables in SPRITE_POINTER_TABLES_LO/HI; each
-        ; entry is a sprite frame.  Frames at $7700-$7AD3 are labeled
-        ; as PILLAR_SPR_DATA_0..6; remaining frames are not yet
-        ; per-frame decoded.
+SPRITE_PIXEL_DATA_RESIDUE_1:
+        ; Remaining sprite pixel data ($7AD4-$7DA3, 720 bytes).
+        ; Holds HIT_SPR_NEG (frame 0 at $7AD4, frames 1-6 at $7AFC-$7BEB,
+        ; each $28 bytes) and FLOOR_SPR (11 frames at $7BEC-$7DA3, each $28
+        ; bytes).  Per-frame decomposition pending --- both tables use the
+        ; $28-byte DRAW_SPRITE_OPAQUE format (W=7, H=5) rather than the
+        ; $8C-byte INTERLACE_BLIT format used by the pillar/wall tables.
         HEX 7F 55 7F 7F 7F 7F 7F 75
         HEX 2A 55 3F 7F 7F 7F 7F 55
         HEX 2A 55 3F 7F 7F 7F 7F 55
@@ -18289,6 +18297,12 @@ SPRITE_PIXEL_DATA:
         HEX 7F 75 3F 7F 7A 5F 7F 7D
         HEX 2F 7F 7E 57 7F 7F 2B 7F
         HEX 7F 55 7F 7F 6A 7F 7F 75
+
+WALL_L_SPR_DATA_0:
+        ; WALL_L_SPR frame 0 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_L_SPR_LO[0] / WALL_L_SPR_HI[0];
+        ; painted at the left playfield edge by REFRESH_LEFT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
@@ -18306,24 +18320,37 @@ SPRITE_PIXEL_DATA:
         HEX 7A 7A 7A 2A 6A 6A 6A 6A
         HEX 2A 6A 6A 6A 6A 2A 6A 6A
         HEX 6A 6A 2A 6A 6A 6A 6A 2A
-        HEX 7A 7A 7A 7A 00 00 00 00
+        HEX 7A 7A 7A 7A
+
+WALL_L_SPR_DATA_1:
+        ; WALL_L_SPR frame 1 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_L_SPR_LO[1] / WALL_L_SPR_HI[1];
+        ; painted at the left playfield edge by REFRESH_LEFT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 08 04 0E 17 1F
-        HEX 1C 18 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 08
+        HEX 04 0E 17 1F 1C 18 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 15 15 15 15 15 15
-        HEX 7F 7F 7F 7F 15 3F 3F 3F
-        HEX 3F 15 3F 3F 3F 3F 15 3F
-        HEX 3F 3F 3F 15 3F 3F 3F 3F
-        HEX 15 7F 7F 7F 7F 2A 2A 2A
-        HEX 2A 2A 2A 6A 6A 6A 6A 2A
+        HEX 00 00 00 00 00 00 15 15
+        HEX 15 15 15 15 7F 7F 7F 7F
+        HEX 15 3F 3F 3F 3F 15 3F 3F
+        HEX 3F 3F 15 3F 3F 3F 3F 15
+        HEX 3F 3F 3F 3F 15 7F 7F 7F
+        HEX 7F 2A 2A 2A 2A 2A 2A 6A
+        HEX 6A 6A 6A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 6A 6A 6A 6A
+        HEX 6A 6A 6A 6A
+
+WALL_L_SPR_DATA_2:
+        ; WALL_L_SPR frame 2 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_L_SPR_LO[2] / WALL_L_SPR_HI[2];
+        ; painted at the left playfield edge by REFRESH_LEFT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
@@ -18341,24 +18368,37 @@ SPRITE_PIXEL_DATA:
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 00 00 00 00
-        HEX 01 00 01 02 03 03 03 00
+        HEX 2A 2A 2A 2A
+
+WALL_L_SPR_DATA_3:
+        ; WALL_L_SPR frame 3 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_L_SPR_LO[3] / WALL_L_SPR_HI[3];
+        ; painted at the left playfield edge by REFRESH_LEFT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
+        HEX 00 00 00 00 01 00 01 02
+        HEX 03 03 03 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 02
-        HEX 02 02 02 02 42 6F 7F 7F
-        HEX 4F 02 07 07 07 07 02 07
-        HEX 07 07 07 02 07 07 07 07
-        HEX 02 07 07 07 07 02 0F 0F
-        HEX 0F 0F 55 55 55 55 55 55
-        HEX 7D 7D 7D 7D 55 75 75 75
-        HEX 75 55 75 75 75 75 55 75
-        HEX 75 75 75 55 75 75 75 75
-        HEX 55 7D 7D 7D 7D 2A 2A 2A
+        HEX 00 00 00 02 02 02 02 02
+        HEX 42 6F 7F 7F 4F 02 07 07
+        HEX 07 07 02 07 07 07 07 02
+        HEX 07 07 07 07 02 07 07 07
+        HEX 07 02 0F 0F 0F 0F 55 55
+        HEX 55 55 55 55 7D 7D 7D 7D
+        HEX 55 75 75 75 75 55 75 75
+        HEX 75 75 55 75 75 75 75 55
+        HEX 75 75 75 75 55 7D 7D 7D
+        HEX 7D 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 2A
+        HEX 2A 2A 2A 2A
+
+WALL_L_SPR_DATA_4:
+        ; WALL_L_SPR frame 4 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_L_SPR_LO[4] / WALL_L_SPR_HI[4];
+        ; painted at the left playfield edge by REFRESH_LEFT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
@@ -18376,24 +18416,37 @@ SPRITE_PIXEL_DATA:
         HEX 75 75 75 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
-        HEX 75 75 75 75 00 00 00 00
+        HEX 75 75 75 75
+
+WALL_L_SPR_DATA_5:
+        ; WALL_L_SPR frame 5 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_L_SPR_LO[5] / WALL_L_SPR_HI[5];
+        ; painted at the left playfield edge by REFRESH_LEFT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 10 08 1D 2F 3F
-        HEX 39 30 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 10
+        HEX 08 1D 2F 3F 39 30 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 01 01
-        HEX 01 01 2A 2A 2A 2A 2A 2A
-        HEX 7F 7F 7F 7F 2A 7E 7E 7E
-        HEX 7E 2A 7E 7E 7E 7E 2A 7E
-        HEX 7E 7E 7E 2A 7E 7E 7E 7E
-        HEX 2A 7F 7F 7F 7F 55 55 55
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 01 01 01 01 2A 2A
+        HEX 2A 2A 2A 2A 7F 7F 7F 7F
+        HEX 2A 7E 7E 7E 7E 2A 7E 7E
+        HEX 7E 7E 2A 7E 7E 7E 7E 2A
+        HEX 7E 7E 7E 7E 2A 7F 7F 7F
+        HEX 7F 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55
+
+WALL_L_SPR_DATA_6:
+        ; WALL_L_SPR frame 6 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_L_SPR_LO[6] / WALL_L_SPR_HI[6];
+        ; painted at the left playfield edge by REFRESH_LEFT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 00 00 00 00 00 00 00 01
         HEX 01 01 01 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
@@ -18411,24 +18464,37 @@ SPRITE_PIXEL_DATA:
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 55
+
+WALL_SPR_DATA_0:
+        ; WALL_SPR frame 0 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_SPR_LO[0] / WALL_SPR_HI[0];
+        ; painted at the right playfield edge by REFRESH_RIGHT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 2A
-        HEX 2A 2A 2A 2A 2A 2F 2F 2F
-        HEX 2F 2A 2B 2B 2B 2B 2A 2B
-        HEX 2B 2B 2B 2A 2B 2B 2B 2B
-        HEX 2A 2B 2B 2B 2B 2A 2F 2F
-        HEX 2F 2F 50 50 50 50 50 50
-        HEX 7D 7F 7F 7C 50 78 78 78
-        HEX 78 50 78 78 78 78 50 78
-        HEX 78 78 78 50 78 78 78 78
-        HEX 50 7C 7C 7C 7C 00 00 00
-        HEX 00 20 40 60 50 70 70 30
+        HEX 55 55 55 2A 2A 2A 2A 2A
+        HEX 2A 2F 2F 2F 2F 2A 2B 2B
+        HEX 2B 2B 2A 2B 2B 2B 2B 2A
+        HEX 2B 2B 2B 2B 2A 2B 2B 2B
+        HEX 2B 2A 2F 2F 2F 2F 50 50
+        HEX 50 50 50 50 7D 7F 7F 7C
+        HEX 50 78 78 78 78 50 78 78
+        HEX 78 78 50 78 78 78 78 50
+        HEX 78 78 78 78 50 7C 7C 7C
+        HEX 7C 00 00 00 00 20 40 60
+        HEX 50 70 70 30 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00
+
+WALL_SPR_DATA_1:
+        ; WALL_SPR frame 1 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_SPR_LO[1] / WALL_SPR_HI[1];
+        ; painted at the right playfield edge by REFRESH_RIGHT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
@@ -18446,24 +18512,37 @@ SPRITE_PIXEL_DATA:
         HEX 40 40 40 40 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 55 55 55 55
+        HEX 00 00 00 00
+
+WALL_SPR_DATA_2:
+        ; WALL_SPR frame 2 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_SPR_LO[2] / WALL_SPR_HI[2];
+        ; painted at the right playfield edge by REFRESH_RIGHT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
-        HEX 55 55 55 55 55 55 55 2A
-        HEX 2A 2A 2A 2A 2A 7F 7F 7F
-        HEX 7F 2A 3F 3F 3F 3F 2A 3F
-        HEX 3F 3F 3F 2A 3F 3F 3F 3F
-        HEX 2A 3F 3F 3F 3F 2A 7F 7F
-        HEX 7F 7F 00 00 00 00 04 08
-        HEX 5C 7A 7E 4E 06 00 00 00
+        HEX 55 55 55 55 55 55 55 55
+        HEX 55 55 55 2A 2A 2A 2A 2A
+        HEX 2A 7F 7F 7F 7F 2A 3F 3F
+        HEX 3F 3F 2A 3F 3F 3F 3F 2A
+        HEX 3F 3F 3F 3F 2A 3F 3F 3F
+        HEX 3F 2A 7F 7F 7F 7F 00 00
+        HEX 00 00 04 08 5C 7A 7E 4E
+        HEX 06 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 40 40 40
+        HEX 40 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 40 40 40 40 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00
+
+WALL_SPR_DATA_3:
+        ; WALL_SPR frame 3 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_SPR_LO[3] / WALL_SPR_HI[3];
+        ; painted at the right playfield edge by REFRESH_RIGHT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 55 55 55 55 55 55 57 57
         HEX 57 57 55 55 55 55 55 55
         HEX 55 55 55 55 55 55 55 55
@@ -18481,24 +18560,37 @@ SPRITE_PIXEL_DATA:
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 2A 2A 2A 2A
+        HEX 00 00 00 00
+
+WALL_SPR_DATA_4:
+        ; WALL_SPR frame 4 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_SPR_LO[4] / WALL_SPR_HI[4];
+        ; painted at the right playfield edge by REFRESH_RIGHT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 55
-        HEX 55 55 55 55 55 5F 5F 5F
-        HEX 5F 55 57 57 57 57 55 57
-        HEX 57 57 57 55 57 57 57 57
-        HEX 55 57 57 57 57 55 5F 5F
-        HEX 5F 5F 20 20 20 20 20 21
-        HEX 7B 7F 7F 79 20 70 70 70
-        HEX 70 20 70 70 70 70 20 70
-        HEX 70 70 70 20 70 70 70 70
-        HEX 20 78 78 78 78 00 00 00
-        HEX 00 40 00 40 20 60 60 60
+        HEX 2A 2A 2A 2A 2A 2A 2A 2A
+        HEX 2A 2A 2A 55 55 55 55 55
+        HEX 55 5F 5F 5F 5F 55 57 57
+        HEX 57 57 55 57 57 57 57 55
+        HEX 57 57 57 57 55 57 57 57
+        HEX 57 55 5F 5F 5F 5F 20 20
+        HEX 20 20 20 21 7B 7F 7F 79
+        HEX 20 70 70 70 70 20 70 70
+        HEX 70 70 20 70 70 70 70 20
+        HEX 70 70 70 70 20 78 78 78
+        HEX 78 00 00 00 00 40 00 40
+        HEX 20 60 60 60 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00
+
+WALL_SPR_DATA_5:
+        ; WALL_SPR frame 5 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_SPR_LO[5] / WALL_SPR_HI[5];
+        ; painted at the right playfield edge by REFRESH_RIGHT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
@@ -18516,24 +18608,38 @@ SPRITE_PIXEL_DATA:
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 2A 2A 2A 2A
-        HEX 2A 2A 2B 2B 2B 2B 2A 2A
+        HEX 00 00 00 00
+
+WALL_SPR_DATA_6:
+        ; WALL_SPR frame 6 (140 bytes, 4 cols x 35 rows column-major).
+        ; Pointed to by WALL_SPR_LO[6] / WALL_SPR_HI[6];
+        ; painted at the right playfield edge by REFRESH_RIGHT_WALL via
+        ; INTERLACE_BLIT_P1/P2 (3 perspective bands simultaneously).
+        HEX 2A 2A 2A 2A 2A 2A 2B 2B
+        HEX 2B 2B 2A 2A 2A 2A 2A 2A
         HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2A 2A 2A 2A 2A
-        HEX 2A 2A 2A 2B 2B 2B 2B 54
-        HEX 54 54 54 54 54 7F 7F 7F
-        HEX 7F 54 7E 7E 7E 7E 54 7E
-        HEX 7E 7E 7E 54 7E 7E 7E 7E
-        HEX 54 7E 7E 7E 7E 54 7F 7F
-        HEX 7F 7F 00 00 00 00 08 10
-        HEX 38 74 7C 1C 0C 00 00 00
+        HEX 2A 2A 2A 2A 2A 2A 2A 2B
+        HEX 2B 2B 2B 54 54 54 54 54
+        HEX 54 7F 7F 7F 7F 54 7E 7E
+        HEX 7E 7E 54 7E 7E 7E 7E 54
+        HEX 7E 7E 7E 7E 54 7E 7E 7E
+        HEX 7E 54 7F 7F 7F 7F 00 00
+        HEX 00 00 08 10 38 74 7C 1C
+        HEX 0C 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00
+
+SPRITE_PIXEL_DATA_RESIDUE_2:
+        ; Remaining sprite pixel data ($854C-$8BFF, 1716 bytes).
+        ; Holds PLAYER_SPR_IDLE/ACTIVE frames ($854C-$8ABF, $4C-byte
+        ; stride), HIT_SPR_POS frames ($8AC0-$8BD7, $28-byte stride) and
+        ; the small grid-body tails from $8BD8 onward.  Per-frame
+        ; decomposition pending.
         HEX 00 82 D0 00 00 8A D4 00
         HEX 00 8A D6 00 00 AA DF 00
         HEX 00 EA FD 00 81 EA F9 00
@@ -18749,7 +18855,61 @@ SPRITE_PIXEL_DATA:
         HEX 81 A0 81 A0 00 00 85 00
         HEX 85 00 85 00 00 00 00 94
         HEX 00 94 00 94
-@ %def SPRITE_PIXEL_DATA
+@ %def SPRITE_PIXEL_DATA_RESIDUE_1 SPRITE_PIXEL_DATA_RESIDUE_2 WALL_L_SPR_DATA_0 WALL_L_SPR_DATA_1 WALL_L_SPR_DATA_2 WALL_L_SPR_DATA_3 WALL_L_SPR_DATA_4 WALL_L_SPR_DATA_5 WALL_L_SPR_DATA_6 WALL_SPR_DATA_0 WALL_SPR_DATA_1 WALL_SPR_DATA_2 WALL_SPR_DATA_3 WALL_SPR_DATA_4 WALL_SPR_DATA_5 WALL_SPR_DATA_6
+
+\section{WALL\_L\_SPR frames ([[$7DA4]]--[[$8177]])}
+
+[[WALL_L_SPR_DATA_0]] through [[WALL_L_SPR_DATA_6]] are the seven
+frames of the left-edge wall tile painted every frame by
+[[REFRESH_LEFT_WALL]].  The matching pointer table is
+[[WALL_L_SPR_LO]] / [[WALL_L_SPR_HI]] (indexed by [[ZP_SPRITE_XREF]]),
+sized and formatted identically to the pillar frames: 140 bytes each,
+4 columns $\times$ 35 rows, column-major, painted by
+[[INTERLACE_BLIT_P1]] / [[INTERLACE_BLIT_P2]] into three perspective
+bands simultaneously (rows 72--106, 112--146, 152--186).
+
+\paragraph{Visible content.}  Each tile renders a short vertical wall
+section with a torch/handle decoration on its left side.  The animation
+cycles through two families of frames: frames 0--3 use green as the
+primary hue while frames 4--6 use purple, so alternating between the
+two families produces the pulsing ``switch-on'' effect seen when the
+player triggers a tier change.  The walking-animation frame index
+[[ZP_SPRITE_XREF]] advances once per footfall, keeping the wall
+shimmer in phase with the player and the pillars.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{images/wall_l_sprites.png}
+\caption{The seven [[WALL_L_SPR_DATA]] frames, rendered as the top
+perspective band (rows 72--106).  Drawn by [[REFRESH_LEFT_WALL]] via
+[[INTERLACE_BLIT_P1]]/[[INTERLACE_BLIT_P2]] into bands 0/1/2
+simultaneously.  Frame index = [[ZP_SPRITE_XREF]].  Rendered by
+[[.claude/scripts/render_wall_sprites.py]].}
+\label{fig:wall_l_sprites}
+\end{figure}
+
+\section{WALL\_SPR frames ([[$8178]]--[[$854B]])}
+
+[[WALL_SPR_DATA_0]] through [[WALL_SPR_DATA_6]] are the seven frames
+of the right-edge wall tile painted every frame by
+[[REFRESH_RIGHT_WALL]].  The matching pointer table is
+[[WALL_SPR_LO]] / [[WALL_SPR_HI]] (indexed by [[ZP_SPRITE_XREF]]).
+Format is identical to [[WALL_L_SPR_DATA]]: 140 bytes, 4 columns
+$\times$ 35 rows, column-major, painted via [[INTERLACE_BLIT_P1]] /
+[[INTERLACE_BLIT_P2]] into the same three perspective bands.  The
+image mirrors the left-wall handle onto the right side of the tile so
+both edges of the playfield frame the same shading motif.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{images/wall_sprites.png}
+\caption{The seven [[WALL_SPR_DATA]] frames, rendered as the top
+perspective band (rows 72--106).  Drawn by [[REFRESH_RIGHT_WALL]] via
+[[INTERLACE_BLIT_P1]]/[[INTERLACE_BLIT_P2]] into bands 0/1/2
+simultaneously.  Frame index = [[ZP_SPRITE_XREF]].  Rendered by
+[[.claude/scripts/render_wall_sprites.py]].}
+\label{fig:wall_sprites}
+\end{figure}
 
 <<drol.asm>>=
         PROCESSOR 6502
@@ -19059,7 +19219,7 @@ SPRITE_PIXEL_DATA:
 <<sprite pointer tables hi>>
 ; --- ORG $7700: PILLAR_SPR_DATA frames ---
 <<pillar spr data>>
-; --- ORG $7AD4: Remaining sprite pixel data ---
+; --- ORG $7AD4: SPRITE_PIXEL_DATA_RESIDUE_1 + WALL_L_SPR_DATA + WALL_SPR_DATA + RESIDUE_2 ---
 <<sprite pixel data>>
 @
 

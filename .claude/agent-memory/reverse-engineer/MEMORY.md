@@ -43,3 +43,4 @@
 - [Drol ZP_SAVE cold-start image](drol-zp-save-image.md) — $5700-$57FF is the full on-disk zero-page image; explains why $37=$C0 and why attract runs first (ZP_GAME_ENTRY=$72A3 from $4E/$4F)
 - [STAGE_VECTORS decomposition](drol-stage-vectors-decomposition.md) — $5D00-$5DEF now 13 labeled sub-chunks mirroring $0300-$03EF; pitfall: `<<chunk>>` refs in ASM comments get tangled
 - [Drol RWTS ZP symbols](drol-rwts-zp-symbols.md) — ZP_RWTS_PTR ($A0), ZP_RWTS_PTR2 ($A2), ZP_DIV_DIVIDEND/DIVISOR/REMAINDER ($CE/$DA/$E6); generic pointer pairs reused across 6 rwts routines
+- [Drol TIMER_FRAME obfuscation](drol-timer-frame-obfuscation.md) — DISPLAY_UPDATE's $6800/$6900 tables are actually MAIN_LOOP code bytes read as fake sprite-pointer data

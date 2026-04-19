@@ -383,6 +383,15 @@ After the main RE work, pass over `main.nw` and apply the style rules in
   exists. These are common because earlier rounds introduced labels
   after the prose was written. Symbol-replace them too.
 
+  High-yield patterns to grep for: `at [[\$` and `from [[\$` and
+  `to [[\$` in prose almost always introduce a location that should be
+  named — these idioms ("the routine at $XXXX", "reads from $XX",
+  "jumps to $XXXX") are exactly where a symbol would clarify the
+  sentence. Also look for `([[\$` (parenthetical hex after a symbol,
+  which is redundant and should be dropped) and `\$[0-9A-F]` outside of
+  `[[ ]]` brackets in prose (unwrapped addresses that fail the prose
+  wrapping rule entirely).
+
   The round summary must include a `TODO-SYM` count delta (before vs.
   after) so regressions are visible.
 - **Code comments.** Remove comments that merely restate the instruction or

@@ -11180,15 +11180,26 @@ game-code address space but serves two distinct roles:
   [[$5C2B]]--[[$5CFF]] tail is dead residue of the install-time image.
 \end{itemize}
 
-The [[$5E00]]--[[$5EC4]] block following the two page images is a
-197-byte fragment of a Disk II nibble-level sector reader ($C089,
-$C08C, $C08E soft-switches), ending with a fall-through into
-[[RESTART_DISPATCH]] (itself statically dead).  Nothing
-in any shipped binary jumps into this fragment --- linear
-disassembly of [[drol.bin]] finds no [[JSR]]/[[JMP]] targeting any
-address in [[$5C2B]]--[[$5FFF]] other than the live [[$5C00]] entry.
-The bytes are preserved verbatim for byte-exactness but serve no
-runtime purpose.
+The [[$5E00]]--[[$5EC4]] block following the two page images is
+[[STAGE_RESIDUE_DEAD]]: a 197-byte dead fragment that opens with a
+Disk II nibble-level sector reader ([[STAGE_DISK_MOTOR_ON]],
+[[STAGE_DISK_DATA]], [[DISK_Q6_OFF]]/[[DISK_Q6_ON]]/[[DISK_Q7_OFF]]
+soft switches), runs through a seven-step retry delay that mistakenly
+targets [[DEAD_BA00_OVL]] (sprite data at run time, not code), calls
+into [[NIBBLE_READER_OVL]] (a mid-instruction entry into the live
+[[NIBBLE_READER]]), and finally drops into a
+[[GAME_START_INIT]]-style tail that re-zeros the BCD score digits,
+reseeds [[HUD_SCORE_COL]]/[[HUD_LIVES_COL]] and [[ZP_PLAYER_Y]],
+calls [[INIT_LEVEL_STATE]], and falls through into
+[[RESTART_DISPATCH]] (itself statically dead).  The restart tail
+carries a small [[BIT]]-abs 3-byte NOP trick on its [[STA ZP_SCORE_1]]
+operand that lets a mid-block branch (taken from the
+[[NIBBLE_READER_OVL]] return) skip the third-digit zero and land
+directly on the HUD seed.  Nothing in any shipped binary jumps into
+any of this --- linear disassembly of [[drol.bin]] finds no
+[[JSR]]/[[JMP]] targeting any address in [[$5C2B]]--[[$5FFF]] other
+than the live [[STAGE_STACK]] entry.  The bytes are preserved
+verbatim for byte-exactness but serve no runtime purpose.
 
 \paragraph{The [[$5ED4]]--[[$5FFF]] tail: pre-release twin of
 [[$BED4]]--[[$BFFF]].}  The remaining 300-byte chunk is the single
@@ -11250,7 +11261,7 @@ Range & Size & Role \\
 [[$5CF0]]--[[$5CFF]] & 16 bytes & [[STAGE_DEAD_TAIL_RESIDUE]]: install-time tone-emitter code fragment (not a mirror) \\
 [[$5D00]]--[[$5DEF]] & 240 bytes & [[STAGE_VECTORS]]: mirror of [[$0300]]--[[$03EF]] \\
 [[$5DF0]]--[[$5DFF]] & 16 bytes & Install-time padding/residue \\
-[[$5E00]]--[[$5EC4]] & 197 bytes & Dead fragment --- nibble-level sector reader \\
+[[$5E00]]--[[$5EC4]] & 197 bytes & [[STAGE_RESIDUE_DEAD]]: dead nibble-reader + restart-tail \\
 [[$5EC5]]--[[$5ED3]] & 15 bytes & [[RESTART_DISPATCH]] (dead) \\
 [[$5ED4]]--[[$5EFF]] & 44 bytes & [[STAGE_DEAD_RELOAD]]: dead RWTS-retry helpers \\
 [[$5F00]]--[[$5F47]] & 72 bytes & [[STAGE_DEAD_RESET]]: dead twin of [[RESET_R]] body \\
@@ -11513,45 +11524,247 @@ STAGE_VECTORS_RESIDUE:
 @ %def STAGE_ENTITY_ACTIVE STAGE_RESCUE_ANIM STAGE_RESCUE_FLOOR
 @ %def STAGE_RESCUE_COUNTDOWN_HEAD STAGE_VECTORS_RESIDUE
 
+<<stage residue dead defines>>=
+
+; --- Disk II data latch + drive-motor soft switches (dead residue) ---
+; (Live loader defines these in loader.asm; we redeclare locally for
+; the dead-residue routine that lives in drol.bin.)
+STAGE_DISK_DATA      = $C08C    ; Read data latch
+STAGE_DISK_MOTOR_ON  = $C089    ; Drive motor on
+
+; --- Cross-target bridges (live routines in other .asm files) ---
+; RWTS_RELOAD lives in rwts.asm at the same address; we declare it
+; locally because drol.asm cannot see the rwts label table.  Ditto
+; SCREEN_ROW_COPY at $0100 (installed by FIRST_BOOT from STAGE_STACK
+; into the stack page; drol.asm's live copy is at the
+; SCREEN_ROW_COPY label, but the dead call above targets the same
+; address symbolically).
+STAGE_RWTS_RELOAD    = $BE00    ; Entry point in rwts.bin (cross-target)
+
+; --- Dead-residue ZP aliases ---
+; The $5E00 dead residue uses $48/$49 as a generic indirect pointer
+; (to a 17-byte sector-header record) and $47 as a scratch flags
+; byte.  These ZP slots have unrelated live-engine meanings
+; (ZP_INPUT_MODE / unused) so we give them dead-code aliases here to
+; keep the disassembly readable without perturbing the live aliases.
+ZP_DEAD_SECHDR   = $48          ; 16-bit sector-header indirect pointer
+ZP_DEAD_FLAGS    = $47          ; cached header flag byte
+ZP_DEAD_HDR_AUX  = $3C          ; 16-bit indirect -- secondary header ptr
+ZP_DEAD_HDR_DST  = $0036        ; 4-byte scratch destination (ZP $36..$3F)
+                                 ; -- absolute addressed so Y=6..9 maps
+                                 ; to ZP $3C/$3D/$3E/$3F (overlaps
+                                 ; ZP_DEAD_HDR_AUX).
+
+; --- Disk II soft switches read by the dead residue ---
+DISK_Q6_OFF      = $C08A        ; Q6L: "sense write protect" / read mode
+DISK_Q6_ON       = $C08B        ; Q6H: latch load / write mode
+DISK_Q7_OFF      = $C08E        ; Q7L: shift register into read mode
+
+; --- Text-page scratch slots used as retry counters ---
+TXT_RETRY_04F8   = $04F8        ; Apple II text-page row 2 col 56
+TXT_RETRY_05F8   = $05F8        ; Apple II text-page row 4 col 56
+TXT_RETRY_06F8   = $06F8        ; Apple II text-page row 6 col 56
+
+; --- Overlay entry into a live RWTS label (dead-code target) ---
+; $BA00 lands inside SPRITE_TABLE_B_DATA at runtime (sprite bytes, not
+; code), so the JSR here is a nonsense call preserved only because the
+; containing routine is never reached.
+DEAD_BA00_OVL    = $BA00        ; dead-code target inside sprite region
+NIBBLE_READER_OVL = $BE5A       ; mid-instruction entry into live NIBBLE_READER
+
 <<stage residue dead>>=
 
         ORG $5E00
 STAGE_RESIDUE_DEAD:
+        SUBROUTINE
         ; Dead residue ($5E00-$5EC4, 197 bytes): a fragment of a
-        ; Disk II nibble-level sector reader (soft-switch reads from
-        ; $C089/$C08A/$C08B drive-phase pairs, $C08C data latch,
-        ; $C08E ROM read), ending with a JSR INIT_LEVEL_STATE and a
-        ; fall-through into RESTART_DISPATCH at $5EC5.  No shipped
-        ; binary calls any address in this range; the bytes are
-        ; staged residue from some pre-release layout and are
-        ; preserved here for byte-exactness only.
+        ; Disk II nibble-level sector reader followed by a
+        ; GAME_START_INIT-style level-restart tail.  No shipped binary
+        ; calls any address in this range; the bytes are staged
+        ; residue from some pre-release layout, preserved here for
+        ; byte-exactness only.  Falls through into RESTART_DISPATCH.
+        ;
+        ; Reconstructed control flow (all dead):
+        ;   .head  $5E00 - save caller's header pointer, seed text-page
+        ;                  retry counters, inspect header byte 1.
+        ;   .sync_wait $5E19 - header byte 1 != byte $0F: drain the
+        ;                  data latch until it settles on header byte
+        ;                  $0F, then restore X from the saved copy.
+        ;   .spin1 $5E34 - spin on the data latch until two reads
+        ;                  agree, saving the drive slot in
+        ;                  TXT_RETRY_05F8 mid-spin.
+        ;   .read_hdr $5E52 - pull a 4-byte field from header offsets
+        ;                  6..9 into ZP_DEAD_HDR_DST+Y and the third
+        ;                  byte of the (ZP_DEAD_HDR_AUX) indirect into
+        ;                  ZP_DEAD_FLAGS.
+        ;   .nib_check $5E64 - optionally cache header byte $02 into
+        ;                  byte $10; preserves processor flags across
+        ;                  the optional store via PHP/PLP.
+        ;   .phase_step $5E74 - ROR A picks phase $C08A vs $C08B per
+        ;                  the saved flags; ROR's result is shifted
+        ;                  into $35 (the live engine's
+        ;                  ZP_DIFF_THRESH_B).
+        ;   .retry_loop $5E83 - on sync mismatch, JSR DEAD_BA00_OVL
+        ;                  seven times (junk: $BA00 is sprite data at
+        ;                  run-time), reload the slot, and re-enter
+        ;                  the header read.
+        ;   .finalise $5E8D - pull header byte 4, call into NIBBLE_READER
+        ;                  ($BE5A entry), then restart the game.
+        ;   .restart  $5EAB - tail is a GAME_START_INIT clone (zero
+        ;                  ZP_SCORE_0..2, seed HUD_LIVES_COL / HUD_SCORE_COL,
+        ;                  ZP_CLEAR_COL, ZP_PLAYER_Y, call INIT_LEVEL_STATE,
+        ;                  set ZP_GAME_OVER <- #$01, fall through to
+        ;                  RESTART_DISPATCH).
 
-        HEX 84 48 85 49 A0 02 8C F8
-        HEX 06 A0 04 8C F8 04 A0 01
-        HEX B1 48 AA A0 0F D1 48 F0
-        HEX 1B 8A 48 B1 48 AA 68 48
-        HEX 91 48 BD 8E C0 A0 08 BD
-        HEX 8C C0 DD 8C C0 D0 F6 88
-        HEX D0 F8 68 AA BD 8E C0 BD
-        HEX 8C C0 A0 08 BD 8C C0 48
-        HEX 68 48 68 8E F8 05 DD 8C
-        HEX C0 D0 03 88 D0 EE 08 BD
-        HEX 89 C0 A0 06 B1 48 99 36
-        HEX 00 C8 C0 0A D0 F6 A0 03
-        HEX B1 3C 85 47 A0 02 B1 48
-        HEX A0 10 D1 48 F0 06 91 48
-        HEX 28 A0 00 08 6A 90 05 BD
-        HEX 8A C0 B0 03 BD 8B C0 66
-        HEX 35 28 08 D0 0B A0 07 20
-        HEX 00 BA 88 D0 FA AE F8 05
-        HEX A0 04 B1 48 20 5A BE 28
-        HEX D0 11 A4 47 10 0D A0 12
-        HEX 20 00 01 20 00 BE A9 00
-        HEX 85 2B 85 2C 85 2D 8D AB
-        HEX 65 A9 27 85 2E A9 28 8D
-        HEX A7 65 A9 6B 85 4A 20 B8
-        HEX 11 A9 01 85 39
-@ %def STAGE_RESIDUE_DEAD
+; --- .head: save caller's pointer + reseed text-page retry counters ---
+        STY ZP_DEAD_SECHDR       ; ZP_DEAD_SECHDR <- Y (lo byte of hdr ptr)
+        STA ZP_DEAD_SECHDR+1     ; ZP_DEAD_SECHDR+1 <- A (hi byte)
+        LDY #$02
+        STY TXT_RETRY_06F8       ; outer-retry counter <- #$02
+        LDY #$04
+        STY TXT_RETRY_04F8       ; inner-retry counter <- #$04
+
+; --- .head tail: inspect header byte 1; jump to spin1 if already matches byte $0F ---
+        LDY #$01
+        LDA (ZP_DEAD_SECHDR),Y   ; hdr[1] -> A
+        TAX                      ; stash in X
+        LDY #$0F
+        CMP (ZP_DEAD_SECHDR),Y   ; compare against hdr[$0F]
+        BEQ .spin1
+
+; --- .sync_wait: drain the data latch until hdr[$0F] appears ---
+        TXA
+        PHA                      ; stash original hdr[1] on stack
+        LDA (ZP_DEAD_SECHDR),Y   ; hdr[$0F] -> A, Y=$0F
+        TAX
+        PLA
+        PHA
+        STA (ZP_DEAD_SECHDR),Y   ; hdr[$0F] <- original hdr[1]
+        LDA DISK_Q7_OFF,X        ; shift register -> read
+.drain_reset:
+        LDY #$08
+        LDA STAGE_DISK_DATA,X
+.drain_cmp:
+        CMP STAGE_DISK_DATA,X
+        BNE .drain_reset         ; two reads disagreed: restart
+        DEY
+        BNE .drain_cmp           ; 8 iterations
+        PLA
+        TAX                      ; X <- original hdr[1]
+
+; --- .spin1: spin on data latch until two reads agree ---
+.spin1:
+        LDA DISK_Q7_OFF,X
+        LDA STAGE_DISK_DATA,X          ; prime latch
+        LDY #$08
+.spin1_cmp:
+        LDA STAGE_DISK_DATA,X
+        PHA                      ; PHA/PLA pair = timing pad (7 cycles)
+        PLA
+        PHA
+        PLA
+        STX TXT_RETRY_05F8       ; cache slot in text-page
+        CMP STAGE_DISK_DATA,X
+        BNE .retry_check         ; mismatch: check retry budget
+        DEY
+        BNE .spin1_cmp
+
+; --- .read_hdr: 4-byte header pull into ZP $0036+Y + flag byte via ($3C) ---
+.retry_check:
+        PHP                      ; stash result flags
+        LDA STAGE_DISK_MOTOR_ON,X      ; motor-on kick (drive 1)
+        LDY #$06
+.hdr_copy:
+        LDA (ZP_DEAD_SECHDR),Y   ; hdr[Y]
+        STA ZP_DEAD_HDR_DST,Y    ; -> ZP $36+Y (absolute addr; Y=6..9)
+        INY
+        CPY #$0A                 ; 4 bytes: Y=6..9
+        BNE .hdr_copy
+        LDY #$03
+        LDA (ZP_DEAD_HDR_AUX),Y  ; aux header ptr: byte [3]
+        STA ZP_DEAD_FLAGS
+
+; --- .nib_check: optionally mirror hdr[2] into hdr[$10] ---
+        LDY #$02
+        LDA (ZP_DEAD_SECHDR),Y   ; hdr[2] -> A
+        LDY #$10
+        CMP (ZP_DEAD_SECHDR),Y   ; compare against hdr[$10]
+        BEQ .phase_step          ; match: skip store, fall through to ROR
+        STA (ZP_DEAD_SECHDR),Y   ; hdr[$10] <- hdr[2]
+        PLP                      ; restore saved flags
+        LDY #$00
+
+; --- .phase_step: saved-flag-driven stepper phase read ---
+        PHP
+.phase_step:
+        ROR                      ; carry <- low bit of A
+        BCC .phase_low
+        LDA DISK_Q6_OFF,X        ; Q6L
+        BCS .shift_in            ; always taken
+.phase_low:
+        LDA DISK_Q6_ON,X         ; Q6H
+.shift_in:
+        ROR ZP_DIFF_THRESH_B     ; fold carry into ZP $35
+        PLP
+        PHP
+        BNE .finalise            ; Z=0: skip retry-loop
+
+; --- .retry_loop: 7x delay into $BA00, reload X from cache, retry hdr read ---
+        LDY #$07
+.mon_delay:
+        JSR DEAD_BA00_OVL        ; lands inside sprite data -- dead call
+        DEY
+        BNE .mon_delay
+        LDX TXT_RETRY_05F8
+
+; --- .finalise: pull hdr[4], call NIBBLE_READER, branch on flags ---
+.finalise:
+        LDY #$04
+        LDA (ZP_DEAD_SECHDR),Y
+        JSR NIBBLE_READER_OVL    ; enters live NIBBLE_READER mid-instruction
+        PLP
+        BNE .restart_skip        ; Z=0: skip ZP_SCORE zeroing
+        LDY ZP_DEAD_FLAGS
+        BPL .restart_skip        ; flags positive: same skip
+
+; --- bridge: redirect to SCREEN_ROW_COPY + RWTS_RELOAD before .restart_full ---
+        LDY #$12
+        JSR SCREEN_ROW_COPY      ; $0100 (resident stage-stack entry)
+        JSR STAGE_RWTS_RELOAD    ; cross-target call into rwts.bin
+
+; --- .restart_full: GAME_START_INIT-style level restart (clone of $13A4) ---
+; Two entry points: .restart_full zeroes the three BCD-score digits;
+; .restart_skip lands on a BIT-abs 3-byte NOP ($2C 8D AB = BIT $AB8D)
+; formed by the second byte of STA ZP_SCORE_2 + the first two bytes
+; of STA HUD_LIVES_COL.  The BIT reads $AB8D harmlessly (STA HUD_LIVES_COL
+; on the next instruction still takes effect).
+.restart_full:
+        LDA #$00
+        STA ZP_SCORE_0
+        ; The STA ZP_SCORE_1 below is 85 2C.  When .restart_skip enters
+        ; at the $2C operand byte ($5EAB), the $2C $85 $2D decodes as
+        ; BIT $2D85 (3-byte NOP) which skips the store of ZP_SCORE_2
+        ; and falls through into STA HUD_SCORE_COL.  We emit the STA
+        ; as raw bytes so we can place .restart_skip on the operand.
+        DC.B $85                 ; STA zp opcode
+.restart_skip:
+        DC.B <ZP_SCORE_1         ; operand -- also reads as BIT opcode
+        STA ZP_SCORE_2
+        STA HUD_SCORE_COL
+        LDA #$27
+        STA ZP_CLEAR_COL
+        LDA #$28
+        STA HUD_LIVES_COL
+        LDA #$6B
+        STA ZP_PLAYER_Y
+        JSR INIT_LEVEL_STATE
+        LDA #$01
+        STA ZP_GAME_OVER         ; falls through into RESTART_DISPATCH
+@ %def STAGE_RESIDUE_DEAD ZP_DEAD_SECHDR ZP_DEAD_FLAGS ZP_DEAD_HDR_AUX ZP_DEAD_HDR_DST
+@ %def DISK_Q6_OFF DISK_Q6_ON DISK_Q7_OFF
+@ %def TXT_RETRY_04F8 TXT_RETRY_05F8 TXT_RETRY_06F8
+@ %def NIBBLE_READER_OVL DEAD_BA00_OVL
+@ %def STAGE_DISK_DATA STAGE_DISK_MOTOR_ON STAGE_RWTS_RELOAD
 
 <<restart dispatch>>=
 
@@ -18625,6 +18838,7 @@ SPRITE_PIXEL_DATA:
 ; --- ORG $5D00: STAGE_VECTORS (vector-page install image) ---
 <<stage vectors>>
 ; --- ORG $5E00: Dead residue (orphan nibble sector reader) ---
+<<stage residue dead defines>>
 <<stage residue dead>>
 ; --- ORG $5EC5: Restart-flag dispatcher (DEAD CODE) ---
 <<restart dispatch>>

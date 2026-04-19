@@ -347,7 +347,21 @@ After the main RE work, pass over `main.nw` and apply the style rules in
   `EQU` or `%def` to avoid circular definitions.
 - **Prose address wrapping.** Every numeric address in prose must be
   `[[SYMBOL]]` or `[[$XXXX]]` — never bare `\$XXXX`, never `[[\$XXXX]]`.
-  Clear resolved `TODO-SYM` markers.
+- **TODO-SYM elimination.** Every round must try to clear as many existing
+  `TODO-SYM` markers as possible — not just the ones this round introduced.
+  Grep `main.nw` for `TODO-SYM` and for each hit, decide:
+  - If a label/EQU now exists for that address, replace the raw `[[$XXXX]]`
+    with `[[SYMBOL]]` and remove the marker.
+  - If the number is not actually needed to communicate the sentence's
+    point (e.g. the prose already says what the address is, or the
+    surrounding sentence refers to a region that's now a labeled chunk),
+    drop the address entirely and remove the marker.
+  - If the address is still unsymbolized and the number is load-bearing,
+    leave the marker in place — but document in the round summary why it
+    couldn't be resolved this round. Uninvestigated `TODO-SYM`s are not
+    acceptable; every marker must have been looked at.
+  The round summary must include a `TODO-SYM` count delta (before vs.
+  after) so regressions are visible.
 - **Code comments.** Remove comments that merely restate the instruction or
   carry a raw `$XXXX` where a symbol exists. Use `<-` and `#$` in
   assignment comments. Refer to indexed tables as `SYMBOL[Y]` in prose

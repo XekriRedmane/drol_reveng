@@ -46,3 +46,4 @@
 - [Drol TIMER_FRAME obfuscation](drol-timer-frame-obfuscation.md) — DISPLAY_UPDATE's $6800/$6900 tables are actually MAIN_LOOP code bytes read as fake sprite-pointer data
 - [Drol GAME_OVER at $BDA0](drol-game-over-bda0.md) — level1.bin end-of-game handler; dissolve+reload+3-way restart dispatch on ZP_RESTART_FLAG; reversed ZP_HGR_SRC/DST roles; level1.asm needs shared EQU defines for cross-target symbols
 - [Drol EXTRA_LIFE_SPR at $B67D](drol-extra-life-spr.md) — LIFE_LOST_HANDLER's hardcoded glyph, W=6 H=14, just after ATTRACT_SPR[1] at $B665+$18
+- [STAGE_STACK_DEAD_TAIL decomposition](drol-stage-stack-dead-tail-decomposition.md) — $5C2B-$5CEF mirrors $012B-$01EF byte-for-byte (7 sub-labels); $5CF0-$5CFF is unrelated tone-emitter residue

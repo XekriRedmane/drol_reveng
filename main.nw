@@ -10957,9 +10957,15 @@ preserved for byte-exact matching against [[drol.bin]].
 \hline
 Range & Size & Role \\
 \hline
-[[$5C00]]--[[$5C2A]] & 43 bytes & [[STAGE_STACK]] live entry (SCREEN\_ROW\_COPY dup) \\
-[[$5C2B]]--[[$5CEF]] & 197 bytes & Dead mirror of [[$012B]]--[[$01EF]] (install residue) \\
-[[$5CF0]]--[[$5CFF]] & 16 bytes & Install-time padding/residue \\
+[[$5C00]]--[[$5C2A]] & 43 bytes & [[STAGE_STACK]] live entry ([[SCREEN_ROW_COPY]] dup) \\
+[[$5C2B]]--[[$5C93]] & 105 bytes & [[STAGE_DEAD_JOYSTICK_HANDLER]]: mirror of [[JOYSTICK_HANDLER]] \\
+[[$5C94]]--[[$5CB6]] & 35 bytes & [[STAGE_DEAD_KEY_HANDLER_EXT]]: mirror of [[KEY_HANDLER_EXT]] \\
+[[$5CB7]]--[[$5CC3]] & 13 bytes & [[STAGE_DEAD_ROW_COPY_CLICK]]: mirror of [[ROW_COPY_CLICK]] \\
+[[$5CC4]]       & 1 byte  & [[STAGE_DEAD_ROW_COPY_CLICK_DEAD_RTS]]: mirror bare RTS \\
+[[$5CC5]]--[[$5CE8]] & 36 bytes & [[STAGE_DEAD_ROW_COPY_CLICK_RANDOM]]: mirror of [[ROW_COPY_CLICK_RANDOM]] \\
+[[$5CE9]]--[[$5CEE]] & 6 bytes & [[STAGE_DEAD_ROW_COPY_CLICK_GATE]]: mirror of [[ROW_COPY_CLICK_GATE]] \\
+[[$5CEF]]       & 1 byte  & [[STAGE_DEAD_CLICK_GATE_FALL]]: mirror dangling [[LDA #$00]] prologue (only the opcode byte) \\
+[[$5CF0]]--[[$5CFF]] & 16 bytes & [[STAGE_DEAD_TAIL_RESIDUE]]: install-time tone-emitter code fragment (not a mirror) \\
 [[$5D00]]--[[$5DEF]] & 240 bytes & [[STAGE_VECTORS]]: mirror of [[$0300]]--[[$03EF]] \\
 [[$5DF0]]--[[$5DFF]] & 16 bytes & Install-time padding/residue \\
 [[$5E00]]--[[$5EC4]] & 197 bytes & Dead fragment --- nibble-level sector reader \\
@@ -11030,12 +11036,16 @@ STAGE_STACK:
 
         ORG $5C2B
 STAGE_STACK_DEAD_TAIL:
-        ; Dead residue ($5C2B-$5CFF): mirror of $012B-$01EF
-        ; (JOYSTICK_HANDLER + KEY_HANDLER_EXT + ROW_COPY_CLICK +
-        ; ROW_COPY_CLICK_DEAD_RTS/RANDOM/GATE) followed by 16 bytes
-        ; of install-time residue at $5CF0-$5CFF.  None of these
-        ; bytes are referenced at runtime --- only $5C00 is live.
+        ; Dead residue ($5C2B-$5CFF, 213 bytes).  Bytes $5C2B-$5CEF
+        ; mirror the live [[$012B]]--[[$01EF]] stack-page code image
+        ; byte-for-byte (six sub-regions, labelled below to match the
+        ; live layout); bytes $5CF0-$5CFF are 16 bytes of install-time
+        ; residue that do NOT continue the mirror.  None of the 213
+        ; bytes are referenced at runtime --- only the live $5C00 entry
+        ; (STAGE_STACK, a SCREEN_ROW_COPY duplicate) is reachable.
 
+; --- $5C2B-$5C93: mirror of JOYSTICK_HANDLER body (105 bytes) ---
+STAGE_DEAD_JOYSTICK_HANDLER:
         HEX AD 61 C0 10 0C A5 49 30
         HEX 11 A9 FF 85 49 85 05 30
         HEX 09 AD 62 C0 30 EF A9 01
@@ -11049,21 +11059,64 @@ STAGE_STACK_DEAD_TAIL:
         HEX C0 9C B0 01 60 C0 C3 B0
         HEX 0B A5 01 C9 95 F0 F0 A9
         HEX 95 4C 14 60 A9 95 4C 14
-        HEX 60 C9 8A D0 08 A9 FF 85
-        HEX 48 2C 10 C0 60 C9 8B D0
-        HEX 08 A9 01 85 48 2C 10 C0
-        HEX 60 C9 96 D0 03 2C 30 C0
-        HEX 2C 10 C0 60 86 5C 8A 4A
-        HEX 4A A2 04 20 9E 10 A6 5C
-        HEX 60 60 20 74 66 C9 20 B0
-        HEX 04 C9 10 B0 06 A9 80 20
-        HEX A8 FC 60 85 56 A2 08 A5
-        HEX 56 20 C1 67 C6 56 D0 F5
-        HEX A9 20 20 A8 FC 60 A5 1F
-        HEX C9 09 B0 D6 A9 0A 85 5C
-        HEX A2 10 A4 5C B9 13 02 20
-        HEX 9E 10 A9 20 20
-@ %def STAGE_STACK_DEAD_TAIL
+        HEX 60
+
+; --- $5C94-$5CB6: mirror of KEY_HANDLER_EXT body (35 bytes) ---
+STAGE_DEAD_KEY_HANDLER_EXT:
+        HEX C9 8A D0 08 A9 FF 85 48
+        HEX 2C 10 C0 60 C9 8B D0 08
+        HEX A9 01 85 48 2C 10 C0 60
+        HEX C9 96 D0 03 2C 30 C0 2C
+        HEX 10 C0 60
+
+; --- $5CB7-$5CC3: mirror of ROW_COPY_CLICK body (13 bytes) ---
+STAGE_DEAD_ROW_COPY_CLICK:
+        HEX 86 5C 8A 4A 4A A2 04 20
+        HEX 9E 10 A6 5C 60
+
+; --- $5CC4: mirror of ROW_COPY_CLICK_DEAD_RTS (1 byte; bare RTS) ---
+STAGE_DEAD_ROW_COPY_CLICK_DEAD_RTS:
+        HEX 60
+
+; --- $5CC5-$5CE8: mirror of ROW_COPY_CLICK_RANDOM (36 bytes) ---
+STAGE_DEAD_ROW_COPY_CLICK_RANDOM:
+        HEX 20 74 66 C9 20 B0 04 C9
+        HEX 10 B0 06 A9 80 20 A8 FC
+        HEX 60 85 56 A2 08 A5 56 20
+        HEX C1 67 C6 56 D0 F5 A9 20
+        HEX 20 A8 FC 60
+
+; --- $5CE9-$5CEE: mirror of ROW_COPY_CLICK_GATE (6 bytes) ---
+STAGE_DEAD_ROW_COPY_CLICK_GATE:
+        HEX A5 1F C9 09 B0 D6
+
+; --- $5CEF: mirror of the live $01EF dangling LDA #$00 prologue
+;     (1 byte, opcode $A9 only; in the live image the operand $00
+;     and the 15-byte zero padding continue to $01FF, but here the
+;     mirror stops at $5CEF and the next 16 bytes diverge) ---
+STAGE_DEAD_CLICK_GATE_FALL:
+        HEX A9
+
+; --- $5CF0-$5CFF: 16 bytes of install-time residue (NOT a mirror) ---
+; These bytes disassemble as a tone-emitter fragment:
+;   $5CF0  ASL A              ; (no sensible A-source -- entered mid-stream)
+;   $5CF1  STA ZP_SAVE_X      ; save A
+;   $5CF3  LDX #$10           ; 16 iterations
+;   $5CF5  LDY ZP_SAVE_X
+;   $5CF7  LDA $0213,Y        ; RESCUE_DRIFT_PITCH (pitch table)
+;   $5CFA  JSR SND_DELAY_UP   ; emit one click at pitch=A, duration=X=$10
+;   $5CFD  LDA #$20           ; delay value
+;   $5CFF  JSR               ; operand bytes fall past the chunk boundary
+; Likely a pre-release wipe-click variant.  No JSR/JMP in any shipped
+; binary reaches $5CF0, so the bytes never execute.
+STAGE_DEAD_TAIL_RESIDUE:
+        HEX 0A 85 5C A2 10 A4 5C B9
+        HEX 13 02 20 9E 10 A9 20 20
+@ %def STAGE_STACK_DEAD_TAIL STAGE_DEAD_JOYSTICK_HANDLER
+@ %def STAGE_DEAD_KEY_HANDLER_EXT STAGE_DEAD_ROW_COPY_CLICK
+@ %def STAGE_DEAD_ROW_COPY_CLICK_DEAD_RTS STAGE_DEAD_ROW_COPY_CLICK_RANDOM
+@ %def STAGE_DEAD_ROW_COPY_CLICK_GATE STAGE_DEAD_CLICK_GATE_FALL
+@ %def STAGE_DEAD_TAIL_RESIDUE
 
 <<stage vectors>>=
 

@@ -22914,7 +22914,8 @@ Label & Span & Bytes & Shape & Consumer \\ \midrule
 [[SPRITE_TABLE_A_STEP2_DATA]] & [[$B9B7]]--[[$BA26]] & 112  & 7 x 16            & [[ENEMY_A_DRAW]] walk phase 1 \\
 [[SPRITE_TABLE_B_DATA]]      & [[$BA27]]--[[$BCF0]] & 714  & 7 x 102           & [[ENEMY_B_DRAW]] body \\
 [[BRODERBUND_LOGO_SPR_DATA]] & [[$BCF1]]--[[$BD88]] & 152  & W=18,H=8 (19x8)   & [[ATTRACT_ANIM_4]] tail \\
-[[LEVEL1_TAIL_RESIDUE]]      & [[$BD89]]--[[$BD9F]] & 23   & ---               & unreferenced \\ \bottomrule
+[[LEVEL1_TAIL_RESIDUE_HEAD]]     & [[$BD89]]--[[$BD8C]] & 4    & ---               & unreferenced \\
+[[LEVEL1_TAIL_RESIDUE_FINALISE]] & [[$BD8D]]--[[$BD9F]] & 19   & ---               & unreferenced \\ \bottomrule
 \end{tabular}
 \end{center}
 
@@ -22926,12 +22927,51 @@ each chunk's header comment.  The drol chapter already declares
 [[EXTRA_LIFE_SPR]] and [[BRODERBUND_LOGO_SPR]] as cross-target
 [[EQU]]s whose values match these data chunks' ORG addresses.
 
-The final 23-byte [[LEVEL1_TAIL_RESIDUE]] block has no pointer-table
-consumer that we've yet identified.  The bytes disassemble to a
-plausible but dangling code fragment ([[TSX]] / [[DEY]] / [[BNE]]),
-consistent with leftover sprite-table space from a pre-release
-build; if a live consumer is discovered in a later round, the
-residue will be renamed.
+\subsection{Tail residue ([[$BD89]]--[[$BD9F]]): dead RWTS-finalise fragment}
+
+The 23 bytes between [[BRODERBUND_LOGO_SPR_DATA]]'s end and
+[[GAME_OVER]] are not sprite padding --- they disassemble as live
+6502 code that is a near twin of the [[.finalise]] + restart-skip
+bridge inside [[STAGE_RESIDUE_DEAD]] at [[$5E8D]].  Both fragments:
+
+\begin{itemize}
+\item load [[ZP_DEAD_SECHDR]] ([[$48]]) indirectly to pull
+  [[hdr[4]]] out of a sector header,
+\item call into [[NIBBLE_READER_OVL]] ([[$BE5A]], a mid-instruction
+  entry into the live [[NIBBLE_READER]] in [[rwts.bin]]),
+\item consume the preserved processor flags with [[PLP]] and
+  conditionally branch on [[ZP_DEAD_FLAGS]] ([[$47]]).
+\end{itemize}
+
+The [[STAGE_RESIDUE_DEAD]] copy's [[PLP]]/[[BNE]]/[[BPL]] triple
+branches to a [[.restart_skip]] label at [[$5EAB]] --- a [[BIT]]-abs
+mid-entry into a [[GAME_START_INIT]] clone.  The residue at
+[[LEVEL1_TAIL_RESIDUE_HEAD]] uses the same pattern but targets
+[[$BDAB]], which in the pre-release layout presumably held another
+[[GAME_START_INIT]] clone.  In the shipped level-1 image [[$BDAB]]
+now lands at the third [[STA ZP_SCORE_1]] inside [[GAME_OVER]],
+which is a nonsensical target reached by no live code path.
+
+The decomposition splits the span into two labels:
+
+\begin{itemize}
+\item [[LEVEL1_TAIL_RESIDUE_HEAD]] ([[$BD89]]--[[$BD8C]], 4 bytes):
+  an orphan [[TSX]] / [[DEY]] / [[BNE $BD87]] prologue whose
+  branch target lies inside [[BRODERBUND_LOGO_SPR_DATA]], so the
+  fall-through path is the only coherent one.  Almost certainly
+  leftover from a pre-release layout where the logo sprite lived
+  elsewhere.
+\item [[LEVEL1_TAIL_RESIDUE_FINALISE]] ([[$BD8D]]--[[$BD9F]], 19
+  bytes): the [[LDX TXT_RETRY_05F8]] / nibble-reader call + flags
+  check that maps directly onto the live [[.finalise]] section of
+  [[STAGE_RESIDUE_DEAD]].  The final [[LDY #$12]] has no
+  instruction after it before [[GAME_OVER]] begins, so whatever
+  consumed this [[Y]] value lived in the same pre-release layout.
+\end{itemize}
+
+Both chunks are preserved byte-for-byte.  No shipped target
+([[boot1]], [[loader]], [[rwts]], [[drol]], or [[level1]]) names
+an address inside this range.
 
 <<level1 attract spr 0 data>>=
 
@@ -23282,16 +23322,42 @@ BRODERBUND_LOGO_SPR_DATA:
 <<level1 tail residue>>=
 
         ORG $BD89
-LEVEL1_TAIL_RESIDUE:
-        ; 23 bytes of unreferenced tail data between
-        ; BRODERBUND_LOGO_SPR_DATA's end ($BD89) and GAME_OVER at
-        ; $BDA0.  Likely leftover sprite-table padding from an earlier
-        ; build; no pointer table indexes into this range, and no
-        ; draw routine references it.  Preserved byte-for-byte.
-        HEX BA 88 D0 FA AE F8 05 A0
-        HEX 04 B1 48 20 5A BE 28 D0
-        HEX 11 A4 47 10 0D A0 12
-@ %def LEVEL1_TAIL_RESIDUE
+LEVEL1_TAIL_RESIDUE_HEAD:
+        ; 4 bytes of orphan dead code between BRODERBUND_LOGO_SPR_DATA
+        ; and the dead RWTS-finalise fragment that follows.  The
+        ; BNE target ($BD87) lands inside BRODERBUND_LOGO_SPR_DATA,
+        ; so the branch is incoherent in the shipped layout; this is
+        ; almost certainly leftover from a pre-release build where
+        ; the logo sprite lived at a different address.  Preserved
+        ; byte-for-byte; no live code path reaches here.
+        ;   $BD89: BA        TSX
+        ;   $BD8A: 88        DEY
+        ;   $BD8B: D0 FA     BNE $BD87  (target inside logo data)
+        HEX BA 88 D0 FA
+
+LEVEL1_TAIL_RESIDUE_FINALISE:
+        ; 19 bytes of pre-release dead RWTS-finalise code, a near
+        ; twin of STAGE_RESIDUE_DEAD's .finalise section at $5E8D.
+        ; Both fragments restore a saved drive-slot byte from
+        ; TXT_RETRY_05F8 ($05F8), pull hdr[4] via ZP_DEAD_SECHDR
+        ; ($48), call NIBBLE_READER_OVL, and branch on the returned
+        ; flags + ZP_DEAD_FLAGS ($47) to a restart-skip entry.  The
+        ; branches target $BDAB, which in this layout now lands
+        ; inside GAME_OVER at a meaningless instruction; no live
+        ; code path reaches here.  Preserved byte-for-byte.
+        ;   $BD8D: AE F8 05  LDX TXT_RETRY_05F8
+        ;   $BD90: A0 04     LDY #$04               (hdr[4])
+        ;   $BD92: B1 48     LDA (ZP_DEAD_SECHDR),Y
+        ;   $BD94: 20 5A BE  JSR NIBBLE_READER_OVL
+        ;   $BD97: 28        PLP
+        ;   $BD98: D0 11     BNE $BDAB              (restart-skip)
+        ;   $BD9A: A4 47     LDY ZP_DEAD_FLAGS
+        ;   $BD9C: 10 0D     BPL $BDAB              (restart-skip)
+        ;   $BD9E: A0 12     LDY #$12               (pre-call arg)
+        HEX AE F8 05 A0 04 B1 48 20
+        HEX 5A BE 28 D0 11 A4 47 10
+        HEX 0D A0 12
+@ %def LEVEL1_TAIL_RESIDUE_HEAD LEVEL1_TAIL_RESIDUE_FINALISE
 
 \section{Assembly}
 

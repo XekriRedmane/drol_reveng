@@ -65,3 +65,4 @@
 - [ENEMY_C_TAIL unused frames 7-8](drol-enemy-c-tail-residue.md) — 9-entry pointer table; ENEMY_C_DRAW only indexes 0..6; frames 7/8 are labelled residue at $8C72/$8C79
 - [Level-1 $8CF5-$B4B0 sprite-data blob decomp](drol-level1-sprite-blob-decomp.md) — 10172-byte monolithic blob split into ~200 labeled sub-chunks (FLOOR_ENEMY/SPECIAL_BODY/COMPANION/HUD_STRIP/ENTITY_GRID/RESCUE/PROJ_SPR/SPECIAL_PUFF/SPRITE_TABLE_C/SCROLL_EDGE families)
 - [LEVEL1_TAIL_RESIDUE decomp](drol-level1-tail-residue-decomp.md) — $BD89-$BD9F 23 bytes split into HEAD (orphan TSX/DEY/BNE) + FINALISE (dead RWTS-nibble-reader twin of STAGE_RESIDUE_DEAD .finalise)
+- [level1 pages 75-7A decomposition](drol-level1-pages-75-7A-decomposition.md) — $7500-$7AFF split into L1_SPRITE_POINTER_TABLES_LO/HI + L1_PILLAR_SPR_DATA_0..6 + L1_HIT_SPR_NEG_DATA_0/_1_HEAD

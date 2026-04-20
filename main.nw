@@ -20572,10 +20572,52 @@ L1_LVL_INIT_INPUT_DATA:
         HEX 23 27 2B 2F 33 37 3B 3F
 @
 
-<<level1 pages 75-7A>>=
+\subsection{Pages 75--7A: sprite pointer tables and playfield-chrome
+sprite pixel data ([[$7500]]--[[$7AFF]])}
+
+The [[$7500]]--[[$7AFF]] swappable window is byte-identical to the
+[[drol.bin]] copy that the loader has already deposited at the same
+runtime addresses (verified in the earlier invariant: the level-swap
+pages match [[drol.bin]] for every byte in this range).  The
+[[level1]] target mirrors the [[drol.bin]] decomposition with
+[[L1_]]-prefixed labels so the byte-exact output builds without
+colliding with the authoritative [[drol]] symbols
+[[SPRITE_POINTER_TABLES_LO]], [[PILLAR_SPR_DATA_0]], and the others.
+
+\begin{center}
+\begin{tabular}{lllll} \toprule
+[[L1_]]-label & [[drol]] twin & Span & Bytes & Role \\ \midrule
+[[L1_SPRITE_POINTER_TABLES_LO]] & [[SPRITE_POINTER_TABLES_LO]] & [[$7500]]--[[$75FF]] & 256 & 37 sub-tables + null pad \\
+[[L1_SPRITE_POINTER_TABLES_HI]] & [[SPRITE_POINTER_TABLES_HI]] & [[$7600]]--[[$76FF]] & 256 & HI-half of the same 37 sub-tables \\
+[[L1_PILLAR_SPR_DATA_0]]..[[L1_PILLAR_SPR_DATA_6]] & [[PILLAR_SPR_DATA_0]]..[[PILLAR_SPR_DATA_6]] & [[$7700]]--[[$7AD3]] & 7$\times$140 & 7 pillar frames, 4 cols $\times$ 35 rows \\
+[[L1_HIT_SPR_NEG_DATA_0]] & [[HIT_SPR_NEG_DATA_0]] & [[$7AD4]]--[[$7AFB]] & 40 & frame 0 of the [[HIT_SPR_NEG]] 7-frame set \\
+[[L1_HIT_SPR_NEG_DATA_1_HEAD]] & first 4 bytes of [[HIT_SPR_NEG_DATA_1]] & [[$7AFC]]--[[$7AFF]] & 4 & partial: [[$7500]]--[[$7AFF]] cuts the 40-byte frame \\ \bottomrule
+\end{tabular}
+\end{center}
+
+The [[L1_HIT_SPR_NEG_DATA_1_HEAD]] entry is the only artifact of the
+swappable-page boundary: [[HIT_SPR_NEG_DATA_1]]'s full 40~bytes span
+[[$7AFC]]--[[$7B23]], so the last 36 bytes sit inside the persistent
+[[drol.bin]] region ([[$7B00]]--[[$8BFF]]) loaded from tracks~3--4.
+At runtime the two halves are contiguous, but [[level1.bin]] (the
+on-disk level-swap image) only carries the first 4 bytes.
+
+<<level1 sprite pointer tables lo>>=
 
         ORG $7500
-        ; Level-1 raw bytes $7500-$7AFF (1536 bytes).
+L1_SPRITE_POINTER_TABLES_LO:
+        ; Low-byte half of the sprite-pointer tables ($7500-$75FF),
+        ; mirror of drol's SPRITE_POINTER_TABLES_LO.  See that chunk
+        ; for the full per-sub-table breakdown (PILLAR_SPR_LO,
+        ; HIT_SPR_NEG_LO, FLOOR_SPR_LO, WALL_L_SPR_LO, WALL_SPR_LO,
+        ; PLAYER_SPR_IDLE_LO, PLAYER_SPR_ACTIVE_LO, HIT_SPR_POS_LO,
+        ; PLAYER_GRID_SPR_A_LO, ENEMY_C_TAIL_LO, PLAYER_GRID_SPR_B_LO,
+        ; ENEMY_C_PUFF_LO, ENEMY_B_PUFF_LO, SPECIAL_PEEK_LO,
+        ; FLOOR_ENEMY_SPR_S0..S3_LO, SPECIAL_BODY_POSE0..3_LO,
+        ; SPECIAL_GRID_SPR_A/B_LO, COMPANION_NEG_POSE1..3_LO,
+        ; COMPANION_POS_POSE1..3_LO, COMPANION_GRID_SPR_LO,
+        ; ENTITY_GRID_SPR_LO, RESCUE_SPR_{NEG,POS}_{END,MID}_LO,
+        ; PROJ_SPR_R_LO, and a trailing $00 pad).
         HEX 00 8C 18 A4 30 BC 48 D4
         HEX FC 24 4C 74 9C C4 EC 14
         HEX 3C 64 8C B4 DC 04 2C 54
@@ -20608,6 +20650,18 @@ L1_LVL_INIT_INPUT_DATA:
         HEX 3B AB 13 7B E3 4B B3 1B
         HEX 83 F3 63 D3 43 B3 23 93
         HEX 9C A5 AE B7 C0 C9 D2 00
+@ %def L1_SPRITE_POINTER_TABLES_LO
+
+<<level1 sprite pointer tables hi>>=
+
+        ORG $7600
+L1_SPRITE_POINTER_TABLES_HI:
+        ; High-byte half of the sprite-pointer tables ($7600-$76FF),
+        ; mirror of drol's SPRITE_POINTER_TABLES_HI.  Every entry at
+        ; L1_SPRITE_POINTER_TABLES_LO+$XX has its page byte here at
+        ; L1_SPRITE_POINTER_TABLES_HI+$XX; resolved pointers land in
+        ; $7700-$8BFF (persistent drol.bin) or $8C00-$BDFF (this
+        ; level's swappable bank).
         HEX 77 77 78 78 79 79 7A 7A
         HEX 7A 7B 7B 7B 7B 7B 7B 7C
         HEX 7C 7C 7C 7C 7C 7D 7D 7D
@@ -20640,6 +20694,16 @@ L1_LVL_INIT_INPUT_DATA:
         HEX A9 A9 AA AA AA AB AB AC
         HEX AC AC AD AD AE AE AF AF
         HEX AF AF AF AF AF AF AF 00
+@ %def L1_SPRITE_POINTER_TABLES_HI
+
+<<level1 pillar spr data>>=
+
+        ORG $7700
+L1_PILLAR_SPR_DATA_0:
+        ; PILLAR_SPR frame 0 mirror (140 bytes, 4 cols x 35 rows
+        ; column-major).  See drol's PILLAR_SPR_DATA_0 for the shape /
+        ; consumer notes (painted into perspective bands 0/1/2 by
+        ; REFRESH_PILLARS via INTERLACE_BLIT_P1/P2).
         HEX 80 80 80 80 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
@@ -20657,24 +20721,31 @@ L1_LVL_INIT_INPUT_DATA:
         HEX 30 40 30 50 60 60 60 60
         HEX 60 60 60 60 60 60 60 60
         HEX 60 60 60 60 60 60 D8 D8
-        HEX 60 D0 D6 D6 82 82 82 81
-        HEX 00 01 00 00 00 00 00 00
+        HEX 60 D0 D6 D6
+
+L1_PILLAR_SPR_DATA_1:
+        ; PILLAR_SPR frame 1 mirror (140 bytes, 4 cols x 35 rows).
+        HEX 82 82 82 81 00 01 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 80 00 80 82 82 D5
-        HEX D5 D5 66 19 66 19 66 19
-        HEX 66 55 37 37 37 37 37 37
+        HEX 00 00 00 00 00 80 80 00
+        HEX 80 82 82 D5 D5 D5 66 19
+        HEX 66 19 66 19 66 55 37 37
         HEX 37 37 37 37 37 37 37 37
-        HEX 37 37 37 37 D5 D5 37 D5
-        HEX D5 D5 AA AA AA 39 46 39
-        HEX 46 39 46 39 2A 3B 3B 3B
+        HEX 37 37 37 37 37 37 37 37
+        HEX D5 D5 37 D5 D5 D5 AA AA
+        HEX AA 39 46 39 46 39 46 39
+        HEX 2A 3B 3B 3B 3B 3B 3B 3B
         HEX 3B 3B 3B 3B 3B 3B 3B 3B
-        HEX 3B 3B 3B 3B 3B 3B 3B AA
-        HEX AA 3B AA AA AA D8 D8 D0
-        HEX 60 00 60 00 40 00 40 40
+        HEX 3B 3B 3B AA AA 3B AA AA
+        HEX AA D8 D8 D0 60 00 60 00
+        HEX 40 00 40 40 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 E0 E0 00 C0 D8 D8
+        HEX 00 00 00 00 00 00 E0 E0
+        HEX 00 C0 D8 D8
+
+L1_PILLAR_SPR_DATA_2:
+        ; PILLAR_SPR frame 2 mirror (140 bytes, 4 cols x 35 rows).
         HEX 8A 8A 8A 87 00 07 00 03
         HEX 00 03 02 01 01 01 01 01
         HEX 01 01 01 01 01 01 01 01
@@ -20692,24 +20763,31 @@ L1_LVL_INIT_INPUT_DATA:
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 80 80
-        HEX 00 80 E0 E0 AA AA AA 9C
-        HEX 03 1C 03 0C 03 0C 0A 06
+        HEX 00 80 E0 E0
+
+L1_PILLAR_SPR_DATA_3:
+        ; PILLAR_SPR frame 3 mirror (140 bytes, 4 cols x 35 rows).
+        HEX AA AA AA 9C 03 1C 03 0C
+        HEX 03 0C 0A 06 06 06 06 06
         HEX 06 06 06 06 06 06 06 06
-        HEX 06 06 06 06 06 06 06 06
-        HEX 06 8A 8A 06 8A AA AA D5
-        HEX D5 D5 67 18 67 18 67 18
-        HEX 67 55 77 77 77 77 77 77
+        HEX 06 06 06 06 06 8A 8A 06
+        HEX 8A AA AA D5 D5 D5 67 18
+        HEX 67 18 67 18 67 55 77 77
         HEX 77 77 77 77 77 77 77 77
-        HEX 77 77 77 77 D5 D5 77 D5
-        HEX D5 D5 AB AB AA 1C 60 1C
-        HEX 60 18 60 18 28 30 30 30
+        HEX 77 77 77 77 77 77 77 77
+        HEX D5 D5 77 D5 D5 D5 AB AB
+        HEX AA 1C 60 1C 60 18 60 18
+        HEX 28 30 30 30 30 30 30 30
         HEX 30 30 30 30 30 30 30 30
-        HEX 30 30 30 30 30 30 30 AC
-        HEX AC 30 A8 AB AB 80 80 80
+        HEX 30 30 30 AC AC 30 A8 AB
+        HEX AB 80 80 80 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 80 80 00 80 80 80
+        HEX 00 00 00 00 00 00 80 80
+        HEX 00 80 80 80
+
+L1_PILLAR_SPR_DATA_4:
+        ; PILLAR_SPR frame 4 mirror (140 bytes, 4 cols x 35 rows).
         HEX 81 81 81 80 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
@@ -20727,24 +20805,31 @@ L1_LVL_INIT_INPUT_DATA:
         HEX 60 00 60 20 40 40 40 40
         HEX 40 40 40 40 40 40 40 40
         HEX 40 40 40 40 40 40 B0 B0
-        HEX 40 A0 AC AC 85 85 85 83
-        HEX 00 03 00 01 00 01 01 00
+        HEX 40 A0 AC AC
+
+L1_PILLAR_SPR_DATA_5:
+        ; PILLAR_SPR frame 5 mirror (140 bytes, 4 cols x 35 rows).
+        HEX 85 85 85 83 00 03 00 01
+        HEX 00 01 01 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 81 81 00 81 85 85 AA
-        HEX AA AA CC 33 4C 33 4C 33
-        HEX 4C 2A 6E 6E 6E 6E 6E 6E
+        HEX 00 00 00 00 00 81 81 00
+        HEX 81 85 85 AA AA AA CC 33
+        HEX 4C 33 4C 33 4C 2A 6E 6E
         HEX 6E 6E 6E 6E 6E 6E 6E 6E
-        HEX 6E 6E 6E 6E AA AA 6E AA
-        HEX AA AA D5 D5 D5 73 0C 73
-        HEX 0C 73 0C 73 55 76 76 76
+        HEX 6E 6E 6E 6E 6E 6E 6E 6E
+        HEX AA AA 6E AA AA AA D5 D5
+        HEX D5 73 0C 73 0C 73 0C 73
+        HEX 55 76 76 76 76 76 76 76
         HEX 76 76 76 76 76 76 76 76
-        HEX 76 76 76 76 76 76 76 D5
-        HEX D5 76 D5 D5 D5 B0 B0 A0
-        HEX 40 00 40 00 00 00 00 00
+        HEX 76 76 76 D5 D5 76 D5 D5
+        HEX D5 B0 B0 A0 40 00 40 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 C0 C0 00 80 B0 B0
+        HEX 00 00 00 00 00 00 C0 C0
+        HEX 00 80 B0 B0
+
+L1_PILLAR_SPR_DATA_6:
+        ; PILLAR_SPR frame 6 mirror (140 bytes, 4 cols x 35 rows).
         HEX 95 95 95 8E 01 0E 01 06
         HEX 01 06 05 03 03 03 03 03
         HEX 03 03 03 03 03 03 03 03
@@ -20762,13 +20847,31 @@ L1_LVL_INIT_INPUT_DATA:
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 80 80
-        HEX 00 80 C0 C0 7F 55 7F 7F
-        HEX 7F 7F 7F 75 2A 55 3F 7F
-        HEX 7F 7F 7F 55 2A 55 3F 7F
-        HEX 7F 7F 7F 55 2A 55 3F 7F
-        HEX 7F 7F 7F 55 2A 55 7F 7F
-        HEX 7F 7F 7F 75 7E 57 7F 7F
-@
+        HEX 00 80 C0 C0
+@ %def L1_PILLAR_SPR_DATA_0 L1_PILLAR_SPR_DATA_1 L1_PILLAR_SPR_DATA_2
+@ %def L1_PILLAR_SPR_DATA_3 L1_PILLAR_SPR_DATA_4 L1_PILLAR_SPR_DATA_5
+@ %def L1_PILLAR_SPR_DATA_6
+
+<<level1 hit spr neg data head>>=
+
+        ORG $7AD4
+L1_HIT_SPR_NEG_DATA_0:
+        ; HIT_SPR_NEG frame 0 mirror (40 bytes, W=7 H=5, bytes/row=8).
+        ; Matches drol's HIT_SPR_NEG_DATA_0 byte-for-byte; opaque-blitted
+        ; by REFRESH_HIT_ENTITIES via DRAW_SPRITE_OPAQUE.
+        HEX 7F 55 7F 7F 7F 7F 7F 75
+        HEX 2A 55 3F 7F 7F 7F 7F 55
+        HEX 2A 55 3F 7F 7F 7F 7F 55
+        HEX 2A 55 3F 7F 7F 7F 7F 55
+        HEX 2A 55 7F 7F 7F 7F 7F 75
+
+L1_HIT_SPR_NEG_DATA_1_HEAD:
+        ; First 4 bytes of HIT_SPR_NEG frame 1.  The remaining 36 bytes
+        ; land at $7B00-$7B23 in the persistent drol.bin copy of
+        ; SPRITE_PIXEL_DATA; level1.bin only carries this head because
+        ; the swappable window ends at $7AFF.
+        HEX 7E 57 7F 7F
+@ %def L1_HIT_SPR_NEG_DATA_0 L1_HIT_SPR_NEG_DATA_1_HEAD
 
 \subsection{Page 8C head: level-swappable grid/enemy-C sprite tails
 ([[$8C00]]--[[$8CF4]])}
@@ -23464,8 +23567,11 @@ MON_WAIT        = $FCA8         ; Monitor WAIT (delay loop, A = duration)
 ; --- $6700-$72FF: game engine, life-lost, attract entry ---
 <<level1 pages 67-72>>
 <<level1 gap 3>>
-; --- $7500-$7AFF: screen-row tables and sprite fragments ---
-<<level1 pages 75-7A>>
+; --- $7500-$7AFF: sprite pointer tables + pillar/hit sprite pixel data ---
+<<level1 sprite pointer tables lo>>
+<<level1 sprite pointer tables hi>>
+<<level1 pillar spr data>>
+<<level1 hit spr neg data head>>
 <<level1 gap 4>>
 ; --- $8C00-$B4B0: level-only sprite pixel data (head) ---
 <<level1 pages 8C-BD>>
